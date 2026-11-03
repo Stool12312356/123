@@ -1,0 +1,15 @@
+import { SimHost } from './harness.mjs';
+const t0 = Date.now();
+const host = new SimHost();
+await host.start({ mode: 'conquest', map: 'sleepy', bots: 15, tickets: 300 });
+console.log('init ms', Date.now() - t0, 'vehicles', host.messages.find(m => m.t === 'ready').vehicles.length);
+const t1 = Date.now();
+const f = await host.wait(20);
+console.log('20 frames in ms', Date.now() - t1, 'entities', f.snapshot.entities.length, 'ai', f.snapshot.ai.length, 'meshes', f.snapshot.meshUpdates.length);
+const counts = {};
+for (const e of host.events) counts[e.e] = (counts[e.e] ?? 0) + 1;
+console.log('events', counts);
+const ai = f.snapshot.ai.filter(a => a.team === 0);
+console.log('sample ai', JSON.stringify(ai[0]).slice(0, 400));
+console.log('errors', host.errors);
+await host.dispose();

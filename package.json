@@ -1,0 +1,39 @@
+{
+  "name": "red-storm",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Красный Шторм — автономный браузерный шутер",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "npm run assets && tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "assets": "node tools/build-assets.js && node tools/audit-assets.js",
+    "assets:download": "node tools/download-assets.js",
+    "assets:convert": "node tools/convert.js",
+    "test": "vitest run",
+    "test:browser": "node tests/browser.mjs",
+    "check": "npm run build && npm test",
+    "test:ui": "vitest run tests/ui.test.ts",
+    "test:bundle": "node tools/check-bundle.mjs"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.19.3",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.180.0",
+    "@types/node": "^22.15.0",
+    "typescript": "^5.9.3",
+    "vite": "^6.3.5",
+    "vitest": "^3.2.4",
+    "playwright": "^1.56.1",
+    "@gltf-transform/core": "^4.2.1",
+    "@gltf-transform/extensions": "^4.2.1",
+    "@gltf-transform/functions": "^4.2.1",
+    "draco3dgltf": "^1.5.7",
+    "sharp": "^0.34.3",
+    "jsdom": "^26.0.0",
+    "@types/jsdom": "^21.1.7"
+  }
+}

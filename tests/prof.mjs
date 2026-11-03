@@ -1,0 +1,12 @@
+import { SimHost } from './harness.mjs';
+const host = new SimHost();
+await host.start({ mode: 'conquest', map: 'sleepy', bots: 63, tickets: 500 });
+await host.wait(2);
+const t0 = Date.now();
+const f = await host.wait(60);
+const total = Date.now() - t0;
+console.log('per frame ms', (total / 60).toFixed(1));
+console.log('profiles per tick (avg of last frame)', Object.fromEntries(Object.entries(f.snapshot.profiles).map(([k, v]) => [k, (v / 10).toFixed(2)])));
+const ser = f.snapshot.profiles.serialize ?? 0;
+console.log('serialize', ser.toFixed(1), 'ms');
+await host.dispose();

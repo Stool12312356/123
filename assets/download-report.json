@@ -1,0 +1,20 @@
+{
+  "attemptedAt": "2026-11-03T10:43:50.042Z",
+  "url": "https://drive.google.com/drive/folders/1RZqwREAdswUge5VSHf4qVW8Q5AMB4FDQ?usp=sharing",
+  "folderId": "1RZqwREAdswUge5VSHf4qVW8Q5AMB4FDQ",
+  "method": "gdown --folder",
+  "success": false,
+  "files": [],
+  "diagnostics": [
+    {
+      "stage": "isolated-install",
+      "exitCode": 0,
+      "output": "Requirement already satisfied: gdown in ./.cache/gdown-venv/lib/python3.11/site-packages (6.5.1)\nRequirement already satisfied: beautifulsoup4 in ./.cache/gdown-venv/lib/python3.11/site-packages (from gdown) (4.15.0)\nRequirement already satisfied: filelock in ./.cache/gdown-venv/lib/python3.11/site-packages (from gdown) (4.2.7)\nRequirement already satisfied: requests[socks] in ./.cache/gdown-venv/lib/python3.11/site-packages (from gdown) (2.34.2)\nRequirement already satisfied: tqdm in ./.cache/gdown-venv/lib/python3.11/site-packages (from gdown) (4.70.1)\nRequirement already satisfied: typing-extensions>=4.0 in ./.cache/gdown-venv/lib/python3.11/site-packages (from gdown) (4.16.0)\nRequirement already satisfied: urllib3 in ./.cache/gdown-venv/lib/python3.11/site-packages (from gdown) (2.8.0)\nRequirement already satisfied: soupsieve>=1.6.1 in ./.cache/gdown-venv/lib/python3.11/site-packages (from beautifulsoup4->gdown) (2.10)\nRequirement already satisfied: charset_normalizer<4,>=2 in ./.cache/gdown-venv/lib/python3.11/site-packages (from requests[socks]->gdown) (3.5.2)\nRequirement already satisfied: idna<4,>=2.5 in ./.cache/gdown-venv/lib/python3.11/site-packages (from requests[socks]->gdown) (3.20)\nRequirement already satisfied: certifi>=2023.5.7 in ./.cache/gdown-venv/lib/python3.11/site-packages (from requests[socks]->gdown) (2026.10.23)\nRequirement already satisfied: PySocks!=1.5.7,>=1.5.6 in ./.cache/gdown-venv/lib/python3.11/site-packages (from requests[socks]->gdown) (1.7.1)\n"
+    },
+    {
+      "stage": "download",
+      "exitCode": 1,
+      "output": "warning: `--folder` is no longer required for folder URLs and will be removed in a future release\nRetrieving folder contents\nError:\n\n\tHTTPSConnectionPool(host='drive.google.com', port=443): Max retries\n\texceeded with url:\n\t/embeddedfolderview?id=1RZqwREAdswUge5VSHf4qVW8Q5AMB4FDQ (Caused by\n\tSSLError(SSLZeroReturnError(6, 'TLS/SSL connection has been closed\n\t(EOF) (_ssl.c:992)')))\n\nTo report issues, please visit https://github.com/wkentaro/gdown/issues.\n"
+    }
+  ]
+}

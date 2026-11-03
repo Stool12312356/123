@@ -1,0 +1,16 @@
+import { SimHost } from './harness.mjs';
+const host = new SimHost();
+const t0 = Date.now();
+await host.start({ mode: 'conquest', map: 'sleepy', bots: 63, tickets: 500, difficulty: 'veteran' });
+console.log('init', Date.now() - t0, 'ms');
+await host.wait(2);
+const t1 = Date.now();
+const f = await host.wait(120);
+console.log('120 frames (6s sim) in', Date.now() - t1, 'ms =>', ((Date.now() - t1) / 120).toFixed(1), 'ms/frame');
+await host.cmd({ t: 'test', op: 'stats' }); await new Promise(r => setTimeout(r, 100));
+console.log('stats', host.messages.filter(m => m.phase === 'stats').map(m => m.text).pop());
+const counts = {}; for (const e of host.events) counts[e.e] = (counts[e.e] ?? 0) + 1;
+console.log('events', counts);
+console.log('ai alive', f.snapshot.ai.filter(a => a.alive).length, 'vehicles occupied', f.snapshot.entities.filter(e => e.kind === 'vehicle' && e.seat > 0).length);
+console.log('errors', host.errors);
+await host.dispose();

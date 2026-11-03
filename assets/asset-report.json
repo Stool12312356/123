@@ -1,0 +1,37 @@
+{
+  "generatedAt": "2026-11-03T13:08:15.952Z",
+  "source": "https://drive.google.com/drive/folders/1RZqwREAdswUge5VSHf4qVW8Q5AMB4FDQ?usp=sharing",
+  "download": {
+    "success": false,
+    "files": [],
+    "reason": "warning: `--folder` is no longer required for folder URLs and will be removed in a future release\nRetrieving folder contents\nError:\n\n\tHTTPSConnectionPool(host='drive.google.com', port=443): Max retries\n\texceeded with url:\n\t/embeddedfolderview?id=1RZqwREAdswUge5VSHf4qVW8Q5AMB4FDQ (Caused by\n\tSSLError(SSLZeroReturnError(6, 'TLS/SSL connection has been closed\n\t(EOF) (_ssl.c:992)')))\n\nTo report issues, please visit https://github.com/wkentaro/gdown/issues.\n"
+  },
+  "totals": {
+    "assets": 110,
+    "categories": {
+      "weapon": 15,
+      "gadget": 7,
+      "vehicle": 14,
+      "aircraft": 3,
+      "boat": 2,
+      "character": 4,
+      "building": 20,
+      "prop": 28,
+      "installation": 17
+    },
+    "procedural": 110,
+    "real": 0,
+    "bytes": 11514480
+  },
+  "required": {
+    "expected": 55,
+    "missing": []
+  },
+  "materialAudit": {
+    "sharedAcrossUnrelatedIds": [],
+    "texturesAllocated": 0,
+    "note": "Procedural assets use per-ID materials (baseColorFactor + metallic/roughness) and vertex colors; no texture is borrowed between items."
+  },
+  "issues": [],
+  "status": "PASSED"
+}
