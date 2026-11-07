@@ -614,6 +614,14 @@ class SoftCar {
     this.prevBodyVel = null;
     this.nodes.length = 0; this.beams.length = 0; this.cps.length = 0;
     this.stations.length = 0; this.wheels.length = 0;
+    const S0 = CAR_SPECS[this.spec.id] || this.spec;
+    this.spec = S0;
+    this.spec.wheelArches = [
+      { x: S0.frontX, z: S0.track, r: S0.wheelR * 1.14, y: S0.hubY + S0.wheelR * 0.92 },
+      { x: S0.frontX, z: -S0.track, r: S0.wheelR * 1.14, y: S0.hubY + S0.wheelR * 0.92 },
+      { x: S0.rearX, z: S0.track, r: S0.wheelR * 1.14, y: S0.hubY + S0.wheelR * 0.92 },
+      { x: S0.rearX, z: -S0.track, r: S0.wheelR * 1.14, y: S0.hubY + S0.wheelR * 0.92 }
+    ];
     this.suspBeams.length = 0; this.mountBeams.length = 0;
     this.events.length = 0;
     this.lastEvent = {};
@@ -1993,8 +2001,8 @@ function makeCarMaterials(spec) {
     trim: new THREE.MeshStandardMaterial({ color: 0x15181b, metalness: 0.3, roughness: 0.7, side: THREE.DoubleSide }),
     chrome: new THREE.MeshStandardMaterial({ color: 0xd7dde3, metalness: 1.0, roughness: 0.14 }),
     rubber: new THREE.MeshStandardMaterial({ color: 0x0e1012, metalness: 0.0, roughness: 0.95 }),
-    rim: new THREE.MeshStandardMaterial({ color: 0xc2c9cf, metalness: 0.95, roughness: 0.22 }),
-    rimDark: new THREE.MeshStandardMaterial({ color: 0x2a2f34, metalness: 0.7, roughness: 0.45 }),
+    rim: new THREE.MeshStandardMaterial({ color: 0xe6ebef, metalness: 0.55, roughness: 0.28 }),
+    rimDark: new THREE.MeshStandardMaterial({ color: 0x3b4348, metalness: 0.6, roughness: 0.45 }),
     headlight: new THREE.MeshStandardMaterial({ color: 0xf3f6f2, emissive: 0xfff4d8, emissiveIntensity: 0.9, roughness: 0.15, metalness: 0.1 }),
     taillight: new THREE.MeshStandardMaterial({ color: 0x8c0d0d, emissive: 0xff1a08, emissiveIntensity: 0.5, roughness: 0.3 }),
     indicator: new THREE.MeshStandardMaterial({ color: 0xd88a12, emissive: 0xff9a10, emissiveIntensity: 0.35, roughness: 0.4 }),
@@ -2012,7 +2020,7 @@ function buildShellFaces(car) {
   const st = car.stations, n = st.length;
   const idx = (s, c) => s * 10 + c;
   const faces = [];
-  const push = (mat, a, b, c, d, sub) => faces.push({ mat, cp: [a, b, c, d], sub: sub || [4, 3] });
+  const push = (mat, a, b, c, d, sub, cut) => faces.push({ mat, cp: [a, b, c, d], sub: sub || [4, 3], cut: !!cut });
   for (let s = 0; s < n - 1; s++) {
     const A = st[s], B = st[s + 1];
     const bothCabin = A.cabin && B.cabin;
@@ -2024,10 +2032,10 @@ function buildShellFaces(car) {
     push(topMat, idx(s, CP_T), idx(s, CP_RR), idx(s + 1, CP_RR), idx(s + 1, CP_T), sub);
     push(bothCabin ? 'glass' : 'paint', idx(s, CP_RL), idx(s, CP_WL), idx(s + 1, CP_WL), idx(s + 1, CP_RL), subS);
     push(bothCabin ? 'glass' : 'paint', idx(s, CP_RR), idx(s + 1, CP_RR), idx(s + 1, CP_WR), idx(s, CP_WR), subS);
-    push('paint', idx(s, CP_WL), idx(s, CP_SL), idx(s + 1, CP_SL), idx(s + 1, CP_WL), subS);
-    push('paint', idx(s, CP_WR), idx(s + 1, CP_WR), idx(s + 1, CP_SR), idx(s, CP_SR), subS);
-    push('paint', idx(s, CP_SL), idx(s, CP_BL), idx(s + 1, CP_BL), idx(s + 1, CP_SL), [4, 2]);
-    push('paint', idx(s, CP_SR), idx(s + 1, CP_SR), idx(s + 1, CP_BR), idx(s, CP_BR), [4, 2]);
+    push('paint', idx(s, CP_WL), idx(s, CP_SL), idx(s + 1, CP_SL), idx(s + 1, CP_WL), subS, true);
+    push('paint', idx(s, CP_WR), idx(s + 1, CP_WR), idx(s + 1, CP_SR), idx(s, CP_SR), subS, true);
+    push('paint', idx(s, CP_SL), idx(s, CP_BL), idx(s + 1, CP_BL), idx(s + 1, CP_SL), [5, 2], true);
+    push('paint', idx(s, CP_SR), idx(s + 1, CP_SR), idx(s + 1, CP_BR), idx(s, CP_BR), [5, 2], true);
     push('trim', idx(s, CP_BL), idx(s + 1, CP_BL), idx(s + 1, CP_X), idx(s, CP_X), [4, 2]);
     push('trim', idx(s, CP_BR), idx(s, CP_X), idx(s + 1, CP_X), idx(s + 1, CP_BR), [4, 2]);
     if (crossing) {
@@ -2098,7 +2106,7 @@ class ShellSkin {
     };
 
     const _pa = new THREE.Vector3(), _pb = new THREE.Vector3(), _pc = new THREE.Vector3(), _pd = new THREE.Vector3();
-    const addPatch = (bucket, corners, s1, ra, rb, nu, nv) => {
+    const addPatch = (bucket, corners, s1, ra, rb, nu, nv, cut) => {
       const tri = corners.length === 3;
       const base = bucket.pos.length / 3;
       const n = corners.length;
@@ -2108,9 +2116,36 @@ class ShellSkin {
           const u = i / nu, v = j / nv;
           verts.push([u, v, (1 - u) * (1 - v), u * (1 - v), u * v, (1 - u) * v]);
         }
+        const cellIdx = [];
         for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) {
           const a = i * (nv + 1) + j;
-          bucket.idx.push(base + a, base + a + nv + 1, base + a + 1, base + a + 1, base + a + nv + 1, base + a + nv + 2);
+          cellIdx.push([a, a + nv + 1, a + 1, a + nv + 2, i / nu, j / nv]);
+        }
+        /* wheel arch cut-outs */
+        for (const cell of cellIdx) {
+          const [a, b, c, d] = cell;
+          if (cut) {
+            /* centre of the sub-quad in car local coordinates */
+            let cx = 0, cy = 0;
+            for (const vi of [a, b, c, d]) {
+              const vv = verts[vi];
+              let sx = 0, sy = 0;
+              for (let k = 0; k < 4; k++) {
+                const wgt = vv[2 + k];
+                if (wgt <= 0) continue;
+                sx += corners[k].node.restLocal.x * wgt;
+                sy += corners[k].node.restLocal.y * wgt;
+              }
+              cx += sx / 4; cy += sy / 4;
+            }
+            let inArch = false;
+            for (const wh of car.spec.wheelArches) {
+              const dx = cx - wh.x;
+              if (Math.abs(dx) < wh.r && cy < wh.y - Math.abs(dx) * 0.35) { inArch = true; break; }
+            }
+            if (inArch) continue;
+          }
+          bucket.idx.push(base + a, base + b, base + c, base + c, base + b, base + d);
         }
       } else {
         const S = Math.max(2, nu);
@@ -2149,7 +2184,7 @@ class ShellSkin {
         }
         _pa.set(ox, oy, oz);
         const cellW = Math.min(Math.hypot(ax, ay, az), Math.hypot(bx, by, bz));
-        bulge = Math.min(0.032, cellW * 0.12);
+        bulge = Math.min(0.014, cellW * 0.05);
       }
       for (const v of verts) {
         const ws = [v[2], v[3], v[4], v[5]];
@@ -2188,7 +2223,7 @@ class ShellSkin {
       } else {
         const s1 = Math.floor(f.cp[0] / 10);
         const ra = f.cp[0] % 10, rb = f.cp[1] % 10;
-        addPatch(bucket, f.cp.map(i => car.cps[i]), s1, ra, rb, f.sub[0], f.sub[1]);
+        addPatch(bucket, f.cp.map(i => car.cps[i]), s1, ra, rb, f.sub[0], f.sub[1], f.cut);
       }
     }
 
@@ -2339,11 +2374,15 @@ class CarDetails {
 
     /* ---- bumpers ---- */
     const bf = D.bumperF;
-    add(new THREE.BoxGeometry(bf[2], bf[1], bf[3]), M.trim,
-      [cp(0, CP_SL), cp(0, CP_SR), cp(0, CP_WL), cp(0, CP_WR)], [S.propF[0] + 0.02, bf[1] * 0.5 + S.propF[1] - 0.3, 0]);
+    add(new THREE.BoxGeometry(bf[2], bf[1] * 0.82, bf[3]), M.paint,
+      [cp(0, CP_SL), cp(0, CP_SR), cp(0, CP_WL), cp(0, CP_WR)], [S.propF[0] - 0.02, S.propF[1] + 0.14, 0]);
+    add(new THREE.BoxGeometry(bf[2] * 1.05, bf[1] * 0.34, bf[3] * 0.98), M.trim,
+      [cp(0, CP_SL), cp(0, CP_SR), cp(0, CP_WL), cp(0, CP_WR)], [S.propF[0] - 0.01, S.propF[1] - 0.12, 0]);
     const br = D.bumperR;
-    add(new THREE.BoxGeometry(br[2], br[1], br[3]), M.trim,
-      [cp(last, CP_SL), cp(last, CP_SR), cp(last, CP_WL), cp(last, CP_WR)], [S.propR[0] - 0.02, br[1] * 0.5 + S.propR[1] - 0.32, 0]);
+    add(new THREE.BoxGeometry(br[2], br[1] * 0.82, br[3]), M.paint,
+      [cp(last, CP_SL), cp(last, CP_SR), cp(last, CP_WL), cp(last, CP_WR)], [S.propR[0] + 0.02, S.propR[1] + 0.14, 0]);
+    add(new THREE.BoxGeometry(br[2] * 1.05, br[1] * 0.34, br[3] * 0.98), M.trim,
+      [cp(last, CP_SL), cp(last, CP_SR), cp(last, CP_WL), cp(last, CP_WR)], [S.propR[0] + 0.01, S.propR[1] - 0.12, 0]);
 
     /* ---- grille + lights ---- */
     add(new THREE.BoxGeometry(0.1, 0.3, D.headZ * 1.2), M.trim,
@@ -2408,6 +2447,27 @@ class CarDetails {
     add(new THREE.BoxGeometry(0.26, 0.16, D.halfW * 1.6), M.trim,
       [cp(4, CP_SL), cp(4, CP_SR)], [D.cabinFront - 0.22, D.beltY - 0.22, 0]);
 
+    /* ---- wheel wells (dark liners behind the arch cut-outs) ---- */
+    for (const wh of car.spec.wheelArches) {
+      const side = wh.z > 0 ? 1 : -1;
+      const liner = new THREE.Mesh(
+        new THREE.CylinderGeometry(wh.r * 0.92, wh.r * 0.92, 0.62, 14, 1, true, Math.PI * 0.02, Math.PI * 1.2),
+        new THREE.MeshStandardMaterial({ color: 0x0b0c0d, roughness: 0.95, metalness: 0.0, side: THREE.DoubleSide })
+      );
+      liner.rotation.x = Math.PI / 2;
+      liner.rotation.z = Math.PI * 0.5;
+      const nodes = [cp(0, CP_SL), cp(0, CP_SR)];
+      /* attach to the sill nodes on that side, at the axle station */
+      let best = null, bd = 1e9;
+      for (let si = 0; si < st.length; si++) {
+        const d = Math.abs(st[si].x - wh.x);
+        if (d < bd) { bd = d; best = si; }
+      }
+      const sideNode = cp(best, side > 0 ? CP_SL : CP_SR);
+      add(new THREE.BoxGeometry(wh.r * 1.7, wh.r * 1.15, 0.46), new THREE.MeshStandardMaterial({ color: 0x0b0c0d, roughness: 0.95, side: THREE.DoubleSide }),
+        [sideNode], [wh.x, wh.y - wh.r * 0.18, side * (S.details.halfW - 0.44)]);
+    }
+
     /* ---- model accents ---- */
     if (S.id === 'dseries') {
       for (const side of [1, -1]) {
@@ -2461,18 +2521,25 @@ class WheelView {
       blk.rotation.z = a;
       this.spinner.add(blk);
     }
-    const rim = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.64, R * 0.64, W * 0.84, 20, 1), M.rim);
+    /* rim faces stick out of the tyre so they are visible from the side */
+    const rim = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.66, R * 0.66, W * 1.06, 20, 1), M.rim);
     rim.rotation.x = Math.PI / 2;
     this.spinner.add(rim);
-    const hubcap = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.2, R * 0.24, W * 0.9, 12), M.rimDark);
+    const hubcap = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.22, R * 0.26, W * 1.1, 12), M.rimDark);
     hubcap.rotation.x = Math.PI / 2;
     this.spinner.add(hubcap);
-    for (let i = 0; i < 5; i++) {
-      const spoke = new THREE.Mesh(new THREE.BoxGeometry(R * 0.56, R * 0.09, W * 0.22), M.rim);
-      const a = i / 5 * TAU;
-      spoke.position.set(Math.cos(a) * R * 0.33, Math.sin(a) * R * 0.33, W * 0.38);
-      spoke.rotation.z = a;
-      this.spinner.add(spoke);
+    for (const side of [1, -1]) {
+      for (let i = 0; i < 5; i++) {
+        const spoke = new THREE.Mesh(new THREE.BoxGeometry(R * 0.58, R * 0.085, W * 0.06), M.rim);
+        const a = i / 5 * TAU;
+        spoke.position.set(Math.cos(a) * R * 0.33, Math.sin(a) * R * 0.33, side * W * 0.55);
+        spoke.rotation.z = a;
+        this.spinner.add(spoke);
+      }
+      const disc = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.62, R * 0.62, W * 0.02, 20, 1), M.rimDark);
+      disc.rotation.x = Math.PI / 2;
+      disc.position.z = side * W * 0.5;
+      this.spinner.add(disc);
     }
     this.group.add(this.spinner);
     car.group.add(this.group);

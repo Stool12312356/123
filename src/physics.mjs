@@ -315,6 +315,14 @@ class SoftCar {
     this.prevBodyVel = null;
     this.nodes.length = 0; this.beams.length = 0; this.cps.length = 0;
     this.stations.length = 0; this.wheels.length = 0;
+    const S0 = CAR_SPECS[this.spec.id] || this.spec;
+    this.spec = S0;
+    this.spec.wheelArches = [
+      { x: S0.frontX, z: S0.track, r: S0.wheelR * 1.14, y: S0.hubY + S0.wheelR * 0.92 },
+      { x: S0.frontX, z: -S0.track, r: S0.wheelR * 1.14, y: S0.hubY + S0.wheelR * 0.92 },
+      { x: S0.rearX, z: S0.track, r: S0.wheelR * 1.14, y: S0.hubY + S0.wheelR * 0.92 },
+      { x: S0.rearX, z: -S0.track, r: S0.wheelR * 1.14, y: S0.hubY + S0.wheelR * 0.92 }
+    ];
     this.suspBeams.length = 0; this.mountBeams.length = 0;
     this.events.length = 0;
     this.lastEvent = {};
