@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JBEAM // TRUE SOFT-BODY CRASH SIMULATOR</title>
+<style>
+:root{
+  --bg:#0a0c0e;
+  --panel:rgba(13,15,18,.90);
+  --panel2:rgba(20,23,27,.92);
+  --line:#262c33;
+  --line2:#333b44;
+  --accent:#ff6600;
+  --accent-dim:#a84400;
+  --text:#c6cdd6;
+  --dim:#78838f;
+  --ok:#3ac46a;
+  --warn:#e8c227;
+  --bad:#ff3b30;
+  --purple:#9a5cff;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);
+  font-family:"Roboto Mono","JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:11px;-webkit-font-smoothing:antialiased;user-select:none}
+canvas#gl{display:block;width:100%;height:100%;cursor:default}
+canvas#gl.grab{cursor:grab}
+canvas#gl.grabbing{cursor:grabbing}
+#hud{position:fixed;inset:0;pointer-events:none;opacity:1;transition:opacity .35s}
+#hud.hidden{opacity:0;pointer-events:none}
+.panel{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-top:1px solid #38414b;
+  box-shadow:0 6px 24px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.03);
+  position:relative;
+}
+.panel::after{content:"";position:absolute;left:-1px;top:-1px;width:2px;height:14px;background:var(--accent)}
+.ph{
+  display:flex;align-items:center;gap:6px;
+  font-size:9.5px;letter-spacing:.13em;color:#9aa5b1;
+  padding:6px 9px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,0));
+  text-transform:uppercase;
+}
+.ph b{color:var(--accent);font-weight:600}
+.ph .phr{margin-left:auto;color:#d6dde4;font-size:9.5px;letter-spacing:.06em;max-width:170px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dot{width:6px;height:6px;background:var(--accent);box-shadow:0 0 8px var(--accent);flex:0 0 auto}
+
+#topleft{position:absolute;left:14px;top:14px;width:326px;display:flex;flex-direction:column;gap:10px}
+#dmg{z-index:3}
+.dmgwrap{display:flex;gap:10px;padding:9px}
+#carSvg{width:104px;height:172px;flex:0 0 104px;filter:drop-shadow(0 0 6px rgba(0,0,0,.6))}
+.zoneList{flex:1;display:flex;flex-direction:column;gap:3px;justify-content:center}
+.zrow{display:flex;align-items:center;gap:6px;font-size:9.5px;letter-spacing:.05em;color:#98a3ae}
+.zrow .zname{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.zrow .zval{font-variant-numeric:tabular-nums;color:#dbe2e8;font-weight:600;min-width:34px;text-align:right}
+.zrow .bar{width:36px;height:4px;background:#1b2026;border:1px solid #2a3138;flex:0 0 36px;position:relative}
+.zrow .bar i{position:absolute;inset:0;width:100%;background:var(--ok);transform-origin:left;transition:transform .25s,background .25s}
+.legend{display:flex;gap:8px;padding:0 9px 7px;font-size:8.5px;color:#5f6b77;letter-spacing:.08em}
+.legend span{display:flex;align-items:center;gap:3px}
+.legend i{width:6px;height:6px;display:inline-block}
+
+#logPanel{margin-top:0}
+#log{height:112px;overflow:hidden;padding:5px 8px;display:flex;flex-direction:column-reverse;gap:2px;
+  font-size:9.5px;line-height:1.35}
+.logline{display:flex;gap:6px;opacity:.55;animation:logIn .25s ease-out}
+.logline:first-child{opacity:1}
+.logline .t{color:#5c6774;flex:0 0 44px}
+.logline .m{color:#aeb8c3;flex:1}
+.logline.hot .m{color:var(--accent)}
+.logline.bad .m{color:#ff6b5e}
+.logline.ok .m{color:#4fd47f}
+@keyframes logIn{from{transform:translateX(-6px);opacity:0}to{transform:none;opacity:1}}
+
+#topright{position:absolute;right:14px;top:14px;width:250px;display:flex;flex-direction:column;gap:10px}
+.tele{display:grid;grid-template-columns:1fr auto;gap:1px 8px;padding:6px 9px 8px}
+.tele .k{color:#7d8894;font-size:9.5px;letter-spacing:.06em;padding:1.5px 0;border-bottom:1px dotted #1e242a}
+.tele .v{color:#dbe2e8;font-size:10.5px;text-align:right;font-variant-numeric:tabular-nums;padding:1.5px 0;border-bottom:1px dotted #1e242a}
+.tele .v.hot{color:var(--accent)}
+.tele .v.bad{color:#ff6b5e}
+.tele .v.ok{color:#4fd47f}
+.bigv{font-size:13px!important;font-weight:700}
+
+#bottom{position:absolute;left:50%;transform:translateX(-50%);bottom:14px;display:flex;gap:10px;align-items:flex-end;pointer-events:none}
+.panel.pointer{pointer-events:auto}
+.ctrlGroup{display:flex;gap:0;align-items:stretch;padding:0}
+.gtitle{font-size:8.5px;letter-spacing:.14em;color:#5f6b77;padding:5px 9px 3px;border-bottom:1px solid var(--line);text-transform:uppercase}
+.grow{display:flex;gap:4px;padding:5px 6px}
+button{
+  font-family:inherit;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;
+  color:#aab4bf;background:#171b20;border:1px solid #2b333b;padding:5px 8px;cursor:pointer;
+  transition:background .12s,color .12s,border-color .12s;white-space:nowrap;
+}
+button:hover{background:#20262d;color:#e6ecf2;border-color:#3d4750}
+button:active{background:#2a3138}
+button.on{background:var(--accent);color:#120a02;border-color:#ff8a3d;font-weight:700;box-shadow:0 0 12px rgba(255,102,0,.35)}
+button.warnbtn{border-color:#5a2020;color:#e08b82}
+button.warnbtn:hover{background:#2a1414;color:#ffb3aa}
+button .kk{color:#5f6b77;font-size:8px;margin-left:4px}
+button.on .kk{color:#5a2a00}
+
+#hint{position:absolute;right:14px;bottom:14px;width:250px}
+.hintbody{padding:6px 9px;display:grid;grid-template-columns:auto 1fr;gap:2px 8px;font-size:9px;color:#7d8894;line-height:1.45}
+.hintbody b{color:#cfd7df;font-weight:600}
+kbd{display:inline-block;background:#1d232a;border:1px solid #333b44;border-bottom-color:#20262c;
+  padding:0 3px;font-family:inherit;font-size:8.5px;color:#d5dce3;min-width:13px;text-align:center}
+
+#boot{position:fixed;inset:0;background:#08090b;display:flex;align-items:center;justify-content:center;z-index:99;
+  transition:opacity .4s}
+#boot.gone{opacity:0;pointer-events:none}
+.bootbox{width:430px;padding:22px 24px;border:1px solid #232a31;background:#0c0f12;position:relative}
+.bootbox::before{content:"";position:absolute;left:-1px;top:-1px;width:3px;height:34px;background:var(--accent)}
+.boottitle{font-size:15px;letter-spacing:.24em;color:#e6ecf2;margin-bottom:3px}
+.bootsub{font-size:9px;letter-spacing:.18em;color:var(--accent);margin-bottom:16px}
+#bootMsg{font-size:10px;color:#8b96a2;margin-bottom:9px;min-height:13px}
+.bar{height:3px;background:#1a1f25;overflow:hidden}
+.bar i{display:block;height:100%;width:0%;background:var(--accent);transition:width .25s}
+.bootfine{margin-top:12px;font-size:8.5px;color:#4d5863;line-height:1.6}
+#err{color:#ff7a6b;font-size:10px;line-height:1.6;margin-top:10px;display:none;white-space:pre-wrap}
+
+#grabHint{position:absolute;pointer-events:none;font-size:9px;color:var(--accent);letter-spacing:.08em;
+  padding:2px 5px;border:1px solid var(--accent-dim);background:rgba(20,10,0,.8);display:none}
+#flash{position:fixed;inset:0;pointer-events:none;background:radial-gradient(circle,transparent 55%,rgba(255,70,20,.28));opacity:0;transition:opacity .35s}
+#slowBadge{position:absolute;left:50%;top:14px;transform:translateX(-50%);font-size:10px;letter-spacing:.22em;
+  color:var(--accent);border:1px solid var(--accent-dim);background:rgba(30,14,0,.75);padding:4px 12px;display:none}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div id="hud" class="hidden">
+  <div id="topleft">
+    <div class="panel" id="dmg">
+      <div class="ph"><span class="dot"></span>VEHICLE DAMAGE<b id="hudMode">/ PLAYER</b><span class="phr" id="hudCar">—</span></div>
+      <div class="dmgwrap">
+        <svg id="carSvg" viewBox="0 0 120 190">
+          <rect x="12" y="4" width="96" height="182" rx="30" fill="#0e1114" stroke="#3a434c" stroke-width="1.4"/>
+          <rect x="30" y="14" width="60" height="26" rx="8" fill="#1a1f24"/>
+          <g id="zoneFills">
+            <rect id="zfFront"  x="30" y="14" width="60" height="30" rx="9" />
+            <rect id="zfEngine" x="30" y="44" width="60" height="28" rx="3" />
+            <rect id="zfCabin"  x="27" y="72" width="66" height="48" rx="7" />
+            <rect id="zfRear"   x="30" y="120" width="60" height="30" rx="9" />
+          </g>
+          <g fill="none" stroke="#0a0c0e" stroke-width="1">
+            <line x1="30" y1="44" x2="90" y2="44"/><line x1="30" y1="72" x2="90" y2="72"/>
+            <line x1="30" y1="120" x2="90" y2="120"/><line x1="60" y1="4" x2="60" y2="186"/>
+          </g>
+          <g id="suspDots" stroke="#0a0c0e" stroke-width="1">
+            <circle id="zfFL" cx="17" cy="104" r="7"/><circle id="zfFR" cx="103" cy="104" r="7"/>
+            <circle id="zfRL" cx="17" cy="146" r="7"/><circle id="zfRR" cx="103" cy="146" r="7"/>
+          </g>
+          <text x="60" y="10" fill="#6c7784" font-size="7" text-anchor="middle" letter-spacing="1">FRONT</text>
+          <text x="60" y="188" fill="#6c7784" font-size="7" text-anchor="middle" letter-spacing="1">REAR</text>
+        </svg>
+        <div class="zoneList" id="zoneList"></div>
+      </div>
+      <div class="legend">
+        <span><i style="background:#3ac46a"></i>100–80%</span>
+        <span><i style="background:#e8c227"></i>80–55%</span>
+        <span><i style="background:#ff8c1a"></i>55–30%</span>
+        <span><i style="background:#ff3b30"></i>&lt;30%</span>
+      </div>
+    </div>
+    <div class="panel" id="logPanel">
+      <div class="ph"><span class="dot"></span>DAMAGE EVENT LOG</div>
+      <div id="log"></div>
+    </div>
+  </div>
+
+  <div id="topright">
+    <div class="panel">
+      <div class="ph"><span class="dot"></span>PHYSICS TELEMETRY</div>
+      <div class="tele">
+        <div class="k">SOLVER</div><div class="v" id="tSolver">XPBD / VERLET</div>
+        <div class="k">SUBSTEPS / RATE</div><div class="v" id="tSubsteps">14 / 840 Hz</div>
+        <div class="k">FRAME</div><div class="v" id="tFps">-- fps</div>
+        <div class="k">ACTIVE NODES</div><div class="v" id="tNodes">0</div>
+        <div class="k">BEAMS (LIVE)</div><div class="v" id="tBeams">0</div>
+        <div class="k">DEFORMED / BENT</div><div class="v hot" id="tDeformed">0</div>
+        <div class="k">BROKEN</div><div class="v bad" id="tBroken">0</div>
+        <div class="k">PEAK OVERLOAD</div><div class="v bad" id="tG">0.0 G</div>
+        <div class="k">VELOCITY</div><div class="v ok" id="tSpeed">0 km/h</div>
+        <div class="k">ENGINE</div><div class="v" id="tRpm">0 rpm</div>
+        <div class="k">TIME SCALE</div><div class="v hot" id="tScale">1.00x</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="slowBadge">ULTRA SLOW-MOTION · 0.05x</div>
+
+  <div id="bottom">
+    <div class="panel pointer">
+      <div class="gtitle">VEHICLE JBEAM</div>
+      <div class="grow" id="carBtns"></div>
+    </div>
+    <div class="panel pointer">
+      <div class="gtitle">TIME SCALE <span style="color:#4a545f">[T]</span></div>
+      <div class="grow" id="timeBtns">
+        <button data-ts="1">1.0x</button>
+        <button data-ts="0.2">0.2x</button>
+        <button data-ts="0.05">0.05x</button>
+      </div>
+    </div>
+    <div class="panel pointer">
+      <div class="gtitle">SCENARIO</div>
+      <div class="grow">
+        <button id="btnDrop">DROP 3t SLAB</button>
+        <button id="btnRival">SPAWN RIVAL</button>
+        <button id="btnReset" class="warnbtn">RESET <span class="kk">R</span></button>
+      </div>
+    </div>
+    <div class="panel pointer">
+      <div class="gtitle">VIEW</div>
+      <div class="grow">
+        <button id="btnXray">X-RAY <span class="kk">B</span></button>
+        <button id="btnCam">CAM <span class="kk">C</span></button>
+        <button id="btnAudio" class="on">SOUND</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="hint">
+    <div class="ph"><span class="dot"></span>CONTROLS</div>
+    <div class="hintbody">
+      <b><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></b><span>drive / steer</span>
+      <b><kbd>SPACE</kbd></b><span>handbrake</span>
+      <b><kbd>B</kbd></b><span>JBeam x-ray (3 modes)</span>
+      <b><kbd>T</kbd></b><span>slow-motion cycle</span>
+      <b><kbd>C</kbd></b><span>camera mode</span>
+      <b><kbd>R</kbd></b><span>restore vehicle</span>
+      <b><kbd>F</kbd></b><span>drop the 3 t press</span>
+      <b><kbd>CTRL</kbd>+<kbd>LMB</kbd></b><span>node grabber</span>
+      <b><kbd>LMB</kbd> drag</b><span>orbit camera</span>
+      <b>wheel</b><span>zoom</span>
+    </div>
+  </div>
+
+  <div id="grabHint">NODE GRAB</div>
+</div>
+<div id="flash"></div>
+
+<div id="boot">
+  <div class="bootbox">
+    <div class="boottitle">JBEAM SOFT-BODY</div>
+    <div class="bootsub">TRUE NODE / BEAM CRASH SIMULATOR</div>
+    <div id="bootMsg">initializing renderer…</div>
+    <div class="bar"><i id="bootBar"></i></div>
+    <div class="bootfine">14 substeps @ 840 Hz · mass-spring-damper beams · plastic rest-length deformation · fracture · 4-node skinned hull</div>
+    <div id="err"></div>
+  </div>
+</div>
+<script>
+/* boot watchdog: if the module or the CDN fails, say so instead of hanging */
+window.__jbeamWatch = setTimeout(function () {
+  if (window.__jbeamReady) return;
+  var b = document.getElementById('bootMsg');
+  var e = document.getElementById('err');
+  if (b) b.textContent = 'still loading three.js from the CDN…';
+  if (e) {
+    e.style.display = 'block';
+    e.textContent = 'If this message stays: the page needs an internet connection to fetch\n' +
+                    'three.js r160 from cdn.jsdelivr.net. Check the connection / firewall and reload.';
+  }
+}, 12000);
+window.addEventListener('error', function (ev) {
+  if (window.__jbeamReady) return;
+  var e = document.getElementById('err');
+  if (e && ev && ev.message) { e.style.display = 'block'; e.textContent = 'LOAD ERROR: ' + ev.message; }
+}, true);
+</script>
+<script type="module">
+__BUNDLE__
+</script>
+</body>
+</html>
