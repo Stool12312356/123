@@ -1089,18 +1089,30 @@ td .dl-hud {
     --aug-tr: 18px;
     --aug-bl: 18px;
 }
+/* Заголовок панели в рамке со срезанным правым верхним углом (tr-clip):
+   правый текст не должен заезжать на скос — отступ не меньше размера среза */
+[augmented-ui*="tr-clip"] > .panel-title {
+    padding-right: calc(var(--aug-tr, 15px) + 0.5em);
+}
+/* Шапка терминала: заголовок не заходит в срезанный угол tr-clip,
+   а кнопка закрытия стоит в самой шапке — не поверх вывода и его скроллбара */
+.term-window .shell-title {
+    align-items: center;
+    min-height: 36px;
+    padding-right: calc(var(--aug-tr) + 50px);
+}
 .term-window .modal_close {
-    top: calc(0.74 * var(--u) + 34px);
-    right: 18px;
+    top: calc(0.54 * var(--u) + 3px);
+    right: calc(var(--aug-tr) + 8px);
 }
 .term-window .term-output {
-    padding-right: 44px;
+    padding-right: 8px;
 }
 .term-window .term {
     flex: 1 1 auto;
     min-height: 0;
     max-height: none;
-    margin-top: 10px;
+    margin-top: 0;
 }
 .term-open {
     overflow: hidden;
