@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="ru" class="no-js">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>NODE//COMMONS — открытая сеть зеркал для свободного ПО</title>
+    <meta name="description" content="NODE//COMMONS — некоммерческая волонтёрская сеть зеркал для дистрибутивов и пакетов свободного программного обеспечения. Без рекламы, без трекинга, с открытым кодом.">
+    <meta name="theme-color" content="#090B0A">
+    <link rel="icon" type="image/svg+xml" href="assets/icons/terminal.svg">
+
+    <!-- Зависимость оригинального eDEX-UI: augmented-ui 1.1.2 (BSD-2-Clause) — скошенные рамки -->
+    <link rel="stylesheet" href="assets/vendor/augmented-ui/augmented.css">
+    <!-- Тема blade, перенесённая из eDEX-UI -->
+    <link rel="stylesheet" href="css/blade-theme.css">
+    <!-- Адаптивная сетка сайта -->
+    <link rel="stylesheet" href="css/layout.css">
+
+    <script>
+        document.documentElement.classList.remove("no-js");
+        document.documentElement.classList.add("js");
+    </script>
+</head>
+<body>
+    <a class="skip-link" href="#main">Перейти к содержимому</a>
+
+    <!-- ===================== ШАПКА ===================== -->
+    <header class="site-header" id="top">
+        <div class="container header-inner">
+            <a class="brand" href="#home" aria-label="NODE//COMMONS — на главную">
+                <img src="assets/icons/terminal.svg" alt="" width="26" height="26">
+                <span class="brand-name">NODE<em>//</em>COMMONS</span>
+            </a>
+
+            <nav class="site-nav" id="site-nav" aria-label="Основная навигация">
+                <ul class="skew-tabs nav-tabs">
+                    <li class="active"><a href="#home" data-nav="home" aria-current="true">Главная</a></li>
+                    <li><a href="#about" data-nav="about">О проекте</a></li>
+                    <li><a href="#status" data-nav="status">Статус серверов</a></li>
+                    <li><a href="#docs" data-nav="docs">Документация</a></li>
+                </ul>
+            </nav>
+
+            <div class="header-tools">
+                <button class="tool-btn" id="sound-toggle" type="button" aria-pressed="false" title="Звуковые эффекты eDEX-UI">
+                    <img class="icon-off" src="assets/icons/mute.svg" alt="" width="18" height="18">
+                    <img class="icon-on" src="assets/icons/volume.svg" alt="" width="18" height="18">
+                    <span class="tool-label">SFX <b id="sound-state">OFF</b></span>
+                </button>
+                <button class="tool-btn menu-toggle" id="menu-toggle" type="button" aria-controls="site-nav" aria-expanded="false" aria-label="Открыть меню">
+                    <img class="icon-menu" src="assets/icons/menu.svg" alt="" width="20" height="20">
+                    <img class="icon-close" src="assets/icons/close.svg" alt="" width="16" height="16">
+                </button>
+            </div>
+        </div>
+
+        <div class="container header-status">
+            <p><span class="dot" id="uplink-dot" aria-hidden="true"></span>UPLINK: <b id="uplink-state">ONLINE</b></p>
+            <p class="hide-sm">NODES: <b id="header-nodes">7/8</b></p>
+            <p><b id="header-clock">--:--:--</b> <span class="hide-sm">UTC<span id="header-tz">+0</span></span></p>
+        </div>
+    </header>
+
+    <main id="main">
+        <!-- ===================== HERO / ГЛАВНЫЙ ЭКРАН ===================== -->
+        <section class="hero container" id="home" aria-labelledby="hero-title">
+            <div class="hero-grid">
+
+                <!-- Левая колонка: PANEL / SYSTEM (mod_column_left) -->
+                <aside class="mod-column mod-column-left reveal-fade" aria-label="Системная панель">
+                    <h3 class="panel-title"><span>PANEL</span><span>SYSTEM</span></h3>
+                    <div class="column-stack reveal-stagger">
+
+                        <!-- mod_clock -->
+                        <div class="mod mod-clock" id="mod_clock">
+                            <h2 class="clock-face" id="clock" aria-live="off">
+                                <span>0</span><span>0</span><em>:</em><span>0</span><span>0</span><em>:</em><span>0</span><span>0</span>
+                            </h2>
+                        </div>
+
+                        <!-- mod_sysinfo -->
+                        <div class="mod mod-sysinfo">
+                            <div class="kv"><h4 class="k">YEAR</h4><p class="v" id="sys-year">----</p></div>
+                            <div class="kv"><h4 class="k">DATE</h4><p class="v" id="sys-date">---</p></div>
+                            <div class="kv"><h4 class="k">UPTIME</h4><p class="v" id="sys-uptime">0:00:00</p></div>
+                            <div class="kv"><h4 class="k">TYPE</h4><p class="v" id="sys-type">WEB</p></div>
+                            <div class="kv"><h4 class="k">POWER</h4><p class="v" id="sys-power">ON</p></div>
+                        </div>
+
+                        <!-- mod_hardwareInspector -->
+                        <div class="mod mod-hw">
+                            <div><h4>PLATFORM</h4><p id="hw-platform">—</p></div>
+                            <div><h4>CORES</h4><p id="hw-cores">—</p></div>
+                            <div><h4>SCREEN</h4><p id="hw-screen">—</p></div>
+                            <div><h4>LANG</h4><p id="hw-lang">—</p></div>
+                        </div>
+
+                        <!-- mod_cpuinfo -->
+                        <div class="mod mod-cpu">
+                            <h4 class="mod-head">CPU USAGE <i>синтетическая нагрузка</i></h4>
+                            <div class="cpu-row">
+                                <div class="cpu-label"><h5># <em>1</em>-<em>2</em></h5><i>AVG <span id="cpu-avg1">0</span>%</i></div>
+                                <canvas class="dashed-y" id="cpu-canvas-1" aria-hidden="true"></canvas>
+                            </div>
+                            <div class="cpu-row">
+                                <div class="cpu-label"><h5># <em>3</em>-<em>4</em></h5><i>AVG <span id="cpu-avg2">0</span>%</i></div>
+                                <canvas class="dashed-y" id="cpu-canvas-2" aria-hidden="true"></canvas>
+                            </div>
+                            <div class="cpu-stats">
+                                <div><h5>FPS</h5><i id="cpu-fps">--</i></div>
+                                <div><h5>LOAD</h5><i id="cpu-load">--</i></div>
+                                <div><h5>MAX</h5><i id="cpu-max">--</i></div>
+                                <div><h5>TASKS</h5><i id="cpu-tasks">--</i></div>
+                            </div>
+                        </div>
+
+                        <!-- mod_ramwatcher -->
+                        <div class="mod mod-ram">
+                            <h4 class="mod-head">MEMORY <i id="ram-info">USING 0.0 OUT OF 0.0 GiB</i></h4>
+                            <div class="ram-pointmap" id="ram-pointmap" aria-hidden="true"></div>
+                            <div class="ram-swap">
+                                <h5>SWAP</h5>
+                                <progress id="ram-swapbar" max="100" value="0">0%</progress>
+                                <h5 id="ram-swaptext">0.0 GiB</h5>
+                            </div>
+                        </div>
+                    </div>
+                </aside>
+
+                <!-- Центр: TERMINAL / MAIN SHELL (section#main_shell) -->
+                <div class="shell-wrap glow">
+                    <section class="shell aug-frame shell-anim" augmented-ui="bl-clip tr-clip exe" aria-label="Главный экран">
+                        <h3 class="panel-title shell-title"><span>TERMINAL</span><span>MAIN SHELL</span></h3>
+
+                        <ul class="skew-tabs shell-tabs" role="tablist" aria-label="Вкладки терминала">
+                            <li class="active" role="presentation">
+                                <button type="button" role="tab" id="tabbtn-main" aria-selected="true" aria-controls="tab-main">MAIN SHELL</button>
+                            </li>
+                            <li role="presentation">
+                                <button type="button" role="tab" id="tabbtn-log" aria-selected="false" aria-controls="tab-log" tabindex="-1">SYSLOG</button>
+                            </li>
+                            <li role="presentation">
+                                <button type="button" role="tab" id="tabbtn-help" aria-selected="false" aria-controls="tab-help" tabindex="-1">HELP</button>
+                            </li>
+                        </ul>
+
+                        <div class="shell-inner">
+                            <!-- Вкладка 1: Hero -->
+                            <div class="tab-panel active" id="tab-main" role="tabpanel" aria-labelledby="tabbtn-main">
+                                <p class="hero-kicker"><span class="prompt-sign">&gt;</span> whoami <span class="muted">// некоммерческий проект с 2024 года</span></p>
+                                <h1 class="hero-title glow-text" id="hero-title">
+                                    Открытая сеть зеркал<br>
+                                    для <span class="hero-accent" data-text="свободного ПО">свободного ПО</span>
+                                </h1>
+                                <p class="hero-lead">
+                                    NODE//COMMONS — волонтёрская сеть серверов, которая бесплатно раздаёт дистрибутивы
+                                    Linux, пакеты и исходный код открытых проектов. Никакой рекламы, трекинга и платных
+                                    тарифов: только быстрые и проверяемые загрузки, поддерживаемые сообществом.
+                                </p>
+                                <div class="hero-actions">
+                                    <a class="btn btn-primary" href="#docs" data-open-modal="join">
+                                        <img src="assets/icons/lightning.svg" alt="" width="18" height="18">
+                                        Стать узлом сети
+                                    </a>
+                                    <a class="btn" href="#status">
+                                        <img src="assets/icons/activity.svg" alt="" width="18" height="18">
+                                        Статус серверов
+                                    </a>
+                                </div>
+
+                                <!-- Интерактивная консоль -->
+                                <div class="term" id="term">
+                                    <div class="term-output" id="term-output" role="log" aria-live="polite" aria-label="Вывод консоли"></div>
+                                    <form class="term-line" id="term-form" autocomplete="off">
+                                        <label class="term-prompt" for="term-input">guest@commons:~$</label>
+                                        <input class="term-input" id="term-input" type="text" spellcheck="false" autocapitalize="off" autocomplete="off" enterkeyhint="send" aria-label="Введите команду, например help">
+                                    </form>
+                                </div>
+                            </div>
+
+                            <!-- Вкладка 2: SYSLOG -->
+                            <div class="tab-panel" id="tab-log" role="tabpanel" aria-labelledby="tabbtn-log" hidden>
+                                <pre class="syslog" id="syslog" aria-live="off"></pre>
+                            </div>
+
+                            <!-- Вкладка 3: HELP -->
+                            <div class="tab-panel" id="tab-help" role="tabpanel" aria-labelledby="tabbtn-help" hidden>
+                                <h2 class="help-title">Справка по консоли</h2>
+                                <p class="help-text">Кликните в область консоли на вкладке MAIN SHELL и введите команду. Доступно:</p>
+                                <table class="edex-table help-table">
+                                    <thead><tr><th>Команда</th><th>Описание</th></tr></thead>
+                                    <tbody>
+                                        <tr><td><kbd>help</kbd></td><td>Список команд</td></tr>
+                                        <tr><td><kbd>about</kbd></td><td>Коротко о проекте</td></tr>
+                                        <tr><td><kbd>status</kbd></td><td>Сводка по узлам сети</td></tr>
+                                        <tr><td><kbd>docs</kbd></td><td>Перейти к документации</td></tr>
+                                        <tr><td><kbd>join</kbd></td><td>Как подключить свой сервер</td></tr>
+                                        <tr><td><kbd>neofetch</kbd></td><td>Информация о браузере</td></tr>
+                                        <tr><td><kbd>date</kbd>, <kbd>whoami</kbd>, <kbd>echo</kbd></td><td>Классика</td></tr>
+                                        <tr><td><kbd>sfx on</kbd> / <kbd>sfx off</kbd></td><td>Звуки интерфейса</td></tr>
+                                        <tr><td><kbd>reboot</kbd></td><td>Показать анимацию загрузки ещё раз</td></tr>
+                                        <tr><td><kbd>clear</kbd></td><td>Очистить экран</td></tr>
+                                    </tbody>
+                                </table>
+                                <p class="help-text">Клавиши <kbd>↑</kbd> / <kbd>↓</kbd> листают историю, <kbd>Tab</kbd> дополняет команду.</p>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Правая колонка: PANEL / NETWORK (mod_column_right) -->
+                <aside class="mod-column mod-column-right reveal-fade" aria-label="Сетевая панель">
+                    <h3 class="panel-title"><span>PANEL</span><span>NETWORK</span></h3>
+                    <div class="column-stack reveal-stagger">
+
+                        <!-- mod_netstat -->
+                        <div class="mod mod-netstat">
+                            <h4 class="mod-head">NETWORK STATUS <i>Interface: browser</i></h4>
+                            <div class="netstat-grid">
+                                <div class="kv"><h5 class="k">STATE</h5><p class="v" id="net-state">ONLINE</p></div>
+                                <div class="kv netstat-wide"><h5 class="k">CONNECTION</h5><p class="v" id="net-type">—</p></div>
+                                <div class="kv"><h5 class="k">PING</h5><p class="v" id="net-ping">-- ms</p></div>
+                            </div>
+                        </div>
+
+                        <!-- mod_conninfo -->
+                        <div class="mod mod-conninfo" id="mod_conninfo">
+                            <h4 class="mod-head">NETWORK TRAFFIC <i>UP / DOWN, MB/S</i></h4>
+                            <p class="conninfo-total"><span>TOTAL</span><i id="net-total">0 MB OUT, 0 MB IN</i></p>
+                            <canvas id="conn-canvas-top" class="dashed-y" aria-hidden="true"></canvas>
+                            <canvas id="conn-canvas-bottom" class="dashed-y" aria-hidden="true"></canvas>
+                            <h3 class="offline-label">OFFLINE</h3>
+                        </div>
+
+                        <!-- mod_globe (адаптация: радар узлов вместо 3D-глобуса) -->
+                        <div class="mod mod-globe" id="mod_globe">
+                            <h4 class="mod-head">WORLD VIEW <i>NODE RADAR</i></h4>
+                            <p class="globe-sub"><span>EU-CENTRAL</span><i id="radar-info">8 ENDPOINTS</i></p>
+                            <canvas id="radar-canvas" aria-hidden="true"></canvas>
+                        </div>
+
+                        <!-- mod_toplist -->
+                        <div class="mod mod-toplist">
+                            <h4 class="mod-head">TOP MIRRORS <i>PID | NAME | CPU | MEM</i></h4>
+                            <table class="toplist" id="toplist">
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+        </section>
+
+        <!-- ===================== О ПРОЕКТЕ ===================== -->
+        <section class="section container" id="about" aria-labelledby="about-title">
+            <h2 class="panel-title section-title" id="about-title"><span>О проекте</span><span>MODULE // 01</span></h2>
+
+            <div class="about-intro on-scroll">
+                <div class="about-text">
+                    <p class="lead">
+                        Мы — небольшое сообщество системных администраторов, студентов и энтузиастов.
+                        Каждый участник выделяет часть ресурсов своего сервера, чтобы свободное ПО
+                        скачивалось быстро и надёжно в любой точке региона.
+                    </p>
+                    <p>
+                        Проект не имеет коммерческой цели: мы не продаём трафик, не показываем рекламу
+                        и не собираем данные пользователей. Инфраструктура описана в открытом репозитории,
+                        а любой желающий может проверить, как она устроена, и предложить улучшения.
+                    </p>
+                </div>
+                <div class="mod about-stats">
+                    <div class="kv"><h3 class="k">УЗЛОВ</h3><p class="v big" data-count="8">0</p></div>
+                    <div class="kv"><h3 class="k">СТРАН</h3><p class="v big" data-count="7">0</p></div>
+                    <div class="kv"><h3 class="k">ТБ / МЕСЯЦ</h3><p class="v big" data-count="412">0</p></div>
+                    <div class="kv"><h3 class="k">ВОЛОНТЁРОВ</h3><p class="v big" data-count="36">0</p></div>
+                </div>
+            </div>
+
+            <div class="card-grid">
+                <div class="card-wrap glow on-scroll">
+                    <article class="card aug-card" augmented-ui="tl-clip br-clip exe">
+                        <header class="card-head"><img src="assets/icons/user.svg" alt="" width="34" height="34"><span class="card-id">0x01</span></header>
+                        <h3>Волонтёрские узлы</h3>
+                        <p>Серверы предоставляют университеты, хакспейсы и частные лица. Любой узел можно подключить или отключить без простоя сети.</p>
+                        <footer class="card-foot">STATUS: <b>ACTIVE</b></footer>
+                    </article>
+                </div>
+                <div class="card-wrap glow on-scroll">
+                    <article class="card aug-card" augmented-ui="tl-clip br-clip exe">
+                        <header class="card-head"><img src="assets/icons/lock.svg" alt="" width="34" height="34"><span class="card-id">0x02</span></header>
+                        <h3>Без рекламы и трекинга</h3>
+                        <p>Никаких счётчиков, cookie-баннеров и сторонних скриптов. Логи хранятся только в агрегированном виде и удаляются через 7 дней.</p>
+                        <footer class="card-foot">PRIVACY: <b>ENFORCED</b></footer>
+                    </article>
+                </div>
+                <div class="card-wrap glow on-scroll">
+                    <article class="card aug-card" augmented-ui="tl-clip br-clip exe">
+                        <header class="card-head"><img src="assets/icons/checkmark.svg" alt="" width="34" height="34"><span class="card-id">0x03</span></header>
+                        <h3>Проверка целостности</h3>
+                        <p>Каждая синхронизация сверяет контрольные суммы и подписи с апстримом. Повреждённый файл никогда не попадёт к пользователю.</p>
+                        <footer class="card-foot">SHA-256: <b>VERIFIED</b></footer>
+                    </article>
+                </div>
+                <div class="card-wrap glow on-scroll">
+                    <article class="card aug-card" augmented-ui="tl-clip br-clip exe">
+                        <header class="card-head"><img src="assets/icons/wireless.svg" alt="" width="34" height="34"><span class="card-id">0x04</span></header>
+                        <h3>Гео-маршрутизация</h3>
+                        <p>Запрос автоматически уходит на ближайший живой узел. Если сервер недоступен, балансировщик переключает трафик за секунды.</p>
+                        <footer class="card-foot">FAILOVER: <b>&lt; 5 S</b></footer>
+                    </article>
+                </div>
+                <div class="card-wrap glow on-scroll">
+                    <article class="card aug-card" augmented-ui="tl-clip br-clip exe">
+                        <header class="card-head"><img src="assets/icons/code.svg" alt="" width="34" height="34"><span class="card-id">0x05</span></header>
+                        <h3>Открытый код</h3>
+                        <p>Конфигурации, скрипты синхронизации и этот сайт опубликованы под GPL-3.0. Форкайте, проверяйте, присылайте pull request’ы.</p>
+                        <footer class="card-foot">LICENSE: <b>GPL-3.0</b></footer>
+                    </article>
+                </div>
+                <div class="card-wrap glow on-scroll">
+                    <article class="card aug-card" augmented-ui="tl-clip br-clip exe">
+                        <header class="card-head"><img src="assets/icons/heart.svg" alt="" width="34" height="34"><span class="card-id">0x06</span></header>
+                        <h3>Поддержка сообществом</h3>
+                        <p>Расходы на домен и мониторинг покрываются небольшими пожертвованиями участников. Отчёт о каждой потраченной копейке — публичный.</p>
+                        <footer class="card-foot">BUDGET: <b>TRANSPARENT</b></footer>
+                    </article>
+                </div>
+            </div>
+
+            <!-- Принципы — в стиле клавиш экранной клавиатуры eDEX-UI -->
+            <div class="keys-block on-scroll">
+                <h3 class="panel-title"><span>PRINCIPLES</span><span>KEYBOARD // INPUT</span></h3>
+                <div class="key-row" id="key-row">
+                    <button class="keycap" type="button" data-desc="Мы не показываем рекламу и не продаём места под баннеры — ни на сайте, ни на зеркалах."><small>F1</small>NO ADS</button>
+                    <button class="keycap" type="button" data-desc="Никаких аналитических счётчиков, пикселей и сторонних скриптов. Этот сайт не делает внешних запросов."><small>F2</small>NO TRACKING</button>
+                    <button class="keycap keycap-wide" type="button" data-desc="Вся инфраструктура описана в открытом коде: конфигурации, скрипты синхронизации, мониторинг."><small>F3</small>OPEN SOURCE</button>
+                    <button class="keycap" type="button" data-desc="Узлы и поддержка держатся на добровольцах: админах, студентах и хакспейсах."><small>F4</small>VOLUNTEER-RUN</button>
+                    <button class="keycap" type="button" data-desc="У проекта нет коммерческой цели. Пожертвования идут только на домен и мониторинг, отчёт — публичный."><small>F5</small>NON-PROFIT</button>
+                    <button class="keycap" type="button" data-desc="Код сайта распространяется под GPL-3.0, как и интерфейс eDEX-UI, из которого перенесён дизайн."><small>F6</small>GPL-3.0</button>
+                </div>
+                <p class="key-caption" id="key-caption" aria-live="polite"><span class="prompt-sign">&gt;</span> Нажмите на клавишу, чтобы прочитать принцип.</p>
+            </div>
+        </section>
+
+        <!-- ===================== СТАТУС СЕРВЕРОВ ===================== -->
+        <section class="section container" id="status" aria-labelledby="status-title">
+            <h2 class="panel-title section-title" id="status-title"><span>Статус серверов</span><span>MODULE // 02</span></h2>
+
+            <div class="status-summary on-scroll">
+                <div class="mod summary-item">
+                    <h3 class="mod-head">NODES ONLINE <i>сейчас</i></h3>
+                    <p class="summary-value" id="sum-online">-/-</p>
+                </div>
+                <div class="mod summary-item">
+                    <h3 class="mod-head">AVG PING <i>до узлов</i></h3>
+                    <p class="summary-value" id="sum-ping">-- ms</p>
+                </div>
+                <div class="mod summary-item">
+                    <h3 class="mod-head">THROUGHPUT <i>суммарно</i></h3>
+                    <p class="summary-value" id="sum-traffic">-- Gb/s</p>
+                </div>
+                <div class="mod summary-item">
+                    <h3 class="mod-head">UPTIME <i>30 дней</i></h3>
+                    <p class="summary-value">99.97%</p>
+                </div>
+            </div>
+
+            <div class="status-wrap glow on-scroll">
+                <div class="status-panel aug-frame" augmented-ui="tr-clip bl-clip exe">
+                    <div class="status-toolbar">
+                        <p><span class="dot pulse" aria-hidden="true"></span>LIVE TELEMETRY · обновлено <b id="status-updated">--:--:--</b></p>
+                        <div class="legend" aria-label="Легенда">
+                            <span class="badge badge-online">ONLINE</span>
+                            <span class="badge badge-degraded">DEGRADED</span>
+                            <span class="badge badge-offline">OFFLINE</span>
+                        </div>
+                    </div>
+                    <div class="table-scroll">
+                        <table class="edex-table status-table" id="status-table">
+                            <caption class="visually-hidden">Состояние узлов сети NODE//COMMONS</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Узел</th>
+                                    <th scope="col">Локация</th>
+                                    <th scope="col">Статус</th>
+                                    <th scope="col">Ping</th>
+                                    <th scope="col">Нагрузка</th>
+                                    <th scope="col">Трафик</th>
+                                    <th scope="col">Синхр.</th>
+                                    <th scope="col">Аптайм</th>
+                                </tr>
+                            </thead>
+                            <tbody id="status-body"></tbody>
+                        </table>
+                    </div>
+                    <p class="status-note">
+                        <img src="assets/icons/info.svg" alt="" width="16" height="16">
+                        Демонстрационная телеметрия: значения генерируются в браузере. Подключите собственный
+                        API мониторинга, заменив функцию <code>tickTelemetry()</code> в <code>js/ui-effects.js</code>.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================== ДОКУМЕНТАЦИЯ ===================== -->
+        <section class="section container" id="docs" aria-labelledby="docs-title">
+            <h2 class="panel-title section-title" id="docs-title"><span>Документация</span><span>MODULE // 03</span></h2>
+
+            <div class="docs-grid">
+                <!-- section#filesystem -->
+                <div class="filesystem on-scroll">
+                    <h3 class="panel-title"><span>FILESYSTEM</span><span id="fs-path">/srv/commons/docs</span></h3>
+                    <div class="fs-container" id="fs-container">
+                        <button class="fs-item" type="button" data-doc="readme"><img src="assets/icons/readme.svg" alt="" width="42" height="42"><span>README.md</span></button>
+                        <button class="fs-item" type="button" data-doc="quickstart"><img src="assets/icons/markdown.svg" alt="" width="42" height="42"><span>quickstart.md</span></button>
+                        <button class="fs-item" type="button" data-doc="join"><img src="assets/icons/dir.svg" alt="" width="42" height="42"><span>join-network/</span></button>
+                        <button class="fs-item" type="button" data-doc="rsync"><img src="assets/icons/config.svg" alt="" width="42" height="42"><span>rsyncd.conf</span></button>
+                        <button class="fs-item" type="button" data-doc="nginx"><img src="assets/icons/shell.svg" alt="" width="42" height="42"><span>nginx.conf</span></button>
+                        <button class="fs-item" type="button" data-doc="api"><img src="assets/icons/json.svg" alt="" width="42" height="42"><span>status-api.json</span></button>
+                        <button class="fs-item" type="button" data-doc="faq"><img src="assets/icons/file.svg" alt="" width="42" height="42"><span>FAQ.md</span></button>
+                        <button class="fs-item" type="button" data-doc="license"><img src="assets/icons/book.svg" alt="" width="42" height="42"><span>LICENSE</span></button>
+                    </div>
+                    <p class="fs-hint">Нажмите на файл, чтобы открыть его.</p>
+                </div>
+
+                <!-- Быстрый старт -->
+                <div class="quickstart on-scroll">
+                    <h3 class="panel-title"><span>QUICK START</span><span>~/mirror</span></h3>
+                    <div class="mod qs-mod">
+                        <h4 class="mod-head">1. Используйте зеркало <i>apt / Debian</i></h4>
+<pre class="code"><code>deb https://mirror.commons.example/debian bookworm main
+deb https://mirror.commons.example/debian-security bookworm-security main</code></pre>
+                    </div>
+                    <div class="mod qs-mod">
+                        <h4 class="mod-head">2. Проверьте загрузку <i>SHA-256</i></h4>
+<pre class="code"><code>curl -O https://mirror.commons.example/iso/distro.iso
+curl -O https://mirror.commons.example/iso/SHA256SUMS
+sha256sum -c SHA256SUMS --ignore-missing</code></pre>
+                    </div>
+                    <div class="mod qs-mod">
+                        <h4 class="mod-head">3. Станьте узлом <i>от 1 Гбит/с</i></h4>
+                        <p class="qs-text">Нужен сервер с 2&nbsp;ТБ свободного места и стабильным каналом. Вся настройка занимает около часа.</p>
+                        <button class="btn" type="button" data-open-modal="join">
+                            <img src="assets/icons/external.svg" alt="" width="18" height="18">
+                            Инструкция по подключению
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- ===================== ПОДВАЛ ===================== -->
+    <footer class="site-footer">
+        <div class="container">
+            <h2 class="panel-title"><span>NODE//COMMONS</span><span>EOF</span></h2>
+            <div class="footer-grid">
+                <div class="footer-about">
+                    <p class="brand footer-brand">
+                        <img src="assets/icons/terminal.svg" alt="" width="22" height="22">
+                        <span class="brand-name">NODE<em>//</em>COMMONS</span>
+                    </p>
+                    <p>Некоммерческая волонтёрская сеть зеркал для свободного программного обеспечения.</p>
+                </div>
+                <nav class="footer-col" aria-label="Навигация в подвале">
+                    <h3>Навигация</h3>
+                    <ul>
+                        <li><a href="#home">Главная</a></li>
+                        <li><a href="#about">О проекте</a></li>
+                        <li><a href="#status">Статус серверов</a></li>
+                        <li><a href="#docs">Документация</a></li>
+                    </ul>
+                </nav>
+                <div class="footer-col">
+                    <h3>Проект</h3>
+                    <ul>
+                        <li><a href="https://github.com/Stool12312356/123" target="_blank" rel="noopener noreferrer">Исходный код сайта</a></li>
+                        <li><a href="LICENSE">Лицензия GPL-3.0</a></li>
+                        <li><a href="#docs" data-open-modal="join">Подключить сервер</a></li>
+                        <li><button class="link-btn" type="button" data-doc="faq">Частые вопросы</button></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="footer-bottom">
+                <p>&copy; <span id="year">2026</span> NODE//COMMONS. Некоммерческий проект. Код сайта распространяется под лицензией <a href="LICENSE">GPL-3.0</a>.</p>
+                <p class="credit">
+                    <img src="assets/img/edex-logo.svg" alt="" width="18" height="18">
+                    <span>UI inspired by &amp; adapted from <a href="https://github.com/GitSquared/edex-ui" target="_blank" rel="noopener noreferrer">eDEX-UI</a> (GPL-3.0)</span>
+                </p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="js/ui-effects.js" defer></script>
+</body>
+</html>
