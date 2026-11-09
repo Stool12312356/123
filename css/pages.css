@@ -2097,6 +2097,14 @@ html[data-hud-scale="large"] body {
     .stack-table td:first-child {
         background: var(--c-20);
     }
+    /* HUD загрузки в карточке сборки — отдельной строкой на всю ширину */
+    .stack-table td.build-cell {
+        flex-wrap: wrap;
+    }
+    .build-cell .dl-hud {
+        flex: 1 0 100%;
+        margin-top: 4px;
+    }
     .access-table td:last-child {
         width: 100%;
         text-align: right;

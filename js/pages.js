@@ -272,6 +272,7 @@
 
             delete this.active[p.id];
             btns().forEach(b => { b.classList.remove("is-running"); b.innerHTML = dlButtonInner(p, Auth.get()); });
+            document.dispatchEvent(new CustomEvent("nexus:dl-idle", { detail: { id: p.id } }));
 
             if (job.cancelled) {
                 stage("CANCELLED");
@@ -482,11 +483,16 @@
         });
 
         // Вход / выход в другой вкладке — перерисовать допуск
-        document.addEventListener("nexus:auth", () => {
-            if (Object.keys(Downloads.active).length) return;
+        // Если в момент входа/выхода идёт загрузка — перерисуем, когда она закончится
+        let stale = false;
+        const refresh = () => {
+            if (Object.keys(Downloads.active).length) { stale = true; return; }
+            stale = false;
             render();
             apply(current, true);
-        });
+        };
+        document.addEventListener("nexus:auth", refresh);
+        document.addEventListener("nexus:dl-idle", () => { if (stale) setTimeout(refresh, 2500); });
 
         const fromHash = () => {
             let h = decodeURIComponent(window.location.hash.replace("#", ""));
@@ -668,7 +674,7 @@
             wrap.innerHTML = BUILDS.map(p => {
                 const ok = canDownload(p, s);
                 return `<tr data-hud="${p.id}">
-                    <td data-label="Сборка"><b>${escapeHtml(p.title)}</b><br><span class="muted">${escapeHtml(p.version)} · ${escapeHtml(STATUSES[p.status].short)}</span>${hudHtml()}</td>
+                    <td data-label="Сборка" class="build-cell"><span class="build-name"><b>${escapeHtml(p.title)}</b><br><span class="muted">${escapeHtml(p.version)} · ${escapeHtml(STATUSES[p.status].short)}</span></span>${hudHtml()}</td>
                     <td data-label="Размер">${escapeHtml(p.size)}</td>
                     <td data-label="Допуск">${p.access ? "L" + p.access : "—"}</td>
                     <td data-label="Действие">${ok
@@ -678,7 +684,14 @@
             }).join("");
         };
         render();
-        document.addEventListener("nexus:auth", () => { if (!Object.keys(Downloads.active).length) render(); });
+        let stale = false;
+        const refresh = () => {
+            if (Object.keys(Downloads.active).length) { stale = true; return; }
+            stale = false;
+            render();
+        };
+        document.addEventListener("nexus:auth", refresh);
+        document.addEventListener("nexus:dl-idle", () => { if (stale) setTimeout(refresh, 2500); });
 
         wrap.addEventListener("click", e => {
             const btn = e.target.closest("[data-dl]");

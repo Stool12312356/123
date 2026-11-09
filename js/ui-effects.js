@@ -1298,6 +1298,8 @@
         lastFocus: null,
         open(opts) {
             this.close(true);
+            // Окно не должно оказаться под терминалом-оверлеем (например, «open <id>» на странице проектов)
+            if (Terminal.isOpen) Terminal.close();
             this.lastFocus = document.activeElement;
 
             const backdrop = document.createElement("div");
@@ -1519,6 +1521,7 @@
                 </div>`;
             document.body.appendChild(root);
             this.root = root;
+            $$("[data-terminal]").forEach(b => b.setAttribute("aria-controls", "term-overlay"));
             this.out = $("#term-output", root);
             this.input = $("#term-input", root);
 
