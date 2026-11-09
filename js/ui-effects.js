@@ -893,6 +893,12 @@
         const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
 
         set("sys-type", os.short);
+        // mod_hardwareInspector (главная)
+        set("hw-platform", `${os.full} / ${detectBrowser()}`);
+        set("hw-cores", navigator.hardwareConcurrency ? String(navigator.hardwareConcurrency) : "N/A");
+        set("hw-screen", `${window.screen.width}x${window.screen.height}`);
+        set("hw-lang", (navigator.language || "—").toUpperCase());
+
         const tick = () => {
             const d = new Date();
             set("sys-year", String(d.getFullYear()));
@@ -920,6 +926,79 @@
         $$(".js-year").forEach(el => { el.textContent = String(new Date().getFullYear()); });
     }
 
+    /* ================================================================
+     * Линейный график на canvas (аналог smoothie.js в eDEX-UI)
+     * ================================================================ */
+    class LineChart {
+        static redrawAll() { LineChart.all.forEach(c => c.draw()); }
+        constructor(canvas, opts) {
+            this.canvas = canvas;
+            this.ctx = canvas.getContext("2d");
+            this.opts = Object.assign({ series: 1, points: 60, min: 0, max: 100, invert: false, fill: false, alphas: [1, 0.55] }, opts || {});
+            this.data = [];
+            for (let s = 0; s < this.opts.series; s++) {
+                this.data.push(new Array(this.opts.points).fill(this.opts.min));
+            }
+            this.resize();
+            LineChart.all.push(this);
+            if ("ResizeObserver" in window) {
+                new ResizeObserver(() => { this.resize(); this.draw(); }).observe(canvas);
+            } else {
+                window.addEventListener("resize", () => { this.resize(); this.draw(); });
+            }
+        }
+        resize() {
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            const w = Math.max(1, Math.round(this.canvas.clientWidth * dpr));
+            const h = Math.max(1, Math.round(this.canvas.clientHeight * dpr));
+            if (this.canvas.width !== w || this.canvas.height !== h) {
+                this.canvas.width = w;
+                this.canvas.height = h;
+            }
+            this.dpr = dpr;
+        }
+        push(values) {
+            values.forEach((v, i) => {
+                if (!this.data[i]) return;
+                this.data[i].push(v);
+                this.data[i].shift();
+            });
+        }
+        draw() {
+            const { ctx, canvas, opts } = this;
+            if (!ctx) return;
+            const w = canvas.width;
+            const h = canvas.height;
+            ctx.clearRect(0, 0, w, h);
+            const step = w / (opts.points - 1);
+            const p = 2 * this.dpr;
+            const toY = v => {
+                const n = (clamp(v, opts.min, opts.max) - opts.min) / (opts.max - opts.min);
+                return opts.invert ? p + n * (h - p * 2) : h - p - n * (h - p * 2);
+            };
+            this.data.forEach((series, si) => {
+                ctx.beginPath();
+                series.forEach((v, i) => {
+                    const x = i * step;
+                    const y = toY(v);
+                    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                });
+                ctx.strokeStyle = rgba(opts.alphas[si] !== undefined ? opts.alphas[si] : 0.6);
+                ctx.lineWidth = 1.2 * this.dpr;
+                ctx.stroke();
+                if (opts.fill && si === 0) {
+                    ctx.lineTo(w, opts.invert ? 0 : h);
+                    ctx.lineTo(0, opts.invert ? 0 : h);
+                    ctx.closePath();
+                    ctx.fillStyle = rgba(0.12);
+                    ctx.fill();
+                }
+            });
+        }
+    }
+    LineChart.all = [];
+    document.addEventListener("nexus:theme", () => LineChart.redrawAll());
+
     /* Случайное блуждание в пределах [min, max] */
     function walker(start, min, max, stepSize, spikeChance) {
         let v = start;
@@ -932,7 +1011,114 @@
     }
 
     /* ================================================================
-     * Сеть (netstat.class.js)
+     * BUILD FARM / CPU (cpuinfo.class.js) — синтетическая нагрузка + реальный FPS
+     * ================================================================ */
+    function initCpu() {
+        const c1 = $("#cpu-canvas-1");
+        const c2 = $("#cpu-canvas-2");
+        if (!c1 || !c2) return;
+        const chart1 = new LineChart(c1, { series: 2, points: 50 });
+        const chart2 = new LineChart(c2, { series: 2, points: 50 });
+        const cores = [walker(48, 2, 98, 8, 0.05), walker(56, 2, 98, 8, 0.05), walker(22, 2, 95, 6, 0.03), walker(32, 2, 95, 8, 0.05)];
+        const avg1 = $("#cpu-avg1"), avg2 = $("#cpu-avg2");
+        const fpsEl = $("#cpu-fps"), loadEl = $("#cpu-load"), maxEl = $("#cpu-max"), tasksEl = $("#cpu-tasks");
+        let visible = true;
+        let max = 0;
+        let tasks = randInt(1800, 2600);
+
+        whenVisible(c1.closest(".mod"), v => { visible = v; });
+
+        let frames = 0;
+        let lastFpsTime = performance.now();
+        const countFrame = now => {
+            frames++;
+            if (now - lastFpsTime >= 1000) {
+                if (fpsEl) fpsEl.textContent = String(Math.round(frames * 1000 / (now - lastFpsTime)));
+                frames = 0;
+                lastFpsTime = now;
+            }
+            requestAnimationFrame(countFrame);
+        };
+        requestAnimationFrame(countFrame);
+
+        for (let i = 0; i < 50; i++) {
+            const v = cores.map(f => f());
+            chart1.push([v[0], v[1]]);
+            chart2.push([v[2], v[3]]);
+        }
+        chart1.draw();
+        chart2.draw();
+
+        setInterval(() => {
+            const v = cores.map(f => f());
+            chart1.push([v[0], v[1]]);
+            chart2.push([v[2], v[3]]);
+            const load = (v[0] + v[1] + v[2] + v[3]) / 4;
+            max = Math.max(max * 0.995, load);
+            tasks = Math.max(0, tasks - randInt(0, 12));
+            if (tasks < 50) tasks = randInt(1800, 2600);
+            if (visible) {
+                chart1.draw();
+                chart2.draw();
+                if (avg1) avg1.textContent = String(Math.round((v[0] + v[1]) / 2));
+                if (avg2) avg2.textContent = String(Math.round((v[2] + v[3]) / 2));
+                if (loadEl) loadEl.textContent = Math.round(load) + "%";
+                if (maxEl) maxEl.textContent = Math.round(max) + "%";
+                if (tasksEl) tasksEl.textContent = String(tasks);
+            }
+        }, 500);
+    }
+
+    /* ================================================================
+     * Память (ramwatcher.class.js) — 440 точек, перемешанных случайно
+     * ================================================================ */
+    function initRam() {
+        const map = $("#ram-pointmap");
+        if (!map) return;
+        const POINTS = 440;
+        const points = [];
+        const frag = document.createDocumentFragment();
+        for (let i = 0; i < POINTS; i++) {
+            const p = document.createElement("div");
+            p.className = "ram-point free";
+            frag.appendChild(p);
+            points.push(p);
+        }
+        map.appendChild(frag);
+        for (let i = points.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            const t = points[i]; points[i] = points[j]; points[j] = t;
+        }
+
+        const totalGiB = 64;
+        const used = walker(0.46, 0.25, 0.82, 0.025);
+        const avail = walker(0.14, 0.06, 0.22, 0.01);
+        const swap = walker(0.18, 0.02, 0.6, 0.02);
+        const info = $("#ram-info");
+        const bar = $("#ram-swapbar");
+        const swapText = $("#ram-swaptext");
+        const swapTotal = 16;
+
+        const update = () => {
+            const u = used();
+            const a = avail();
+            const active = Math.round(POINTS * u);
+            const available = Math.round(POINTS * Math.min(1 - u, a));
+            for (let i = 0; i < POINTS; i++) {
+                const cls = i < active ? "ram-point active" : (i < active + available ? "ram-point available" : "ram-point free");
+                if (points[i].className !== cls) points[i].className = cls;
+            }
+            if (info) info.textContent = `USING ${(totalGiB * u).toFixed(1)} OUT OF ${totalGiB.toFixed(1)} GiB`;
+            const s = swap();
+            if (bar) { bar.value = Math.round(s * 100); bar.textContent = Math.round(s * 100) + "%"; }
+            if (swapText) swapText.textContent = (swapTotal * s).toFixed(1) + " GiB";
+        };
+        update();
+        setInterval(update, 1500);
+    }
+
+    /* ================================================================
+     * Сеть (netstat.class.js + conninfo.class.js)
      * ================================================================ */
     const Net = { online: navigator.onLine !== false };
 
@@ -942,12 +1128,15 @@
         const pingEl = $("#net-ping");
         const uplinkState = $("#uplink-state");
         const uplinkDot = $("#uplink-dot");
+        const conn = $("#mod_conninfo");
+        const totalEl = $("#net-total");
 
         const paint = () => {
             const label = Net.online ? "ONLINE" : "OFFLINE";
             if (stateEl) stateEl.textContent = label;
             if (uplinkState) uplinkState.textContent = label;
             if (uplinkDot) uplinkDot.classList.toggle("is-offline", !Net.online);
+            if (conn) conn.classList.toggle("offline", !Net.online);
         };
         const applyOnline = () => {
             Net.online = navigator.onLine !== false;
@@ -973,13 +1162,45 @@
         updateType();
         if (nc && typeof nc.addEventListener === "function") nc.addEventListener("change", updateType);
 
-        if (!pingEl) return;
-        const ping = walker(24, 9, 80, 4, 0.03);
+        if (pingEl) {
+            const ping = walker(24, 9, 80, 4, 0.03);
+            setInterval(() => {
+                if (!Net.online) { pingEl.textContent = "-- ms"; return; }
+                const rtt = nc && nc.rtt ? nc.rtt / 2 + ping() / 2 : ping();
+                pingEl.textContent = Math.round(rtt) + " ms";
+            }, 2000);
+        }
+
+        // mod_conninfo: графики трафика UP / DOWN (главная)
+        const top = $("#conn-canvas-top");
+        const bottom = $("#conn-canvas-bottom");
+        if (!top || !bottom) return;
+        const up = new LineChart(top, { series: 1, points: 70, max: 2, fill: true });
+        const down = new LineChart(bottom, { series: 1, points: 70, max: 12, fill: true, invert: true });
+        const upW = walker(0.6, 0.02, 1.9, 0.18, 0.04);
+        const downW = walker(4, 0.1, 11.5, 0.9, 0.05);
+        let sentMB = 0, recvMB = 0;
+        let visible = true;
+        whenVisible(conn, v => { visible = v; });
+        for (let i = 0; i < 70; i++) {
+            up.push([Net.online ? upW() : 0]);
+            down.push([Net.online ? downW() : 0]);
+        }
+        up.draw();
+        down.draw();
         setInterval(() => {
-            if (!Net.online) { pingEl.textContent = "-- ms"; return; }
-            const rtt = nc && nc.rtt ? nc.rtt / 2 + ping() / 2 : ping();
-            pingEl.textContent = Math.round(rtt) + " ms";
-        }, 2000);
+            const u = Net.online ? upW() : 0;
+            const d = Net.online ? downW() : 0;
+            sentMB += u * 0.5;
+            recvMB += d * 0.5;
+            up.push([u]);
+            down.push([d]);
+            if (visible) {
+                up.draw();
+                down.draw();
+                if (totalEl) totalEl.textContent = `${Math.round(sentMB)} MB OUT, ${Math.round(recvMB)} MB IN`;
+            }
+        }, 500);
     }
 
     /* ================================================================
@@ -1082,6 +1303,43 @@
     }
 
     /* TOP SERVERS (toplist.class.js) — кабинет */
+    /* Статус-бары нод (главная): нагрузка CPU и состояние каждого сервера */
+    function initNodeBars() {
+        const list = $("#node-bars");
+        if (!list) return;
+        list.innerHTML = SERVERS.map(n => `
+            <li class="node-bar" data-node="${escapeHtml(n.id)}">
+                <span class="node-name">${escapeHtml(n.id)}</span>
+                <span class="node-track"><i></i></span>
+                <span class="node-val">--</span>
+            </li>`).join("");
+        const rows = SERVERS.map(n => {
+            const li = list.querySelector(`[data-node="${n.id}"]`);
+            return { n, li, bar: li.querySelector("i"), val: li.querySelector(".node-val") };
+        });
+        const render = () => {
+            rows.forEach(({ n, li, bar, val }) => {
+                const up = Telemetry.isUp(n);
+                const cpu = up ? Math.round(n.cpu) : 0;
+                bar.style.width = cpu + "%";
+                val.textContent = up ? cpu + "%" : (n.status === "offline" ? "OFF" : "DOWN");
+                li.classList.toggle("is-down", !up);
+                li.classList.toggle("is-hot", up && cpu >= 80);
+            });
+        };
+        Telemetry.on(render);
+        render();
+    }
+
+    /* Подпись текущей темы на плитке быстрого доступа */
+    function initQuickTheme() {
+        const el = $("#quick-theme");
+        if (!el) return;
+        const paint = () => { el.textContent = `тема: ${Theme.current()}`; };
+        paint();
+        document.addEventListener("nexus:theme", paint);
+    }
+
     function initToplist() {
         const tbody = $("#toplist tbody");
         if (!tbody) return;
@@ -2101,6 +2359,10 @@
         Syslog.init();
         initNetwork();
         initSummary();
+        initCpu();
+        initRam();
+        initNodeBars();
+        initQuickTheme();
         initToplist();
         initRadar();
         Tabs.init();

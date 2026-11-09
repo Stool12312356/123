@@ -11,11 +11,11 @@
     <!-- Зависимость оригинального eDEX-UI: augmented-ui 1.1.2 (BSD-2-Clause) — скошенные рамки -->
     <link rel="stylesheet" href="assets/vendor/augmented-ui/augmented.css">
     <!-- Тема blade, перенесённая из eDEX-UI -->
-    <link rel="stylesheet" href="css/blade-theme.css?v=20261109-4">
+    <link rel="stylesheet" href="css/blade-theme.css?v=20261109-7">
     <!-- Адаптивная сетка: шапка, подвал, модули, терминал -->
-    <link rel="stylesheet" href="css/layout.css?v=20261109-4">
+    <link rel="stylesheet" href="css/layout.css?v=20261109-7">
     <!-- Компоненты страниц: главная, каталог, формы, кабинет, тосты -->
-    <link rel="stylesheet" href="css/pages.css?v=20261109-4">
+    <link rel="stylesheet" href="css/pages.css?v=20261109-7">
 
     <script>
         /* Ранняя инициализация: класс js и сохранённые настройки HUD (без мигания) */
@@ -98,50 +98,194 @@
     </header>
 
     <main id="main">
-        <!-- ===================== HERO: ядро экосистемы ===================== -->
-        <section class="container home-hero" aria-labelledby="hero-title">
-            <div class="hero-wrap glow">
-                <div class="hero-panel aug-frame shell-anim" augmented-ui="tl-clip br-clip exe">
-                    <h2 class="panel-title shell-title"><span>NEXUS // CORE</span><span>NON-COMMERCIAL · v2.1</span></h2>
+        <!-- ===================== HERO: командный центр (3 колонки eDEX-UI) ===================== -->
+        <section class="container home-hero hud-hero" aria-labelledby="hero-title">
+            <div class="hero-grid">
 
-                    <!-- Декоративная HUD-схема (чистый SVG, без растровых картинок) -->
-                    <svg class="hero-schematic" viewBox="0 0 400 400" aria-hidden="true" focusable="false">
-                        <circle cx="200" cy="200" r="190" class="s-line"/>
-                        <circle cx="200" cy="200" r="150" class="s-line s-dash"/>
-                        <circle cx="200" cy="200" r="104" class="s-line"/>
-                        <circle cx="200" cy="200" r="58" class="s-line s-dash"/>
-                        <path d="M200 0 V60 M200 340 V400 M0 200 H60 M340 200 H400" class="s-line s-strong"/>
-                        <path d="M200 10 A190 190 0 0 1 390 200" class="s-arc"/>
-                        <path d="M200 96 A104 104 0 0 0 96 200" class="s-arc"/>
-                        <g class="s-rot">
-                            <path d="M200 50 A150 150 0 0 1 330 125" class="s-arc s-strong"/>
-                            <circle cx="330" cy="125" r="5" class="s-dot"/>
-                        </g>
-                        <rect x="186" y="186" width="28" height="28" class="s-line s-strong" transform="rotate(45 200 200)"/>
-                    </svg>
+                <!-- Левая колонка: системные модули -->
+                <aside class="mod-column mod-column-left reveal-fade" aria-label="Системная панель">
+                    <h3 class="panel-title"><span>PANEL</span><span>SYSTEM</span></h3>
+                    <div class="column-stack reveal-stagger">
 
-                    <div class="hero-inner">
-                        <p class="hero-kicker"><span class="prompt-sign">&gt;</span> один аккаунт · центр загрузок · тесты и серверы</p>
-                        <h1 class="hero-title" id="hero-title">
-                            Ядро единой <span class="hero-accent" data-text="некоммерческой">некоммерческой</span> экосистемы
-                        </h1>
-                        <p class="hero-lead">
-                            NEXUS//DEV объединяет наши инди-проекты в одном месте: заведите один аккаунт NEXUS ID,
-                            скачивайте проверенные сборки из центра загрузок и получайте доступ к закрытым тестам
-                            и игровым серверам. Без рекламы и платных подписок.
-                        </p>
-                        <div class="hero-cta">
-                            <a class="btn btn-primary btn-xl" href="projects.html">
-                                <img src="assets/icons/download.svg" alt="" width="22" height="22">
-                                <span>ПЕРЕЙТИ К ПРОЕКТАМ</span>
-                            </a>
-                            <a class="btn btn-xl" href="auth.html" data-auth-href="auth.html|dashboard.html">
-                                <img src="assets/icons/sign-in.svg" alt="" width="22" height="22">
-                                <span data-auth-label="ВОЙТИ В СИСТЕМУ / РЕГИСТРАЦИЯ|ОТКРЫТЬ ЛИЧНЫЙ КАБИНЕТ">ВОЙТИ В СИСТЕМУ / РЕГИСТРАЦИЯ</span>
-                            </a>
+                        <!-- mod_clock -->
+                        <div class="mod mod-clock" id="mod_clock">
+                            <h2 class="clock-face" id="clock" aria-live="off">
+                                <span>0</span><span>0</span><em>:</em><span>0</span><span>0</span><em>:</em><span>0</span><span>0</span>
+                            </h2>
+                        </div>
+
+                        <!-- mod_sysinfo -->
+                        <div class="mod mod-sysinfo">
+                            <div class="kv"><h4 class="k">YEAR</h4><p class="v" id="sys-year">----</p></div>
+                            <div class="kv"><h4 class="k">DATE</h4><p class="v" id="sys-date">---</p></div>
+                            <div class="kv"><h4 class="k">UPTIME</h4><p class="v" id="sys-uptime">0:00:00</p></div>
+                            <div class="kv"><h4 class="k">TYPE</h4><p class="v" id="sys-type">WEB</p></div>
+                            <div class="kv"><h4 class="k">POWER</h4><p class="v" id="sys-power">ON</p></div>
+                        </div>
+
+                        <!-- mod_hardwareInspector -->
+                        <div class="mod mod-hw">
+                            <div><h4>PLATFORM</h4><p id="hw-platform">—</p></div>
+                            <div><h4>CORES</h4><p id="hw-cores">—</p></div>
+                            <div><h4>SCREEN</h4><p id="hw-screen">—</p></div>
+                            <div><h4>LANG</h4><p id="hw-lang">—</p></div>
+                        </div>
+
+                        <!-- mod_cpuinfo → нагрузка билд-фермы -->
+                        <div class="mod mod-cpu">
+                            <h4 class="mod-head">BUILD FARM <i>CI · 4 agents</i></h4>
+                            <div class="cpu-row">
+                                <div class="cpu-label"><h5>AG <em>1</em>-<em>2</em></h5><i>AVG <span id="cpu-avg1">0</span>%</i></div>
+                                <canvas class="dashed-y" id="cpu-canvas-1" aria-hidden="true"></canvas>
+                            </div>
+                            <div class="cpu-row">
+                                <div class="cpu-label"><h5>AG <em>3</em>-<em>4</em></h5><i>AVG <span id="cpu-avg2">0</span>%</i></div>
+                                <canvas class="dashed-y" id="cpu-canvas-2" aria-hidden="true"></canvas>
+                            </div>
+                            <div class="cpu-stats">
+                                <div><h5>FPS</h5><i id="cpu-fps">--</i></div>
+                                <div><h5>LOAD</h5><i id="cpu-load">--</i></div>
+                                <div><h5>MAX</h5><i id="cpu-max">--</i></div>
+                                <div><h5>JOBS</h5><i id="cpu-tasks">--</i></div>
+                            </div>
+                        </div>
+
+                        <!-- mod_ramwatcher → кэш сборок -->
+                        <div class="mod mod-ram">
+                            <h4 class="mod-head">BUILD CACHE <i id="ram-info">USING 0.0 OUT OF 0.0 GiB</i></h4>
+                            <div class="ram-pointmap" id="ram-pointmap" aria-hidden="true"></div>
+                            <div class="ram-swap">
+                                <h5>SWAP</h5>
+                                <progress id="ram-swapbar" max="100" value="0">0%</progress>
+                                <h5 id="ram-swaptext">0.0 GiB</h5>
+                            </div>
+                        </div>
+                    </div>
+                </aside>
+
+                <!-- Центр: ядро экосистемы + быстрый доступ -->
+                <div class="shell-wrap">
+                <div class="hero-wrap glow">
+                    <div class="hero-panel aug-frame shell-anim" augmented-ui="tl-clip br-clip exe">
+                        <h2 class="panel-title shell-title"><span>NEXUS // CORE</span><span>NON-COMMERCIAL · v2.1</span></h2>
+
+                        <!-- Декоративная HUD-схема (чистый SVG, без растровых картинок) -->
+                        <svg class="hero-schematic" viewBox="0 0 400 400" aria-hidden="true" focusable="false">
+                            <circle cx="200" cy="200" r="190" class="s-line"/>
+                            <circle cx="200" cy="200" r="150" class="s-line s-dash"/>
+                            <circle cx="200" cy="200" r="104" class="s-line"/>
+                            <circle cx="200" cy="200" r="58" class="s-line s-dash"/>
+                            <path d="M200 0 V60 M200 340 V400 M0 200 H60 M340 200 H400" class="s-line s-strong"/>
+                            <path d="M200 10 A190 190 0 0 1 390 200" class="s-arc"/>
+                            <path d="M200 96 A104 104 0 0 0 96 200" class="s-arc"/>
+                            <g class="s-rot">
+                                <path d="M200 50 A150 150 0 0 1 330 125" class="s-arc s-strong"/>
+                                <circle cx="330" cy="125" r="5" class="s-dot"/>
+                            </g>
+                            <rect x="186" y="186" width="28" height="28" class="s-line s-strong" transform="rotate(45 200 200)"/>
+                        </svg>
+
+                        <!-- Технические выноски (декор, как подписи модулей eDEX-UI) -->
+                        <p class="hud-callout hud-callout-tl" aria-hidden="true"><i></i>SECTOR 07 // EU-CENTRAL</p>
+                        <p class="hud-callout hud-callout-tr" aria-hidden="true">NODE <b data-sum="online">-/-</b><i></i></p>
+                        <p class="hud-callout hud-callout-bl" aria-hidden="true"><i></i>LAT 50.86 · LON 6.06</p>
+                        <p class="hud-callout hud-callout-br" aria-hidden="true">BUILD 2.1.0 · <span class="js-year">2026</span><i></i></p>
+
+                        <div class="hero-inner">
+                            <p class="hero-kicker"><span class="prompt-sign">&gt;</span> один аккаунт · центр загрузок · тесты и серверы</p>
+                            <h1 class="hero-title" id="hero-title">
+                                Ядро единой <span class="hero-accent" data-text="некоммерческой">некоммерческой</span> экосистемы
+                            </h1>
+                            <p class="hero-lead">
+                                NEXUS//DEV объединяет наши инди-проекты в одном месте: заведите один аккаунт NEXUS ID,
+                                скачивайте проверенные сборки из центра загрузок и получайте доступ к закрытым тестам
+                                и игровым серверам. Без рекламы и платных подписок.
+                            </p>
+                            <div class="hero-cta">
+                                <a class="btn btn-primary btn-xl" href="projects.html">
+                                    <img src="assets/icons/download.svg" alt="" width="22" height="22">
+                                    <span>ПЕРЕЙТИ К ПРОЕКТАМ</span>
+                                </a>
+                                <a class="btn btn-xl" href="auth.html" data-auth-href="auth.html|dashboard.html">
+                                    <img src="assets/icons/sign-in.svg" alt="" width="22" height="22">
+                                    <span data-auth-label="ВОЙТИ В СИСТЕМУ / РЕГИСТРАЦИЯ|ОТКРЫТЬ ЛИЧНЫЙ КАБИНЕТ">ВОЙТИ В СИСТЕМУ / РЕГИСТРАЦИЯ</span>
+                                </a>
+                            </div>
                         </div>
                     </div>
                 </div>
+
+                    <!-- Быстрый доступ: крупные плитки-переходы -->
+                    <nav class="quick-grid reveal-stagger" aria-label="Быстрый доступ">
+                        <a class="quick-tile" href="projects.html">
+                            <img src="assets/icons/download.svg" alt="" width="26" height="26">
+                            <span class="quick-text"><b>Проекты</b><i>центр загрузок</i></span>
+                            <span class="quick-key" aria-hidden="true">01</span>
+                        </a>
+                        <a class="quick-tile" href="auth.html" data-auth-href="auth.html|dashboard.html">
+                            <img src="assets/icons/user.svg" alt="" width="26" height="26">
+                            <span class="quick-text"><b data-auth-label="Вход|Кабинет">Вход</b><i>NEXUS ID</i></span>
+                            <span class="quick-key" aria-hidden="true">02</span>
+                        </a>
+                        <button class="quick-tile" type="button" data-terminal>
+                            <img src="assets/icons/terminal.svg" alt="" width="26" height="26">
+                            <span class="quick-text"><b>Main shell</b><i>консоль · ~</i></span>
+                            <span class="quick-key" aria-hidden="true">03</span>
+                        </button>
+                        <a class="quick-tile" href="dashboard.html#settings">
+                            <img src="assets/icons/options.svg" alt="" width="26" height="26">
+                            <span class="quick-text"><b>Темы HUD</b><i id="quick-theme">blade</i></span>
+                            <span class="quick-key" aria-hidden="true">04</span>
+                        </a>
+                    </nav>
+                </div>
+
+                <!-- Правая колонка: сеть и серверы -->
+                <aside class="mod-column mod-column-right reveal-fade" aria-label="Сетевая панель">
+                    <h3 class="panel-title"><span>PANEL</span><span>NETWORK</span></h3>
+                    <div class="column-stack reveal-stagger">
+
+                        <!-- mod_netstat -->
+                        <div class="mod mod-netstat">
+                            <h4 class="mod-head">NETWORK STATUS <i>Interface: browser</i></h4>
+                            <div class="netstat-grid">
+                                <div class="kv"><h5 class="k">STATE</h5><p class="v" id="net-state">ONLINE</p></div>
+                                <div class="kv netstat-wide"><h5 class="k">CONNECTION</h5><p class="v" id="net-type">—</p></div>
+                                <div class="kv"><h5 class="k">PING</h5><p class="v" id="net-ping">-- ms</p></div>
+                            </div>
+                        </div>
+
+                        <!-- mod_conninfo -->
+                        <div class="mod mod-conninfo" id="mod_conninfo">
+                            <h4 class="mod-head">PLAYER TRAFFIC <i>UP / DOWN, MB/S</i></h4>
+                            <p class="conninfo-total"><span>TOTAL</span><i id="net-total">0 MB OUT, 0 MB IN</i></p>
+                            <canvas id="conn-canvas-top" class="dashed-y" aria-hidden="true"></canvas>
+                            <canvas id="conn-canvas-bottom" class="dashed-y" aria-hidden="true"></canvas>
+                            <p class="offline-label">OFFLINE</p>
+                        </div>
+
+                        <!-- mod_globe (радар игровых серверов вместо 3D-глобуса) -->
+                        <div class="mod mod-globe" id="mod_globe">
+                            <h4 class="mod-head">WORLD VIEW <i>SERVER RADAR</i></h4>
+                            <p class="globe-sub"><span>EU-CENTRAL</span><i id="radar-info">7 SERVERS</i></p>
+                            <canvas id="radar-canvas" aria-hidden="true"></canvas>
+                        </div>
+
+                        <!-- Статус-бары нод -->
+                        <div class="mod mod-nodes">
+                            <h4 class="mod-head">NODE LOAD <i>CPU · онлайн</i></h4>
+                            <ul class="node-bars" id="node-bars"></ul>
+                        </div>
+
+                        <!-- mod_toplist -->
+                        <div class="mod mod-toplist">
+                            <h4 class="mod-head">TOP SERVERS <i>PID | NAME | PLAYERS | CPU</i></h4>
+                            <table class="toplist" id="toplist">
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </aside>
             </div>
         </section>
 
@@ -250,7 +394,7 @@
         </div>
     </footer>
 
-    <script src="js/ui-effects.js?v=20261109-4" defer></script>
-    <script src="js/pages.js?v=20261109-4" defer></script>
+    <script src="js/ui-effects.js?v=20261109-7" defer></script>
+    <script src="js/pages.js?v=20261109-7" defer></script>
 </body>
 </html>

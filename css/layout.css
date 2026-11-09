@@ -202,6 +202,15 @@
 }
 
 /* ============ HERO: три колонки eDEX-UI ============ */
+.hero-grid {
+    display: grid;
+    grid-template-columns: minmax(240px, 18%) minmax(0, 1fr) minmax(240px, 18%);
+    grid-template-areas: "left shell right";
+    gap: clamp(16px, 1.6vw, 28px);
+    align-items: start;
+}
+.mod-column-left { grid-area: left; }
+.mod-column-right { grid-area: right; }
 
 .shell-wrap { grid-area: shell; min-width: 0; }
 
@@ -260,6 +269,138 @@
     font-size: max(11px, calc(1.111 * var(--u)));
 }
 
+/* ----- mod_hardwareInspector ----- */
+.mod-hw {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-evenly;
+    gap: 6px 10px;
+    padding-block: calc(0.645 * var(--u));
+}
+.mod-hw > div {
+    text-align: left;
+    min-width: 0;
+}
+.mod-hw h4,
+.mod-hw p {
+    margin: 0;
+    font-size: max(12px, calc(1.3 * var(--u)));
+    line-height: 1.25;
+    font-weight: normal;
+}
+.mod-hw h4 {
+    opacity: 0.5;
+}
+
+/* ----- mod_cpuinfo ----- */
+.mod-cpu {
+    padding-bottom: calc(0.645 * var(--u));
+}
+.cpu-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 4px 0;
+}
+.cpu-label {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+}
+.cpu-label h5,
+.cpu-stats h5 {
+    margin: 0;
+    font-size: max(12px, calc(1.3 * var(--u)));
+    line-height: 1.3;
+    font-weight: normal;
+}
+.cpu-label em {
+    font-family: var(--font_main);
+    font-style: normal;
+}
+.cpu-label i,
+.cpu-stats i {
+    font-style: normal;
+    font-size: max(11px, calc(1.2 * var(--u)));
+    opacity: 0.5;
+    margin-top: 3px;
+}
+.mod-cpu canvas {
+    display: block;
+    width: 76%;
+    height: calc(4.167 * var(--u));
+    margin: calc(0.46 * var(--u)) 0;
+}
+.cpu-stats {
+    display: flex;
+    justify-content: space-between;
+    width: 95%;
+    margin: 6px auto 0;
+    padding-top: calc(0.838 * var(--u));
+    border-top: 1px dashed var(--c-30);
+}
+.cpu-stats > div {
+    width: 22%;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ----- mod_ramwatcher ----- */
+.mod-ram {
+    padding-bottom: calc(0.5 * var(--u));
+}
+.ram-pointmap {
+    display: grid;
+    grid-template-columns: repeat(40, 1fr);
+    grid-template-rows: repeat(11, 1fr);
+    grid-auto-flow: column;
+    gap: calc(0.23 * var(--u));
+    padding: calc(0.5 * var(--u)) 0 0 calc(0.5 * var(--u));
+    margin-bottom: calc(0.8 * var(--u));
+}
+.ram-point {
+    width: 100%;
+    max-width: 3px;
+    aspect-ratio: 1 / 1.25;
+    background: var(--c);
+    opacity: 0.1;
+    transition: opacity 0.4s linear;
+}
+.ram-point.available { opacity: 0.3; }
+.ram-point.active { opacity: 1; }
+
+.ram-swap {
+    display: grid;
+    grid-template-columns: 15% 1fr 22%;
+    align-items: center;
+    gap: 6px;
+    padding-left: calc(0.5 * var(--u));
+}
+.ram-swap h5 {
+    margin: 0;
+    font-size: max(12px, calc(1.3 * var(--u)));
+    font-weight: normal;
+    white-space: nowrap;
+}
+.ram-swap h5:last-child {
+    text-align: right;
+}
+.ram-swap progress {
+    width: 100%;
+    height: 3px;
+    -webkit-appearance: none;
+    appearance: none;
+    border: 0;
+    border-right: 1px solid var(--c-80);
+    background: var(--c-40);
+    color: var(--c);
+}
+.ram-swap progress::-webkit-progress-bar { background: var(--c-40); }
+.ram-swap progress::-webkit-progress-value { background: var(--c); }
+.ram-swap progress::-moz-progress-bar { background: var(--c); }
+
 /* ----- mod_netstat ----- */
 .netstat-grid {
     display: grid;
@@ -298,9 +439,106 @@
     margin-top: -1px;
 }
 
+/* ----- mod_conninfo ----- */
+.mod-conninfo {
+    position: relative;
+    padding-bottom: calc(0.645 * var(--u));
+}
+.conninfo-total {
+    display: flex;
+    justify-content: space-between;
+    margin: 0 0 4px;
+    padding-left: 2%;
+    font-size: max(12px, calc(1.4 * var(--u)));
+}
+.conninfo-total span {
+    opacity: 0.5;
+}
+.conninfo-total i {
+    font-style: normal;
+    font-size: max(11px, calc(1.2 * var(--u)));
+    opacity: 0.5;
+}
+.mod-conninfo canvas {
+    display: block;
+    width: 100%;
+    height: calc(8.7 * var(--u));
+    margin: calc(0.46 * var(--u)) 0;
+}
+.offline-label {
+    position: absolute;
+    left: 50%;
+    top: 58%;
+    transform: translate(-50%, -50%);
+    margin: 0;
+    font-size: calc(2 * var(--u));
+    opacity: 0;
+    pointer-events: none;
+}
+.mod-conninfo.offline canvas { opacity: 0.3; }
+.mod-conninfo.offline .offline-label { opacity: 1; }
+
 /* ----- mod_globe (радар) ----- */
 .mod-globe {
     padding-bottom: calc(0.645 * var(--u));
+}
+.mod-globe canvas {
+    display: block;
+    width: 100%;
+    max-width: 320px;
+    aspect-ratio: 1 / 1;
+    margin: 4px auto 0;
+}
+
+/* ----- Статус-бары нод ----- */
+.node-bars {
+    display: grid;
+    gap: 5px;
+    margin: 0;
+    padding: 2px 0 0;
+    list-style: none;
+}
+.node-bar {
+    display: grid;
+    grid-template-columns: minmax(0, 46%) 1fr 34px;
+    align-items: center;
+    gap: 8px;
+    font-size: max(11px, calc(1.2 * var(--u)));
+    line-height: 1.2;
+}
+.node-name {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    opacity: 0.75;
+}
+.node-track {
+    position: relative;
+    height: 6px;
+    background:
+        repeating-linear-gradient(90deg, var(--c-20) 0 3px, transparent 3px 5px);
+}
+.node-track i {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 0;
+    background:
+        repeating-linear-gradient(90deg, var(--c) 0 3px, transparent 3px 5px);
+    box-shadow: 0 0 6px var(--c-40);
+    transition: width 0.8s var(--ease-edex);
+}
+.node-val {
+    text-align: right;
+    font-family: var(--font_main);
+}
+.node-bar.is-hot .node-val {
+    animation: pulse 1.6s linear infinite;
+}
+.node-bar.is-down {
+    opacity: 0.45;
+}
+.node-bar.is-down .node-val {
+    color: var(--color_err);
 }
 
 /* ----- mod_toplist ----- */
