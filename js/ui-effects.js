@@ -535,6 +535,7 @@
                 downloads: (same && prev.downloads) || this.seedDownloads()
             };
             storage.setJSON(this.KEY, session);
+            Account.onLogin(session);
             updateUserUI();
             return session;
         },
@@ -581,6 +582,7 @@
         const prompt = $("#term-prompt");
         if (prompt) prompt.textContent = `${s ? s.callsign.toLowerCase() : "guest"}@nexus:~$`;
         applyPermissions();
+        updateWalletUI();
         document.dispatchEvent(new CustomEvent("nexus:auth"));
     }
 
@@ -638,6 +640,541 @@
         Syslog.add(`auth: роль сессии → ${ROLES[role].label}`);
         if (!opts.quiet) toast(`Роль: ${ROLES[role].label} // ${ROLES[role].name}${created ? " · создана демо-сессия" : ""}`, "ok");
         return { ok: true, role, created };
+    }
+
+    /* ================================================================
+     * Аккаунт NEXUS ID: кошелёк, подписка, поддержка проектов,
+     * уведомления, безопасность и публичный профиль.
+     * Данные лежат в localStorage (ключ nx_accounts) отдельно для каждого
+     * ID пользователя, поэтому переживают выход и повторный вход.
+     * Платёжный шлюз работает в ТЕСТОВОМ режиме: деньги не списываются,
+     * номер карты и CVC не сохраняются (только платёжная система и 4 цифры).
+     * ================================================================ */
+    const MONEY_FMT = (() => {
+        try {
+            return {
+                whole: new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", minimumFractionDigits: 0, maximumFractionDigits: 0 }),
+                frac: new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", minimumFractionDigits: 2, maximumFractionDigits: 2 })
+            };
+        } catch (e) {
+            return null;
+        }
+    })();
+
+    /* Суммы хранятся в копейках (целые числа) — без ошибок округления */
+    function formatMoney(kop, opts) {
+        opts = opts || {};
+        const k = Math.round(Number(kop) || 0);
+        const abs = Math.abs(k) / 100;
+        let s;
+        if (MONEY_FMT) s = (k % 100 === 0 ? MONEY_FMT.whole : MONEY_FMT.frac).format(abs);
+        else s = (k % 100 === 0 ? String(abs) : abs.toFixed(2)) + " ₽";
+        s = s.replace(/\u202f/g, "\u00a0");
+        if (k < 0) return "−" + s;
+        if (opts.sign && k > 0) return "+" + s;
+        return s;
+    }
+
+    const PLANS = {
+        free: {
+            id: "free", label: "FREE", name: "Базовый", price: 0, cashback: 0,
+            desc: "Всё необходимое, чтобы играть и тестировать.",
+            perks: ["Каталог и публичные релизы", "Закрытые тесты после входа", "История загрузок и уведомления о релизах"]
+        },
+        plus: {
+            id: "plus", label: "NEXUS+", name: "Поддержка", price: 14900, cashback: 5,
+            desc: "Помогает оплачивать серверы и билд-ферму.",
+            perks: ["Значок NEXUS+ в профиле и шапке сайта", "Приоритет в очереди на закрытые тесты", "Голосование за roadmap проектов", "Кешбэк 5% на поддержку проектов"]
+        },
+        patron: {
+            id: "patron", label: "PATRON", name: "Меценат", price: 39900, cashback: 10,
+            desc: "Для тех, кто хочет вложиться в развитие экосистемы.",
+            perks: ["Всё из NEXUS+", "Имя в титрах и на странице проекта", "Закрытый канал с разработчиками", "Кешбэк 10% на поддержку проектов"]
+        }
+    };
+
+    /* Промокоды (тестовые): бонус на баланс, каждый — один раз на аккаунт */
+    const PROMO_CODES = {
+        "WELCOME": { amount: 5000, label: "Приветственный бонус" },
+        "NEXUS100": { amount: 10000, label: "Бонус NEXUS100" },
+        "BETA2026": { amount: 25000, label: "Бонус участника беты" }
+    };
+
+    /* Тестовые карты (как в тестовом режиме платёжных шлюзов) */
+    const TEST_CARDS = [
+        { number: "4242 4242 4242 4242", result: "ok", label: "Успешная оплата" },
+        { number: "4000 0000 0000 3220", result: "3ds", label: "Подтверждение 3-D Secure, код 1234" },
+        { number: "4000 0000 0000 0002", result: "declined", label: "Отказ банка" },
+        { number: "4000 0000 0000 9995", result: "funds", label: "Недостаточно средств на карте" }
+    ];
+
+    const WALLET_LIMITS = { min: 5000, max: 5000000, daily: 10000000 };
+
+    /* Бонус к пополнению: от 1 000 ₽ — +5%, от 5 000 ₽ — +10% */
+    function topupBonus(kop) {
+        if (kop >= 500000) return Math.round(kop * 0.10);
+        if (kop >= 100000) return Math.round(kop * 0.05);
+        return 0;
+    }
+
+    /* Цели сбора средств на проекты (база — «пожертвования сообщества») */
+    const FUNDING = {
+        launcher: { goal: 6000000, base: 4170000, purpose: "сервер обновлений и CDN" },
+        fortify: { goal: 2500000, base: 1985000, purpose: "новые модели укреплений" },
+        modpack: { goal: 4000000, base: 1220000, purpose: "аренда игрового сервера на год" },
+        bastion: { goal: 15000000, base: 9630000, purpose: "плейтесты и озвучка" },
+        trenchworks: { goal: 9000000, base: 2340000, purpose: "лицензии ассетов и мокап" },
+        nexustech: { goal: 3000000, base: 640000, purpose: "документация и примеры" }
+    };
+
+    function cardBrand(num) {
+        const n = String(num || "").replace(/\D/g, "");
+        if (/^220[0-4]/.test(n)) return "MIR";
+        if (/^4/.test(n)) return "VISA";
+        if (/^(5[1-5]|2(2[2-9]|[3-6]\d|7[01]|720))/.test(n)) return "MASTERCARD";
+        if (/^3[47]/.test(n)) return "AMEX";
+        if (/^(62|81)/.test(n)) return "UNIONPAY";
+        return "CARD";
+    }
+
+    function luhnOk(num) {
+        const n = String(num || "").replace(/\D/g, "");
+        if (n.length < 13 || n.length > 19) return false;
+        let sum = 0, dbl = false;
+        for (let i = n.length - 1; i >= 0; i--) {
+            let d = +n[i];
+            if (dbl) { d *= 2; if (d > 9) d -= 9; }
+            sum += d;
+            dbl = !dbl;
+        }
+        return sum % 10 === 0;
+    }
+
+    function uid(prefix) {
+        const t = Date.now().toString(36).toUpperCase().slice(-5);
+        const r = Math.random().toString(36).toUpperCase().slice(2, 6).padEnd(4, "0");
+        return `${prefix}-${t}${r}`;
+    }
+
+    function deviceName() {
+        return `${detectOS().full} · ${detectBrowser()}`;
+    }
+
+    function maskedIp(seed) {
+        const h = hashString(String(seed || "nx"));
+        return `${80 + (h % 100)}.${(h >>> 8) % 255}.•••.${(h >>> 16) % 250 + 2}`;
+    }
+
+    const Account = {
+        KEY: "nx_accounts",
+        NOTIF_TYPES: {
+            payment: { label: "Платежи", icon: "portfolio" },
+            release: { label: "Релизы", icon: "download" },
+            security: { label: "Безопасность", icon: "lock" },
+            system: { label: "Система", icon: "info" }
+        },
+
+        readAll() {
+            const map = storage.getJSON(this.KEY, {});
+            return map && typeof map === "object" && !Array.isArray(map) ? map : {};
+        },
+
+        /* Новый аккаунт: приветствие, свежие релизы, текущее и пара прошлых устройств */
+        seed(s) {
+            const now = Date.now(), day = 86400000;
+            const dev = deviceName();
+            const releases = PROJECTS.filter(p => p.status !== "dev").slice(0, 2);
+            const notes = [
+                { id: uid("N"), type: "system", title: "Добро пожаловать в NEXUS ID", text: "Аккаунт активирован. Пополните баланс, чтобы оформить NEXUS+ или поддержать любимый проект.", date: now, read: false, link: "wallet" }
+            ];
+            releases.forEach((p, i) => notes.push({
+                id: uid("N"), type: "release", title: `Вышла сборка ${p.title} ${p.version}`,
+                text: p.summary, date: now - (i + 1) * 2 * day, read: i > 0, link: "projects.html#" + p.id
+            }));
+            return {
+                v: 1,
+                created: now,
+                balance: 0,
+                tx: [],
+                cards: [],
+                promos: [],
+                plan: { id: "free", since: now, until: null, autoRenew: true },
+                donations: {},
+                notifications: notes,
+                prefs: { release: true, payment: true, security: true, system: true, toast: true },
+                security: {
+                    twoFA: false,
+                    backup: [],
+                    pwdChanged: null,
+                    sessions: [
+                        { id: "current", device: dev, place: "Это устройство", ip: maskedIp(s.id + dev), last: now, current: true },
+                        { id: uid("S"), device: "Windows · NEXUS Launcher 1.4.1", place: "Нидерланды", ip: maskedIp(s.id + "launcher"), last: now - 3 * day },
+                        { id: uid("S"), device: "Android · Chromium", place: "Нидерланды", ip: maskedIp(s.id + "phone"), last: now - 8 * day }
+                    ],
+                    log: [
+                        { date: now, event: "Вход в аккаунт", device: dev, ok: true },
+                        { date: now - 3 * day, event: "Вход через NEXUS Launcher", device: "Windows · NEXUS Launcher", ok: true },
+                        { date: now - 8 * day + 3600000, event: "Неверный пароль", device: "Android · Chromium", ok: false }
+                    ]
+                },
+                profile: {
+                    displayName: s.callsign,
+                    bio: "",
+                    country: "NL",
+                    timezone: (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Amsterdam"; } catch (e) { return "Europe/Amsterdam"; } })(),
+                    discord: "",
+                    github: "",
+                    public: true
+                }
+            };
+        },
+
+        /* Защита от битых / старых данных */
+        normalize(a, s) {
+            const base = this.seed(s);
+            if (!a || typeof a !== "object") return base;
+            ["tx", "cards", "promos", "notifications"].forEach(k => { if (!Array.isArray(a[k])) a[k] = base[k]; });
+            a.balance = Math.max(0, Math.round(Number(a.balance) || 0));
+            a.plan = Object.assign({}, base.plan, a.plan);
+            if (!PLANS[a.plan.id]) a.plan.id = "free";
+            a.donations = a.donations && typeof a.donations === "object" ? a.donations : {};
+            a.prefs = Object.assign({}, base.prefs, a.prefs);
+            a.security = Object.assign({}, base.security, a.security);
+            ["sessions", "log", "backup"].forEach(k => { if (!Array.isArray(a.security[k])) a.security[k] = base.security[k]; });
+            a.profile = Object.assign({}, base.profile, a.profile);
+            if (!a.created) a.created = base.created;
+            return a;
+        },
+
+        get() {
+            const s = Auth.get();
+            if (!s) return null;
+            const map = this.readAll();
+            const a = this.normalize(map[s.id], s);
+            // Новый аккаунт сохраняем сразу, чтобы ID уведомлений и сеансов были стабильными
+            if (!map[s.id]) { map[s.id] = a; storage.setJSON(this.KEY, map); }
+            return a;
+        },
+
+        /* Изменение данных аккаунта: fn(account, session). Сохраняет и рассылает nexus:account */
+        mutate(fn, detail) {
+            const s = Auth.get();
+            if (!s) return null;
+            const map = this.readAll();
+            const a = this.normalize(map[s.id], s);
+            const res = fn(a, s);
+            a.tx = a.tx.slice(0, 200);
+            a.notifications = a.notifications.slice(0, 60);
+            a.security.log = a.security.log.slice(0, 40);
+            map[s.id] = a;
+            if (!storage.setJSON(this.KEY, map)) {
+                toast("Не удалось сохранить данные: хранилище браузера недоступно или переполнено", "warn");
+                return null;
+            }
+            this.emit(detail || {});
+            return res === undefined ? a : res;
+        },
+
+        emit(detail) {
+            updateWalletUI();
+            document.dispatchEvent(new CustomEvent("nexus:account", { detail: detail || {} }));
+        },
+
+        /* Вызывается из Auth.login: журнал входов и «текущее устройство» */
+        onLogin(s) {
+            const map = this.readAll();
+            const fresh = !map[s.id];
+            this.mutate(a => {
+                const dev = deviceName();
+                const cur = a.security.sessions.find(x => x.current);
+                if (cur) { cur.last = Date.now(); cur.device = dev; }
+                if (!fresh) a.security.log.unshift({ date: Date.now(), event: "Вход в аккаунт", device: dev, ok: true });
+            }, { action: "login" });
+        },
+
+        /* ----- Уведомления ----- */
+        notify(type, title, text, opts) {
+            opts = opts || {};
+            return this.mutate(a => {
+                if (a.prefs[type] === false && type !== "security") return null;
+                const n = { id: uid("N"), type, title, text: text || "", date: Date.now(), read: false, link: opts.link || "" };
+                a.notifications.unshift(n);
+                if (opts.toast !== false && a.prefs.toast) setTimeout(() => toast(`${title}${text ? " — " + text : ""}`, opts.tone || "info", { ttl: 4200 }), 60);
+                return n;
+            }, { action: "notify" });
+        },
+        unread() {
+            const a = this.get();
+            return a ? a.notifications.filter(n => !n.read).length : 0;
+        },
+        markRead(id) {
+            return this.mutate(a => { a.notifications.forEach(n => { if (!id || n.id === id) n.read = true; }); }, { action: "notif-read" });
+        },
+        removeNotification(id) {
+            return this.mutate(a => { a.notifications = id ? a.notifications.filter(n => n.id !== id) : []; }, { action: "notif-remove" });
+        },
+        setPref(key, value) {
+            return this.mutate(a => { a.prefs[key] = !!value; }, { action: "prefs" });
+        },
+
+        /* ----- Кошелёк ----- */
+        todayTopups(a) {
+            const from = Date.now() - 86400000;
+            return a.tx.filter(t => t.type === "topup" && t.status === "ok" && t.date >= from).reduce((s, t) => s + t.amount, 0);
+        },
+        checkTopup(kop) {
+            const a = this.get();
+            if (!a) return { ok: false, error: "auth", text: "Войдите в аккаунт" };
+            if (!Number.isFinite(kop) || kop < WALLET_LIMITS.min) return { ok: false, error: "min", text: `Минимальная сумма — ${formatMoney(WALLET_LIMITS.min)}` };
+            if (kop > WALLET_LIMITS.max) return { ok: false, error: "max", text: `Максимум за одну операцию — ${formatMoney(WALLET_LIMITS.max)}` };
+            if (this.todayTopups(a) + kop > WALLET_LIMITS.daily) return { ok: false, error: "daily", text: `Суточный лимит пополнений — ${formatMoney(WALLET_LIMITS.daily)}` };
+            return { ok: true };
+        },
+        /* Успешное пополнение (+ бонус, если положен) */
+        topup(kop, method, opts) {
+            opts = opts || {};
+            const chk = this.checkTopup(kop);
+            if (!chk.ok) return chk;
+            const res = this.mutate(a => {
+                const bonus = opts.noBonus ? 0 : topupBonus(kop);
+                const tx = { id: uid("TX"), type: "topup", title: "Пополнение баланса", method, amount: kop, status: "ok", date: Date.now() };
+                a.tx.unshift(tx);
+                a.balance += kop;
+                if (bonus) {
+                    a.tx.unshift({ id: uid("TX"), type: "bonus", title: `Бонус ${kop >= 500000 ? "10" : "5"}% к пополнению`, method: "NEXUS ID", amount: bonus, status: "ok", date: Date.now() + 1 });
+                    a.balance += bonus;
+                }
+                if (opts.card && opts.saveCard) {
+                    const c = opts.card;
+                    if (!a.cards.some(x => x.last4 === c.last4 && x.brand === c.brand && x.exp === c.exp)) {
+                        a.cards.unshift({ id: uid("C"), brand: c.brand, last4: c.last4, exp: c.exp, holder: c.holder || "", added: Date.now() });
+                        a.cards = a.cards.slice(0, 5);
+                    }
+                }
+                if (a.prefs.payment) a.notifications.unshift({ id: uid("N"), type: "payment", title: `Баланс пополнен на ${formatMoney(kop + bonus)}`, text: `${method}${bonus ? ` · бонус ${formatMoney(bonus)}` : ""}`, date: Date.now(), read: false, link: "wallet" });
+                return { ok: true, tx, bonus, balance: a.balance };
+            }, { action: "topup" });
+            if (res && res.ok) Syslog.add(`wallet: +${formatMoney(kop)} (${method})`);
+            return res || { ok: false, error: "storage", text: "Не удалось сохранить операцию" };
+        },
+        /* Неуспешный платёж тоже попадает в историю */
+        failTopup(kop, method, reason) {
+            return this.mutate(a => {
+                a.tx.unshift({ id: uid("TX"), type: "topup", title: "Пополнение баланса", method, amount: kop, status: "failed", reason, date: Date.now() });
+                if (a.prefs.payment) a.notifications.unshift({ id: uid("N"), type: "payment", title: "Платёж отклонён", text: `${formatMoney(kop)} · ${method} · ${reason}`, date: Date.now(), read: false, link: "wallet" });
+            }, { action: "topup-failed" });
+        },
+        spend(kop, title, meta) {
+            meta = meta || {};
+            const a0 = this.get();
+            if (!a0) return { ok: false, error: "auth", text: "Войдите в аккаунт" };
+            if (!(kop > 0)) return { ok: false, error: "amount", text: "Неверная сумма" };
+            if (a0.balance < kop) return { ok: false, error: "funds", text: `Недостаточно средств: нужно ${formatMoney(kop)}, на балансе ${formatMoney(a0.balance)}`, need: kop - a0.balance };
+            return this.mutate(a => {
+                const tx = { id: uid("TX"), type: meta.type || "spend", title, method: "Баланс NEXUS ID", amount: -kop, status: "ok", date: Date.now() };
+                a.tx.unshift(tx);
+                a.balance -= kop;
+                if (typeof meta.apply === "function") meta.apply(a, tx);
+                return { ok: true, tx, balance: a.balance };
+            }, { action: meta.type || "spend" });
+        },
+        applyPromo(raw) {
+            const code = String(raw || "").trim().toUpperCase();
+            const promo = PROMO_CODES[code];
+            const a0 = this.get();
+            if (!a0) return { ok: false, text: "Войдите в аккаунт" };
+            if (!code) return { ok: false, text: "Введите промокод" };
+            if (!promo) return { ok: false, text: "Промокод не найден или истёк" };
+            if (a0.promos.includes(code)) return { ok: false, text: "Этот промокод уже активирован" };
+            return this.mutate(a => {
+                a.promos.push(code);
+                a.balance += promo.amount;
+                a.tx.unshift({ id: uid("TX"), type: "bonus", title: promo.label, method: `Промокод ${code}`, amount: promo.amount, status: "ok", date: Date.now() });
+                if (a.prefs.payment) a.notifications.unshift({ id: uid("N"), type: "payment", title: `Промокод ${code} активирован`, text: `На баланс зачислено ${formatMoney(promo.amount)}`, date: Date.now(), read: false, link: "wallet" });
+                return { ok: true, amount: promo.amount, code };
+            }, { action: "promo" });
+        },
+        removeCard(id) {
+            return this.mutate(a => { a.cards = a.cards.filter(c => c.id !== id); }, { action: "card-remove" });
+        },
+
+        /* ----- Подписка ----- */
+        subscribe(planId) {
+            const plan = PLANS[planId];
+            const a0 = this.get();
+            if (!plan || !a0) return { ok: false, text: "Тариф недоступен" };
+            if (planId === "free") return this.cancelPlan(true);
+            if (a0.plan.id === planId && a0.plan.until > Date.now()) return { ok: false, text: `Тариф ${plan.label} уже активен` };
+            // Переход с NEXUS+ на PATRON: неиспользованные дни засчитываются
+            let credit = 0;
+            const cur = PLANS[a0.plan.id];
+            if (cur.price && a0.plan.until > Date.now()) credit = Math.round(cur.price * (a0.plan.until - Date.now()) / (30 * 86400000));
+            const price = Math.max(0, plan.price - credit);
+            if (a0.balance < price) return { ok: false, error: "funds", text: `Недостаточно средств: нужно ${formatMoney(price)}`, need: price - a0.balance };
+            return this.mutate(a => {
+                if (price > 0) {
+                    a.tx.unshift({ id: uid("TX"), type: "plan", title: `Подписка ${plan.label} · 30 дней${credit ? " (с учётом остатка)" : ""}`, method: "Баланс NEXUS ID", amount: -price, status: "ok", date: Date.now() });
+                    a.balance -= price;
+                }
+                a.plan = { id: planId, since: Date.now(), until: Date.now() + 30 * 86400000, autoRenew: true };
+                a.notifications.unshift({ id: uid("N"), type: "payment", title: `Подписка ${plan.label} активна`, text: `Списано ${formatMoney(price)} · до ${dateStr(new Date(a.plan.until))}`, date: Date.now(), read: false, link: "plus" });
+                return { ok: true, price, plan };
+            }, { action: "plan" });
+        },
+        setAutoRenew(on) {
+            return this.mutate(a => { a.plan.autoRenew = !!on; }, { action: "plan-renew" });
+        },
+        cancelPlan(now) {
+            return this.mutate(a => {
+                if (now || !a.plan.until) a.plan = { id: "free", since: Date.now(), until: null, autoRenew: true };
+                else a.plan.autoRenew = false;
+                return { ok: true };
+            }, { action: "plan-cancel" });
+        },
+        /* Продление / окончание подписки (при загрузке страницы и раз в минуту) */
+        checkRenewal() {
+            const a0 = this.get();
+            if (!a0 || a0.plan.id === "free" || !a0.plan.until || a0.plan.until > Date.now()) return;
+            const plan = PLANS[a0.plan.id];
+            this.mutate(a => {
+                if (a.plan.autoRenew && a.balance >= plan.price) {
+                    a.balance -= plan.price;
+                    a.plan.until = Math.max(a.plan.until, Date.now()) + 30 * 86400000;
+                    a.tx.unshift({ id: uid("TX"), type: "plan", title: `Продление ${plan.label} · 30 дней`, method: "Баланс NEXUS ID", amount: -plan.price, status: "ok", date: Date.now() });
+                    a.notifications.unshift({ id: uid("N"), type: "payment", title: `Подписка ${plan.label} продлена`, text: `Списано ${formatMoney(plan.price)}`, date: Date.now(), read: false, link: "plus" });
+                } else {
+                    a.notifications.unshift({ id: uid("N"), type: "payment", title: `Подписка ${plan.label} закончилась`, text: a.plan.autoRenew ? "Не хватило средств для продления — пополните баланс" : "Автопродление было выключено", date: Date.now(), read: false, link: "plus" });
+                    a.plan = { id: "free", since: Date.now(), until: null, autoRenew: true };
+                }
+            }, { action: "plan-renewal" });
+        },
+        planInfo(a) {
+            a = a || this.get();
+            const p = a ? PLANS[a.plan.id] : PLANS.free;
+            return Object.assign({}, p, { until: a ? a.plan.until : null, autoRenew: a ? a.plan.autoRenew : false });
+        },
+
+        /* ----- Поддержка проектов ----- */
+        funding(pid) {
+            const f = FUNDING[pid] || { goal: 2000000, base: 0, purpose: "развитие проекта" };
+            const a = this.get();
+            const mine = a ? (a.donations[pid] || 0) : 0;
+            return { goal: f.goal, raised: f.base + mine, mine, purpose: f.purpose };
+        },
+        donate(pid, kop, comment) {
+            const p = PROJECTS.find(x => x.id === pid);
+            if (!p) return { ok: false, text: "Проект не найден" };
+            const cashPct = this.planInfo().cashback || 0;
+            const res = this.spend(kop, `Поддержка проекта ${p.title}`, {
+                type: "donate",
+                apply: (a, tx) => {
+                    if (comment) tx.comment = String(comment).slice(0, 140);
+                    a.donations[pid] = (a.donations[pid] || 0) + kop;
+                    const cash = cashPct ? Math.round(kop * cashPct / 100) : 0;
+                    if (cash) {
+                        a.balance += cash;
+                        a.tx.unshift({ id: uid("TX"), type: "cashback", title: `Кешбэк ${cashPct}% · ${PLANS[a.plan.id].label}`, method: "NEXUS ID", amount: cash, status: "ok", date: Date.now() + 1 });
+                    }
+                    a.notifications.unshift({ id: uid("N"), type: "payment", title: `Спасибо за поддержку ${p.title}!`, text: `${formatMoney(kop)}${cash ? ` · кешбэк ${formatMoney(cash)}` : ""}`, date: Date.now(), read: false, link: "plus" });
+                }
+            });
+            if (res && res.ok) Syslog.add(`wallet: поддержка ${p.id} ${formatMoney(kop)}`);
+            return res;
+        },
+
+        /* ----- Безопасность ----- */
+        logEvent(event, ok) {
+            return this.mutate(a => { a.security.log.unshift({ date: Date.now(), event, device: deviceName(), ok: ok !== false }); }, { action: "security-log" });
+        },
+        changePassword() {
+            return this.mutate(a => {
+                a.security.pwdChanged = Date.now();
+                a.security.log.unshift({ date: Date.now(), event: "Пароль изменён", device: deviceName(), ok: true });
+                a.notifications.unshift({ id: uid("N"), type: "security", title: "Пароль изменён", text: `${deviceName()} · если это были не вы, завершите все сеансы`, date: Date.now(), read: false, link: "security" });
+            }, { action: "password" });
+        },
+        makeBackupCodes() {
+            const out = [];
+            for (let i = 0; i < 8; i++) out.push(`${randInt(1000, 9999)}-${randInt(1000, 9999)}`);
+            return out;
+        },
+        setTwoFA(on) {
+            return this.mutate(a => {
+                a.security.twoFA = !!on;
+                a.security.backup = on ? this.makeBackupCodes() : [];
+                a.security.log.unshift({ date: Date.now(), event: on ? "Включена двухфакторная защита" : "Двухфакторная защита выключена", device: deviceName(), ok: true });
+                a.notifications.unshift({ id: uid("N"), type: "security", title: on ? "2FA включена" : "2FA выключена", text: on ? "Сохраните резервные коды в надёжном месте" : "Рекомендуем снова включить двухфакторную защиту", date: Date.now(), read: false, link: "security" });
+                return a.security.backup.slice();
+            }, { action: "2fa" });
+        },
+        regenBackup() {
+            return this.mutate(a => {
+                a.security.backup = this.makeBackupCodes();
+                a.security.log.unshift({ date: Date.now(), event: "Созданы новые резервные коды", device: deviceName(), ok: true });
+                return a.security.backup.slice();
+            }, { action: "2fa-codes" });
+        },
+        endSession(id) {
+            return this.mutate(a => {
+                const before = a.security.sessions.length;
+                a.security.sessions = a.security.sessions.filter(x => x.current || (id && x.id !== id));
+                const n = before - a.security.sessions.length;
+                if (n) a.security.log.unshift({ date: Date.now(), event: id ? "Сеанс завершён" : `Завершены другие сеансы (${n})`, device: deviceName(), ok: true });
+                return n;
+            }, { action: "sessions" });
+        },
+        /* Оценка защиты аккаунта для «Обзора» и «Безопасности» */
+        securityScore(a, s) {
+            a = a || this.get();
+            s = s || Auth.get();
+            if (!a || !s) return { score: 0, items: [] };
+            const items = [
+                { id: "email", label: "Email указан", done: !!(s.email && !/\.example$/.test(s.email)), tab: "profile", action: "Указать email" },
+                { id: "2fa", label: "Двухфакторная защита", done: a.security.twoFA, tab: "security", action: "Включить" },
+                { id: "pwd", label: "Пароль менялся за последние 180 дней", done: !!(a.security.pwdChanged && Date.now() - a.security.pwdChanged < 180 * 86400000), tab: "security", action: "Сменить" },
+                { id: "sessions", label: "Нет лишних активных сеансов", done: a.security.sessions.length <= 1, tab: "security", action: "Проверить" }
+            ];
+            const done = items.filter(x => x.done).length;
+            return { score: Math.round(done / items.length * 100), items };
+        },
+
+        /* ----- Профиль и данные ----- */
+        updateProfile(patch) {
+            return this.mutate(a => {
+                Object.keys(patch).forEach(k => { if (k in a.profile) a.profile[k] = patch[k]; });
+            }, { action: "profile" });
+        },
+        exportData() {
+            const s = Auth.get();
+            const a = this.get();
+            if (!s || !a) return null;
+            return { exported: new Date().toISOString(), session: { callsign: s.callsign, email: s.email, id: s.id, role: s.role, registered: s.registered, downloads: s.downloads }, account: a };
+        },
+        /* Удаление аккаунта: данные кошелька и профиля стираются, сессия завершается */
+        destroy() {
+            const s = Auth.get();
+            if (!s) return false;
+            const map = this.readAll();
+            delete map[s.id];
+            storage.setJSON(this.KEY, map);
+            Auth.logout();
+            return true;
+        }
+    };
+
+    /* Баланс в шапке (все страницы): [#header-wallet] + бейдж подписки */
+    function updateWalletUI() {
+        const box = $("#header-wallet");
+        const s = Auth.get();
+        if (!box) return;
+        if (!s) { box.hidden = true; return; }
+        const a = Account.get();
+        box.hidden = false;
+        const val = $("#header-balance", box);
+        if (val) val.textContent = formatMoney(a ? a.balance : 0);
+        const plan = a ? PLANS[a.plan.id] : PLANS.free;
+        box.setAttribute("data-plan", plan.id);
+        box.title = `Баланс NEXUS ID · тариф ${plan.label}`;
     }
 
     /* ================================================================
@@ -1672,8 +2209,9 @@
                     });
                     tab.addEventListener("keydown", e => {
                         let idx = null;
-                        if (e.key === "ArrowRight") idx = (i + 1) % tabs.length;
-                        else if (e.key === "ArrowLeft") idx = (i - 1 + tabs.length) % tabs.length;
+                        const vertical = list.getAttribute("aria-orientation") === "vertical";
+                        if (e.key === (vertical ? "ArrowDown" : "ArrowRight")) idx = (i + 1) % tabs.length;
+                        else if (e.key === (vertical ? "ArrowUp" : "ArrowLeft")) idx = (i - 1 + tabs.length) % tabs.length;
                         else if (e.key === "Home") idx = 0;
                         else if (e.key === "End") idx = tabs.length - 1;
                         if (idx !== null) {
@@ -2473,6 +3011,8 @@
                         "  login | register | logout — вход, регистрация, выход",
                         "  role [user|admin|creator] — текущая роль / сменить роль (тест)",
                         "  create          — создать проект (ADMIN, CREATOR)",
+                        "  balance         — баланс и последние операции",
+                        "  topup <сумма>   — тестовое пополнение баланса, например: topup 500",
                         "  dashboard       — личный кабинет",
                         "  home            — главная страница",
                         "  whoami          — текущий пользователь",
@@ -2551,6 +3091,26 @@
                     if (res.same) { this.print(`role: ${ROLES[res.role].label} уже активна.`); return; }
                     if (res.created) this.print("role: вы были гостем — создана демо-сессия demo_operator.");
                     this.print(`role: роль переключена на ${ROLES[res.role].label} // ${ROLES[res.role].name}. Интерфейс обновлён.`);
+                },
+                balance() {
+                    const a = Account.get();
+                    if (!a) { this.print("balance: войдите в аккаунт — команда login", "err"); return; }
+                    const plan = PLANS[a.plan.id];
+                    this.printHtml(`Баланс: <span class="hl">${escapeHtml(formatMoney(a.balance))}</span> · тариф ${escapeHtml(plan.label)}${a.plan.until ? " до " + escapeHtml(dateStr(new Date(a.plan.until))) : ""}`);
+                    const last = a.tx.slice(0, 5);
+                    if (!last.length) this.print("Операций пока нет. Пополнить: topup 500");
+                    last.forEach(t => this.print(`  ${dateStr(new Date(t.date))}  ${formatMoney(t.amount, { sign: true }).padStart(12)}  ${t.status === "ok" ? "OK    " : "FAILED"}  ${t.title}`));
+                    this.printHtml('Кошелёк: <a href="dashboard.html#wallet">dashboard.html#wallet</a>');
+                },
+                topup(args) {
+                    if (!Auth.get()) { this.print("topup: войдите в аккаунт — команда login", "err"); Sound.play("denied"); return; }
+                    const rub = parseFloat(String(args[0] || "").replace(",", "."));
+                    if (!Number.isFinite(rub)) { this.print("topup: укажите сумму в рублях, например: topup 500", "err"); return; }
+                    const res = Account.topup(Math.round(rub * 100), "Тестовый платёж · терминал");
+                    if (!res.ok) { this.print(`topup: ${res.text}`, "err"); Sound.play("denied"); return; }
+                    Sound.play("granted");
+                    this.printHtml(`topup: зачислено <span class="hl">${escapeHtml(formatMoney(res.tx.amount + res.bonus))}</span>${res.bonus ? ` (в т.ч. бонус ${escapeHtml(formatMoney(res.bonus))})` : ""}. Баланс: ${escapeHtml(formatMoney(res.balance))}`);
+                    toast(`Баланс пополнен на ${formatMoney(res.tx.amount + res.bonus)}`, "ok");
                 },
                 create() {
                     if (!Auth.can("create")) {
@@ -2784,10 +3344,19 @@
         initGlitch();
 
         setInterval(tickTelemetry, 2000);
+        Account.checkRenewal();
+        setInterval(() => Account.checkRenewal(), 60000);
+        // Новый проект в каталоге → уведомление о релизе
+        document.addEventListener("nexus:catalog", e => {
+            if (!e.detail || e.detail.action !== "create" || !Auth.get()) return;
+            const p = PROJECTS.find(x => x.id === e.detail.id);
+            if (p) Account.notify("release", `Новый проект: ${p.title}`, `${STATUSES[p.status].label} · ${p.version}`, { link: "projects.html#" + p.id, toast: false });
+        });
 
         // Синхронизация входа/выхода и настроек между вкладками браузера
         window.addEventListener("storage", e => {
             if (e.key === Auth.KEY) updateUserUI();
+            if (e.key === Account.KEY) Account.emit({ action: "sync" });
             if (e.key === Settings.KEY) { Settings.load(); Settings.apply(); Sound.syncUI(); }
             if (e.key === Catalog.KEY || e.key === Catalog.HIDDEN_KEY || e.key === Catalog.CAT_KEY) {
                 Catalog.load();
@@ -2807,7 +3376,8 @@
     /* Публичное API для js/pages.js */
     window.NEXUS = {
         PAGE, $, $$, clamp, rand, randInt, pick, pad, delay, escapeHtml, timeStr, dateStr, hashString, rgba,
-        storage, Settings, Sound, Auth, ROLES, ROLE_IDS, PERMISSIONS, ACCESS, ACCESS_CODES, switchRole, applyPermissions,
+        storage, Settings, Sound, Auth, Account, PLANS, PROMO_CODES, TEST_CARDS, WALLET_LIMITS, FUNDING,
+        formatMoney, cardBrand, luhnOk, topupBonus, deviceName, uid, detectOS, detectBrowser, ROLES, ROLE_IDS, PERMISSIONS, ACCESS, ACCESS_CODES, switchRole, applyPermissions,
         Catalog, BUILTIN_PROJECTS, BASE_CATEGORIES, PROJECT_ICONS, formatMiB, dateISO, toast, showBanner, Modal, Tabs, Syslog, Terminal,
         SERVERS, Telemetry, statusBadge, formatPlayers, PROJECTS, CATEGORIES, STATUSES, Docs,
         observeReveal, reducedMotion, copyText, updateUserUI, NICKS, THEMES, Theme

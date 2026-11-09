@@ -5,7 +5,7 @@
  * его API (window.NEXUS). Страница определяется по <body data-page>:
  *   home      — index.html      (ядро экосистемы — логика в ui-effects.js)
  *   projects  — projects.html   (фильтры, карточки, загрузки, досье, конструктор проектов)
- *   dashboard — dashboard.html  (профиль и роль, настройки HUD)
+ *   dashboard — dashboard.html  (кабинет: кошелёк, подписка, библиотека, уведомления, безопасность, профиль)
  *   auth      — auth.html       (вход, регистрация, DEMO ACCESS)
  *
  * Авторизация демонстрационная: профиль хранится только в localStorage
@@ -228,7 +228,7 @@
             Sound.play("granted");
             const s = Auth.get();
             if (s) {
-                Auth.addDownload({ build: p.title, version: p.version, date: Date.now(), size: p.size, sha: "external", status: "LINK" });
+                Auth.addDownload({ id: p.id, build: p.title, version: p.version, date: Date.now(), size: p.size, sha: "external", status: "LINK" });
                 NX.Syslog.add(`downloads: ${s.callsign} opened ${p.title} ${p.version} (external link)`);
             }
             toast(`${p.title} ${p.version}: открываю ссылку на скачивание в новой вкладке`, "ok", { ttl: 4200 });
@@ -314,7 +314,7 @@
             Sound.play("granted");
             const s = Auth.get();
             if (s) {
-                Auth.addDownload({ build: p.title, version: p.version, date: Date.now(), size: p.size, sha, status: "VERIFIED" });
+                Auth.addDownload({ id: p.id, build: p.title, version: p.version, date: Date.now(), size: p.size, sha, status: "VERIFIED" });
                 NX.Syslog.add(`downloads: ${s.callsign} fetched ${p.title} ${p.version}`);
             }
             toast(`${p.title} ${p.version} загружена и проверена (демо). ${s ? "Запись добавлена в кабинет." : "Войдите, чтобы вести историю загрузок."}`, "ok", { ttl: 5000 });
@@ -1121,8 +1121,146 @@
     }
 
     /* ================================================================
-     * Кабинет: профиль, роль и права, история загрузок
+     * Кабинет NEXUS ID: обзор, кошелёк (тестовые платежи), подписка и
+     * поддержка проектов, библиотека, уведомления, безопасность,
+     * профиль и роль, настройки HUD
      * ================================================================ */
+    const DASH_TABS = {
+        overview: "Обзор",
+        wallet: "Кошелёк",
+        plus: "Подписка и поддержка",
+        library: "Библиотека",
+        notifications: "Уведомления",
+        security: "Безопасность",
+        profile: "Профиль и роль",
+        settings: "Настройки HUD"
+    };
+    const { Account, PLANS, TEST_CARDS, WALLET_LIMITS, formatMoney, cardBrand, luhnOk, topupBonus, deviceName } = NX;
+    const money = k => formatMoney(k);
+
+    const dash = { txFilter: "all", txLimit: 10, notifFilter: "all", profileDirty: false, paying: false };
+
+    function setText(id, v) {
+        const el = document.getElementById(id);
+        if (el && el.textContent !== String(v)) el.textContent = v;
+    }
+
+    function ago(ts) {
+        const diff = Date.now() - ts;
+        const min = Math.round(diff / 60000);
+        if (diff < 0 || min < 1) return "только что";
+        if (min < 60) return `${min} мин назад`;
+        const h = Math.round(min / 60);
+        if (h < 24) return `${h} ч назад`;
+        const d = Math.round(h / 24);
+        if (d === 1) return "вчера";
+        if (d < 30) return `${d} дн. назад`;
+        return dateStr(new Date(ts));
+    }
+
+    function plural(n, one, few, many) {
+        const m10 = n % 10, m100 = n % 100;
+        if (m10 === 1 && m100 !== 11) return one;
+        if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+        return many;
+    }
+
+    function parseSizeMiB(str) {
+        const m = String(str || "").match(/([\d.,]+)\s*(KiB|MiB|GiB|KB|MB|GB)?/i);
+        if (!m) return 0;
+        const v = parseFloat(m[1].replace(",", "."));
+        const u = (m[2] || "MiB").toUpperCase();
+        if (u.startsWith("G")) return v * 1024;
+        if (u.startsWith("K")) return v / 1024;
+        return v;
+    }
+
+    /* Сумма из строки «1 250,50» → копейки */
+    function parseRub(str) {
+        const clean = String(str || "").replace(/[\s\u00a0₽]/g, "").replace(",", ".");
+        if (!/^\d+(\.\d{0,2})?$/.test(clean)) return NaN;
+        return Math.round(parseFloat(clean) * 100);
+    }
+
+    /* Плавный счётчик суммы */
+    function animateMoney(el, to) {
+        if (!el) return;
+        const from = Number(el.getAttribute("data-kop"));
+        el.setAttribute("data-kop", String(to));
+        if (!Number.isFinite(from) || from === to || reducedMotion()) { el.textContent = money(to); return; }
+        const t0 = performance.now(), dur = 700;
+        const step = now => {
+            const k = Math.min(1, (now - t0) / dur);
+            const e = 1 - Math.pow(1 - k, 3);
+            el.textContent = money(Math.round(from + (to - from) * e));
+            if (k < 1 && el.getAttribute("data-kop") === String(to)) requestAnimationFrame(step);
+            else if (k >= 1) el.textContent = money(to);
+        };
+        requestAnimationFrame(step);
+        el.classList.remove("is-bump");
+        void el.offsetWidth;
+        el.classList.add("is-bump");
+    }
+
+    function downloadFile(name, text, type) {
+        try {
+            const blob = new Blob([text], { type: type || "text/plain;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = name;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 2000);
+            return true;
+        } catch (e) {
+            toast("Браузер не разрешил сохранить файл", "warn");
+            return false;
+        }
+    }
+
+    function goTab(key, opts) {
+        opts = opts || {};
+        if (!DASH_TABS[key]) return;
+        const tab = document.getElementById("dtab-" + key);
+        if (tab && tab.getAttribute("aria-selected") !== "true") Tabs.byId("dtab-" + key);
+        const shell = $(".dash-shell");
+        if (opts.scroll !== false && shell) {
+            const top = shell.getBoundingClientRect().top;
+            if (top < 0 || top > window.innerHeight * 0.6) shell.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "start" });
+        }
+        if (opts.target) {
+            setTimeout(() => {
+                const el = $(opts.target);
+                if (el) el.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "start" });
+            }, 80);
+        }
+    }
+
+    /* Открыть кошелёк с подставленной суммой (например, «не хватает средств») */
+    function openTopup(kop) {
+        goTab("wallet", { target: "#topup-form" });
+        if (kop > 0) {
+            const rub = Math.max(WALLET_LIMITS.min, Math.ceil(kop / 100) * 100);
+            const input = $("#topup-amount");
+            if (input) {
+                input.value = String(rub / 100);
+                input.dispatchEvent(new Event("input"));
+            }
+        }
+        setTimeout(() => { const i = $("#topup-amount"); if (i) i.focus({ preventScroll: true }); }, 350);
+    }
+
+    function fieldError(input, text) {
+        const field = input.closest(".field");
+        if (!field) return;
+        field.classList.toggle("is-invalid", !!text);
+        const err = field.querySelector(".field-error");
+        if (err) err.textContent = text || "";
+        if (text) input.setAttribute("aria-invalid", "true"); else input.removeAttribute("aria-invalid");
+    }
+
     function initDashboard() {
         const lock = $("#dash-lock");
         const app = $("#dash-app");
@@ -1138,15 +1276,14 @@
             demoBtn.addEventListener("click", async () => {
                 demoBtn.classList.add("is-busy");
                 Auth.login({ callsign: "demo_operator", role: "user", demo: true, remember: true });
-                await showBanner("ACCESS GRANTED", { sub: "DEMO ACCESS · ROLE USER" });
+                await showBanner("ACCESS GRANTED", { sub: "NEXUS ID · DEMO" });
                 demoBtn.classList.remove("is-busy");
                 start();
-                toast("Демо-доступ: роль USER. Переключить роль можно ниже или командой role", "ok", { ttl: 4800 });
+                toast("Вход выполнен: демо-аккаунт demo_operator", "ok", { ttl: 4200 });
             });
         }
 
         let started = false;
-        const map = { profile: "dtab-profile", settings: "dtab-settings" };
         const start = () => {
             const s = Auth.get();
             if (!s) { showLocked(); return; }
@@ -1154,30 +1291,49 @@
             app.hidden = false;
             if (NX.storage.sessionGet("nx_welcome")) {
                 try { window.sessionStorage.removeItem("nx_welcome"); } catch (e) { /* ignore */ }
-                setTimeout(() => toast(`Добро пожаловать, ${s.callsign}! Роль: ${ROLES[s.role].label} // ${ROLES[s.role].name}`, "ok", { ttl: 4500 }), 350);
+                setTimeout(() => toast(`Добро пожаловать, ${s.callsign}!`, "ok", { ttl: 4000 }), 350);
             }
+            dash.profileDirty = false;
             renderProfile();
             if (started) return;
             started = true;
             initSettingsPanel();
-            const h = window.location.hash.replace("#", "");
-            if (map[h]) Tabs.byId(map[h]);
-            window.addEventListener("hashchange", () => {
-                const k = window.location.hash.replace("#", "");
-                if (map[k]) Tabs.byId(map[k]);
-            });
-            // Обновляем hash при переключении вкладки (без прокрутки)
+            initWallet();
+            initPlus();
+            initLibrary();
+            initNotifications();
+            initSecurity();
+            initProfileForm();
+
             app.addEventListener("nexus:tab", e => {
-                const key = Object.keys(map).find(k => map[k] === e.detail.id);
-                if (key && window.history.replaceState) window.history.replaceState(null, "", "#" + key);
+                const key = e.detail.id.replace("dtab-", "");
+                if (!DASH_TABS[key]) return;
+                setText("dash-crumb", `NEXUS ID / ${DASH_TABS[key].toUpperCase()}`);
+                if (window.history.replaceState) window.history.replaceState(null, "", "#" + key);
+                if (key === "wallet") drawSbpQr();
             });
+            const fromHash = () => {
+                const k = window.location.hash.replace("#", "");
+                if (DASH_TABS[k]) goTab(k, { scroll: false });
+                else if (k === "servers") goTab("overview", { scroll: false });
+            };
+            fromHash();
+            window.addEventListener("hashchange", fromHash);
+            // Переходы между разделами: [data-goto], [data-topup]
+            app.addEventListener("click", e => {
+                const topup = e.target.closest("[data-topup]");
+                if (topup) { e.preventDefault(); openTopup(0); return; }
+                const go = e.target.closest("[data-goto]");
+                if (go) { e.preventDefault(); goTab(go.getAttribute("data-goto"), { target: go.getAttribute("data-scroll") }); }
+            });
+            setInterval(() => { if (!app.hidden && document.visibilityState === "visible") renderOverview(); }, 60000);
         };
 
         // Выход
         $$("[data-logout]").forEach(btn => btn.addEventListener("click", () => {
             Auth.logout();
             Sound.play("denied");
-            toast("Сессия завершена", "warn");
+            toast("Вы вышли из аккаунта", "warn");
             setTimeout(() => { window.location.href = "auth.html"; }, 400);
         }));
 
@@ -1186,48 +1342,831 @@
             if (!Auth.get()) { showLocked(); return; }
             if (app.hidden) start(); else renderProfile();
         });
+        document.addEventListener("nexus:account", () => { if (!app.hidden) renderProfile(); });
+        document.addEventListener("nexus:catalog", () => { if (!app.hidden) { renderLibrary(); renderOverview(); renderPlus(); } });
 
         start();
     }
 
+    /* Полная перерисовка кабинета (имя сохранено для совместимости) */
     function renderProfile() {
         const s = Auth.get();
-        if (!s) return;
-        const role = ROLES[s.role];
-        drawAvatar($("#avatar-canvas"), avatarSeed(s));
-        const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-        set("profile-name", s.callsign);
-        set("profile-id", s.id);
-        set("profile-level", `${role.label} // ${role.name}`);
-        set("pi-callsign", s.callsign);
-        set("pi-email", s.email);
-        set("pi-id", s.id);
-        set("pi-role", `${role.label} — ${role.name}${s.demo ? " (DEMO)" : ""}`);
-        set("pi-registered", formatDate(s.registered));
-        set("pi-last", formatDate(s.lastLogin));
-        set("pi-session", s.expires ? "до " + formatDate(s.expires) : "запомнена на устройстве");
-        $$("#clearance-bars i").forEach((el, i) => el.classList.toggle("on", i < role.rank));
+        const a = Account.get();
+        if (!s || !a) return;
+        renderIdentity(s, a);
+        renderOverview(s, a);
+        renderWallet(s, a);
+        renderPlus(s, a);
+        renderLibrary(s, a);
+        renderNotifications(s, a);
+        renderSecurity(s, a);
+        renderProfileTab(s, a);
+    }
 
-        // Карточка роли
-        const card = $("#role-card");
-        if (card) {
-            card.setAttribute("data-role", s.role);
-            set("role-name", role.label);
-            set("role-title", role.name);
-            set("role-desc", role.desc);
+    /* ----- Левая колонка: карточка аккаунта и бейджи меню ----- */
+    function renderIdentity(s, a) {
+        const role = ROLES[s.role];
+        const plan = PLANS[a.plan.id];
+        drawAvatar($("#avatar-canvas"), avatarSeed(s));
+        setText("profile-name", a.profile.displayName || s.callsign);
+        setText("profile-id", s.id);
+        setText("id-role", role.label);
+        const planEl = $("#id-plan");
+        if (planEl) {
+            planEl.textContent = plan.label;
+            planEl.setAttribute("data-plan", plan.id);
+        }
+        const frame = $("#avatar-frame");
+        if (frame) frame.setAttribute("data-plan", plan.id);
+        animateMoney($("#id-balance"), a.balance);
+        setText("session-device", deviceName());
+
+        const unread = a.notifications.filter(n => !n.read).length;
+        const nb = $("#nav-badge-notifications");
+        if (nb) { nb.hidden = !unread; nb.textContent = unread > 99 ? "99+" : String(unread); }
+        const lib = libraryState(s);
+        const lb = $("#nav-badge-library");
+        if (lb) { lb.hidden = !lib.updates; lb.textContent = String(lib.updates); lb.title = "Доступны обновления"; }
+        const sec = Account.securityScore(a, s);
+        const sb = $("#nav-badge-security");
+        if (sb) { sb.hidden = sec.score >= 50; sb.title = "Защита аккаунта ниже 50%"; }
+    }
+
+    /* ----- Обзор ----- */
+    function renderOverview(s, a) {
+        s = s || Auth.get();
+        a = a || Account.get();
+        if (!s || !a) return;
+        const hour = new Date().getHours();
+        const hello = hour < 5 ? "Доброй ночи" : hour < 12 ? "Доброе утро" : hour < 18 ? "Добрый день" : "Добрый вечер";
+        setText("ov-greeting", `${hello}, ${a.profile.displayName || s.callsign}`);
+        let today;
+        try { today = new Date().toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); } catch (e) { today = dateStr(new Date()); }
+        setText("ov-date", today);
+
+        animateMoney($("#ov-balance"), a.balance);
+        const lastIn = a.tx.find(t => t.type === "topup" && t.status === "ok");
+        setText("ov-balance-sub", lastIn ? `пополнение ${ago(lastIn.date)}` : "пополните, чтобы оформить NEXUS+");
+        const plan = Account.planInfo(a);
+        setText("ov-plan", plan.label);
+        setText("ov-plan-sub", plan.until ? `до ${dateStr(new Date(plan.until))}${plan.autoRenew ? " · автопродление" : ""}` : "базовый тариф, бесплатно");
+        const lib = libraryState(s);
+        setText("ov-downloads", String((s.downloads || []).length));
+        setText("ov-downloads-sub", lib.updates ? `${lib.updates} ${plural(lib.updates, "обновление", "обновления", "обновлений")} доступно` : `${lib.available} ${plural(lib.available, "сборка доступна", "сборки доступны", "сборок доступно")}`);
+        const sec = Account.securityScore(a, s);
+        setText("ov-security", sec.score + "%");
+        setText("ov-security-sub", `${sec.items.filter(x => x.done).length} из ${sec.items.length} пунктов`);
+
+        // Лента активности: операции, загрузки, события безопасности
+        const feed = $("#ov-feed");
+        if (feed) {
+            const items = [];
+            a.tx.slice(0, 8).forEach(t => items.push({ date: t.date, icon: t.amount > 0 ? "plus" : "portfolio", title: t.title, meta: t.method + (t.status === "failed" ? " · отклонён" : ""), amount: t.status === "ok" ? t.amount : null, failed: t.status === "failed" }));
+            (s.downloads || []).slice(0, 6).forEach(d => items.push({ date: d.date, icon: "download", title: `Загрузка ${d.build}`, meta: `${d.version} · ${d.size}` }));
+            a.security.log.slice(0, 6).forEach(l => items.push({ date: l.date, icon: l.ok ? "lock" : "alert", title: l.event, meta: l.device, failed: !l.ok }));
+            items.sort((x, y) => y.date - x.date);
+            feed.innerHTML = items.slice(0, 7).map(it => `
+                <li class="${it.failed ? "is-failed" : ""}">
+                    <img src="assets/icons/${it.icon}.svg" alt="" width="16" height="16">
+                    <span class="feed-text"><b>${escapeHtml(it.title)}</b><i>${escapeHtml(it.meta || "")} · ${escapeHtml(ago(it.date))}</i></span>
+                    ${it.amount !== null && it.amount !== undefined ? `<span class="feed-amount ${it.amount > 0 ? "is-plus" : ""}">${escapeHtml(formatMoney(it.amount, { sign: true }))}</span>` : ""}
+                </li>`).join("") || '<li class="feed-empty">Событий пока нет</li>';
         }
 
-        // Матрица прав: строки — права, колонки — роли
-        const perm = $("#perm-body");
-        if (perm) {
-            perm.innerHTML = PERMISSIONS.map(x => {
-                const cells = ROLE_IDS.map(id => {
-                    const ok = ROLES[id].rank >= ROLES[x.min].rank;
-                    return `<td data-label="${ROLES[id].label}" class="${id === s.role ? "is-current" : ""}"><span class="${ok ? "access-yes" : "access-no"}">${ok ? "YES" : "—"}</span></td>`;
-                }).join("");
-                return `<tr><td data-label="Право">${escapeHtml(x.label)}</td>${cells}</tr>`;
+        // Проверка аккаунта
+        const extra = [
+            { id: "topup", label: "Баланс пополнен хотя бы раз", done: a.tx.some(t => t.type === "topup" && t.status === "ok"), tab: "wallet", action: "Пополнить" },
+            { id: "profile", label: "Профиль заполнен", done: !!(a.profile.bio || a.profile.discord || a.profile.github), tab: "profile", action: "Заполнить" }
+        ];
+        const all = sec.items.concat(extra);
+        const pct = Math.round(all.filter(x => x.done).length / all.length * 100);
+        setText("ov-check-score", pct + "%");
+        const bar = $("#ov-check-bar");
+        if (bar) bar.style.width = pct + "%";
+        const cl = $("#ov-checklist");
+        if (cl) cl.innerHTML = checklistHtml(all);
+
+        // Свежие релизы
+        const rel = $("#ov-releases");
+        if (rel) {
+            const owned = ownedVersions(s);
+            const list = PROJECTS.slice().sort((x, y) => String(y.updated).localeCompare(String(x.updated))).slice(0, 4);
+            rel.innerHTML = list.map(p => {
+                const mine = owned[p.id];
+                const upd = mine && mine !== p.version;
+                return `<li>
+                    <img src="assets/icons/${escapeHtml(p.icon)}.svg" alt="" width="18" height="18">
+                    <span class="rel-text"><b>${escapeHtml(p.title)}</b><i>${escapeHtml(p.version)} · ${escapeHtml(p.updated)}</i></span>
+                    ${upd ? '<span class="badge badge-online">UPDATE</span>' : `<span class="rel-status">${escapeHtml(STATUSES[p.status].label)}</span>`}
+                    <a class="btn btn-sm" href="projects.html#${encodeURIComponent(p.id)}">${upd ? "Обновить" : "Открыть"}</a>
+                </li>`;
             }).join("");
-            $$("#perm-head th[data-role-col]").forEach(th => th.classList.toggle("is-current", th.getAttribute("data-role-col") === s.role));
+        }
+    }
+
+    function checklistHtml(items) {
+        return items.map(x => `
+            <li class="${x.done ? "is-done" : ""}">
+                <span class="cl-mark" aria-hidden="true">${x.done ? "✓" : "!"}</span>
+                <span class="cl-text">${escapeHtml(x.label)}</span>
+                ${x.done ? '<span class="cl-ok">OK</span>' : `<button class="link-btn" type="button" data-goto="${x.tab}"${x.id === "2fa" ? ' data-scroll="#twofa-box"' : x.id === "pwd" ? ' data-scroll="#pwd-form"' : x.id === "sessions" ? ' data-scroll="#sess-body"' : ""}>${escapeHtml(x.action)} →</button>`}
+            </li>`).join("");
+    }
+
+    /* ----- Кошелёк ----- */
+    function txLabel(t) {
+        return { topup: "Пополнение", bonus: "Бонус", cashback: "Кешбэк", plan: "Подписка", donate: "Поддержка", spend: "Списание", refund: "Возврат" }[t.type] || "Операция";
+    }
+
+    function renderWallet(s, a) {
+        animateMoney($("#w-balance"), a.balance);
+        setText("w-account", s.id);
+        const from = Date.now() - 30 * 86400000;
+        const ok = a.tx.filter(t => t.status === "ok" && t.date >= from);
+        setText("w-in", money(ok.filter(t => t.type === "topup").reduce((x, t) => x + t.amount, 0)));
+        setText("w-out", money(-ok.filter(t => t.amount < 0).reduce((x, t) => x + t.amount, 0)));
+        setText("w-bonus", money(a.tx.filter(t => t.status === "ok" && (t.type === "bonus" || t.type === "cashback")).reduce((x, t) => x + t.amount, 0)));
+        setText("w-today", money(Account.todayTopups(a)));
+
+        // Сохранённые карты
+        const cards = $("#saved-cards");
+        if (cards) {
+            cards.innerHTML = a.cards.length ? a.cards.map(c => `
+                <li>
+                    <span class="sc-brand">${escapeHtml(c.brand)}</span>
+                    <span class="sc-num">•••• ${escapeHtml(c.last4)}</span>
+                    <span class="sc-exp">${escapeHtml(c.exp)}</span>
+                    <button class="btn btn-sm btn-danger" type="button" data-card-remove="${escapeHtml(c.id)}" aria-label="Удалить карту •••• ${escapeHtml(c.last4)}">Удалить</button>
+                </li>`).join("") : '<li class="muted">Карт пока нет — отметьте «Сохранить карту» при оплате.</li>';
+        }
+        const savedWrap = $("#pay-saved-wrap");
+        if (savedWrap) {
+            const c = a.cards[0];
+            savedWrap.hidden = !c;
+            if (c) setText("pay-saved-label", `${c.brand} •••• ${c.last4} · ${c.exp}`);
+            const radio = savedWrap.querySelector("input");
+            if (!c && radio && radio.checked) {
+                const cardRadio = $("input[name='pay-method'][value='card']");
+                if (cardRadio) { cardRadio.checked = true; cardRadio.dispatchEvent(new Event("change", { bubbles: true })); }
+            }
+        }
+        renderTx(a);
+    }
+
+    function filteredTx(a) {
+        return a.tx.filter(t => {
+            if (dash.txFilter === "in") return t.status === "ok" && t.amount > 0;
+            if (dash.txFilter === "out") return t.status === "ok" && t.amount < 0;
+            if (dash.txFilter === "failed") return t.status !== "ok";
+            return true;
+        });
+    }
+
+    function renderTx(a) {
+        a = a || Account.get();
+        const body = $("#tx-body");
+        if (!a || !body) return;
+        const list = filteredTx(a);
+        setText("tx-count", `${a.tx.length} ${plural(a.tx.length, "операция", "операции", "операций")}`);
+        if (!list.length) {
+            body.innerHTML = `<tr><td colspan="5" data-label="Операции">${a.tx.length ? "Нет операций по этому фильтру" : "Операций пока нет — пополните баланс любым способом выше"}</td></tr>`;
+        } else {
+            body.innerHTML = list.slice(0, dash.txLimit).map(t => `
+                <tr class="${t.status !== "ok" ? "is-failed" : ""}">
+                    <td data-label="Дата">${escapeHtml(formatDate(t.date))}<br><span class="muted">${escapeHtml(t.id)}</span></td>
+                    <td data-label="Операция"><b>${escapeHtml(t.title)}</b>${t.comment ? `<br><span class="muted">«${escapeHtml(t.comment)}»</span>` : ""}${t.reason ? `<br><span class="muted">${escapeHtml(t.reason)}</span>` : ""}</td>
+                    <td data-label="Способ">${escapeHtml(t.method)}</td>
+                    <td data-label="Статус"><span class="badge ${t.status === "ok" ? "badge-online" : "badge-offline"}">${t.status === "ok" ? "ВЫПОЛНЕНО" : "ОТКЛОНЁН"}</span></td>
+                    <td data-label="Сумма" class="num"><span class="tx-amount ${t.status !== "ok" ? "is-void" : t.amount > 0 ? "is-plus" : "is-minus"}">${escapeHtml(formatMoney(t.amount, { sign: true }))}</span></td>
+                </tr>`).join("");
+        }
+        const more = $("#tx-more");
+        if (more) more.hidden = list.length <= dash.txLimit;
+    }
+
+    /* Псевдо-QR для СБП (тестовый, не сканируется банком) */
+    function drawSbpQr() {
+        const c = $("#sbp-qr");
+        if (!c || !c.getContext || c.offsetParent === null) return;
+        const ctx = c.getContext("2d");
+        const n = 29, px = Math.floor(c.width / n);
+        const s = Auth.get();
+        let h = hashString(`${s ? s.id : "guest"}:${($("#topup-amount") || {}).value || ""}`) || 7;
+        const rnd = () => { h ^= h << 13; h >>>= 0; h ^= h >>> 17; h ^= h << 5; h >>>= 0; return h / 4294967296; };
+        const bg = getComputedStyle(document.documentElement).getPropertyValue("--color_light_black").trim() || "#090B0A";
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.fillStyle = NX.rgba(1);
+        const finder = (x, y) => {
+            ctx.fillRect(x * px, y * px, 7 * px, 7 * px);
+            ctx.fillStyle = bg; ctx.fillRect((x + 1) * px, (y + 1) * px, 5 * px, 5 * px);
+            ctx.fillStyle = NX.rgba(1); ctx.fillRect((x + 2) * px, (y + 2) * px, 3 * px, 3 * px);
+        };
+        for (let y = 0; y < n; y++) {
+            for (let x = 0; x < n; x++) {
+                const inFinder = (x < 8 && y < 8) || (x > n - 9 && y < 8) || (x < 8 && y > n - 9);
+                if (!inFinder && rnd() > 0.52) ctx.fillRect(x * px, y * px, px, px);
+            }
+        }
+        finder(0, 0); finder(n - 7, 0); finder(0, n - 7);
+    }
+
+    function initWallet() {
+        const form = $("#topup-form");
+        if (!form) return;
+        const amount = $("#topup-amount");
+        const grid = $("#amount-grid");
+        const num = $("#card-number"), exp = $("#card-exp"), cvc = $("#card-cvc"), holder = $("#card-holder");
+
+        // Тестовые карты
+        const tc = $("#test-cards");
+        if (tc) tc.innerHTML = TEST_CARDS.map(c => `
+            <li><code>${c.number}</code><span>${escapeHtml(c.label)}</span><button class="btn btn-sm" type="button" data-test-card="${c.number}">Подставить</button></li>`).join("");
+
+        const currentKop = () => parseRub(amount.value);
+        const updateAmount = () => {
+            const kop = currentKop();
+            const valid = Number.isFinite(kop) && kop >= WALLET_LIMITS.min && kop <= WALLET_LIMITS.max;
+            $$(".amount-btn", grid).forEach(b => {
+                const on = Number.isFinite(kop) && +b.getAttribute("data-amount") * 100 === kop;
+                b.classList.toggle("active", on);
+                b.setAttribute("aria-pressed", String(on));
+            });
+            const bonus = valid ? topupBonus(kop) : 0;
+            setText("topup-total", valid ? money(kop) : "—");
+            setText("topup-credit", valid && bonus ? `· зачислим ${money(kop + bonus)}` : "");
+            setText("topup-bonus", bonus ? `Бонус к пополнению: +${money(bonus)}` : "Бонус от 1 000 ₽ — +5%, от 5 000 ₽ — +10%");
+            $("#topup-bonus").classList.toggle("is-on", !!bonus);
+            const btnText = $("#topup-submit span");
+            if (btnText) btnText.textContent = valid ? `Оплатить ${money(kop)}` : "Оплатить";
+            if ($("#pane-sbp") && !$("#pane-sbp").hidden) drawSbpQr();
+            return valid;
+        };
+        grid.addEventListener("click", e => {
+            const b = e.target.closest("[data-amount]");
+            if (!b) return;
+            amount.value = b.getAttribute("data-amount");
+            fieldError(amount, "");
+            updateAmount();
+            Sound.play("folder");
+        });
+        amount.addEventListener("input", () => { fieldError(amount, ""); updateAmount(); });
+        updateAmount();
+
+        // Способы оплаты
+        const methodNow = () => (form.querySelector("input[name='pay-method']:checked") || {}).value || "card";
+        form.addEventListener("change", e => {
+            if (e.target.name !== "pay-method") return;
+            const m = methodNow();
+            $("#pane-card").hidden = m !== "card";
+            $("#pane-sbp").hidden = m !== "sbp";
+            if (m === "sbp") drawSbpQr();
+            Sound.play("folder");
+        });
+
+        // Карта: форматирование и живое превью
+        const preview = () => {
+            const digits = num.value.replace(/\D/g, "");
+            const brand = cardBrand(digits);
+            setText("cp-brand", brand);
+            setText("cp-number", (digits + "•".repeat(Math.max(0, 16 - digits.length))).slice(0, Math.max(16, digits.length)).replace(/(.{4})/g, "$1 ").trim());
+            setText("cp-holder", holder.value.trim() || "CARDHOLDER");
+            setText("cp-exp", exp.value || "MM/YY");
+            $("#card-preview").setAttribute("data-brand", brand.toLowerCase());
+        };
+        num.addEventListener("input", () => {
+            const d = num.value.replace(/\D/g, "").slice(0, 19);
+            num.value = d.replace(/(.{4})/g, "$1 ").trim();
+            fieldError(num, "");
+            preview();
+        });
+        exp.addEventListener("input", e => {
+            let d = exp.value.replace(/\D/g, "").slice(0, 4);
+            if (d.length === 1 && +d > 1) d = "0" + d;
+            exp.value = d.length > 2 || (d.length === 2 && e.inputType !== "deleteContentBackward") ? d.slice(0, 2) + "/" + d.slice(2) : d;
+            fieldError(exp, "");
+            preview();
+        });
+        cvc.addEventListener("input", () => { cvc.value = cvc.value.replace(/\D/g, "").slice(0, 4); fieldError(cvc, ""); });
+        holder.addEventListener("input", () => {
+            const v = holder.value.toUpperCase().replace(/[^A-Z .'-]/g, "");
+            if (v !== holder.value) holder.value = v;
+            fieldError(holder, "");
+            preview();
+        });
+        form.addEventListener("click", e => {
+            const b = e.target.closest("[data-test-card]");
+            if (!b) return;
+            num.value = b.getAttribute("data-test-card");
+            const y = (new Date().getFullYear() + 3) % 100;
+            exp.value = `12/${NX.pad(y)}`;
+            cvc.value = "123";
+            if (!holder.value) {
+                const s = Auth.get();
+                holder.value = (s ? s.callsign : "TEST USER").toUpperCase().replace(/[^A-Z .'-]/g, " ").replace(/\s+/g, " ").trim() || "TEST USER";
+            }
+            [num, exp, cvc, holder].forEach(i => fieldError(i, ""));
+            preview();
+            Sound.play("granted");
+            toast(`Подставлена тестовая карта ${b.getAttribute("data-test-card").slice(-4)}`, "info");
+        });
+
+        const validateCard = () => {
+            let ok = true;
+            const digits = num.value.replace(/\D/g, "");
+            if (!luhnOk(digits)) { fieldError(num, digits.length < 13 ? "Введите номер карты полностью" : "Номер карты введён с ошибкой"); ok = false; }
+            const m = exp.value.match(/^(\d{2})\/(\d{2})$/);
+            if (!m || +m[1] < 1 || +m[1] > 12) { fieldError(exp, "Формат MM/YY"); ok = false; }
+            else {
+                const end = new Date(2000 + +m[2], +m[1], 1).getTime();
+                if (end <= Date.now()) { fieldError(exp, "Срок действия карты истёк"); ok = false; }
+                else if (end > Date.now() + 20 * 365 * 86400000) { fieldError(exp, "Проверьте год"); ok = false; }
+            }
+            if (!/^\d{3,4}$/.test(cvc.value)) { fieldError(cvc, "3 цифры с обратной стороны"); ok = false; }
+            if (holder.value.trim().length < 2) { fieldError(holder, "Как на карте, латиницей"); ok = false; }
+            return ok;
+        };
+
+        form.addEventListener("submit", e => {
+            e.preventDefault();
+            if (dash.paying) return;
+            const kop = currentKop();
+            if (!Number.isFinite(kop)) { fieldError(amount, "Введите сумму числом, например 500"); amount.focus(); Sound.play("denied"); return; }
+            const chk = Account.checkTopup(kop);
+            if (!chk.ok) { fieldError(amount, chk.text); amount.focus(); Sound.play("denied"); return; }
+            const m = methodNow();
+            let card = null, result = "ok", label = "";
+            if (m === "card") {
+                if (!validateCard()) {
+                    Sound.play("denied");
+                    const bad = form.querySelector("#pane-card .field.is-invalid .input");
+                    if (bad) bad.focus();
+                    return;
+                }
+                const digits = num.value.replace(/\D/g, "");
+                const test = TEST_CARDS.find(c => c.number.replace(/\s/g, "") === digits);
+                result = test ? test.result : "ok";
+                card = { brand: cardBrand(digits), last4: digits.slice(-4), exp: exp.value, holder: holder.value.trim() };
+                label = `${card.brand} •• ${card.last4}`;
+            } else if (m === "saved") {
+                const a = Account.get();
+                const c = a && a.cards[0];
+                if (!c) return;
+                label = `${c.brand} •• ${c.last4}`;
+            } else {
+                label = "СБП";
+            }
+            runPayment({ kop, method: m, label, result, card, saveCard: m === "card" && $("#card-save").checked });
+        });
+
+        // Промокод
+        const promo = $("#promo-form");
+        if (promo) promo.addEventListener("submit", e => {
+            e.preventDefault();
+            const input = $("#promo-code");
+            const res = Account.applyPromo(input.value);
+            const msg = $("#promo-msg");
+            msg.classList.toggle("is-error", !res || !res.ok);
+            if (!res || !res.ok) {
+                msg.textContent = res ? res.text : "Не удалось активировать промокод";
+                Sound.play("denied");
+                return;
+            }
+            msg.textContent = `Зачислено ${money(res.amount)} по промокоду ${res.code}`;
+            input.value = "";
+            Sound.play("granted");
+            toast(`Промокод ${res.code}: +${money(res.amount)}`, "ok");
+        });
+
+        // Карты, фильтр, «ещё», выписка
+        $("#dpanel-wallet").addEventListener("click", e => {
+            const rm = e.target.closest("[data-card-remove]");
+            if (rm) {
+                Account.removeCard(rm.getAttribute("data-card-remove"));
+                Sound.play("panels");
+                toast("Карта удалена из аккаунта", "ok");
+                return;
+            }
+            const f = e.target.closest("[data-tx-filter]");
+            if (f) {
+                dash.txFilter = f.getAttribute("data-tx-filter");
+                dash.txLimit = 10;
+                $$("[data-tx-filter]").forEach(b => b.classList.toggle("active", b === f));
+                Sound.play("folder");
+                renderTx();
+            }
+        });
+        $("#tx-more").addEventListener("click", () => { dash.txLimit += 10; renderTx(); Sound.play("folder"); });
+        $("#tx-export").addEventListener("click", () => {
+            const a = Account.get();
+            const s = Auth.get();
+            if (!a || !a.tx.length) { toast("Операций для выписки пока нет", "warn"); return; }
+            const esc = v => `"${String(v).replace(/"/g, '""')}"`;
+            const rows = [["Дата", "ID", "Тип", "Операция", "Способ", "Статус", "Сумма, ₽"]].concat(a.tx.map(t => [
+                formatDate(t.date), t.id, txLabel(t), t.title, t.method, t.status === "ok" ? "выполнено" : "отклонён", (t.amount / 100).toFixed(2).replace(".", ",")
+            ]));
+            const csv = "\ufeff" + rows.map(r => r.map(esc).join(";")).join("\r\n");
+            if (downloadFile(`nexus-wallet-${s.id}-${NX.dateISO(new Date())}.csv`, csv, "text/csv;charset=utf-8")) toast("Выписка сохранена в CSV", "ok");
+        });
+        document.addEventListener("nexus:theme", drawSbpQr);
+    }
+
+    /* Платёж: окно с этапами обработки, 3-D Secure и результатом */
+    function runPayment(opt) {
+        dash.paying = true;
+        const steps = opt.method === "sbp"
+            ? ["Формирование QR-кода СБП", "Ожидание подтверждения в приложении банка", "Зачисление на баланс"]
+            : ["Создание платежа", "Авторизация в банке-эмитенте", opt.result === "3ds" ? "Подтверждение 3-D Secure" : "Проверка антифрод-системой", "Зачисление на баланс"];
+        const modal = Modal.open({
+            title: "Оплата",
+            subtitle: `${money(opt.kop)} · ${escapeHtml(opt.label)}`,
+            className: "pay-modal",
+            noClose: true,
+            html: `
+                <div class="pay-flow">
+                    <ol class="pay-steps">${steps.map((t, i) => `<li data-step="${i}"><span class="ps-mark"></span>${escapeHtml(t)}</li>`).join("")}</ol>
+                    <div class="pay-stage" id="pay-stage"><div class="pay-spinner" aria-hidden="true"></div><p>Не закрывайте окно до завершения платежа…</p></div>
+                </div>`,
+            onClose: () => { dash.paying = false; }
+        });
+        const alive = () => Modal.current && Modal.current.modal === modal;
+        const stage = () => modal.querySelector("#pay-stage");
+        const mark = (i, state) => {
+            $$(".pay-steps li", modal).forEach((li, k) => {
+                li.classList.toggle("is-done", k < i || (k === i && state === "done"));
+                li.classList.toggle("is-active", k === i && state === "active");
+                li.classList.toggle("is-failed", k === i && state === "failed");
+            });
+        };
+        const finish = (ok, reason) => {
+            if (!alive()) return;
+            const st = stage();
+            if (ok) {
+                const res = Account.topup(opt.kop, opt.label, { card: opt.card, saveCard: opt.saveCard });
+                if (!res || !res.ok) { finish(false, res ? res.text : "Ошибка зачисления"); return; }
+                mark(steps.length, "done");
+                Sound.play("granted");
+                st.innerHTML = `
+                    <div class="pay-result is-ok">
+                        <img src="assets/icons/checkmark.svg" alt="" width="40" height="40">
+                        <p class="pr-title">Платёж выполнен</p>
+                        <p class="pr-amount">+${escapeHtml(money(opt.kop + res.bonus))}</p>
+                        <p class="pr-meta">${res.bonus ? `в том числе бонус ${escapeHtml(money(res.bonus))} · ` : ""}баланс ${escapeHtml(money(res.balance))}<br>Операция ${escapeHtml(res.tx.id)} · ${escapeHtml(formatDate(res.tx.date))}</p>
+                    </div>`;
+                if (opt.method === "card") ["card-number", "card-cvc"].forEach(id => { const el = document.getElementById(id); if (el) el.value = ""; });
+                const numEl = $("#card-number");
+                if (numEl) numEl.dispatchEvent(new Event("input"));
+                toast(`Баланс пополнен на ${money(opt.kop + res.bonus)}`, "ok");
+            } else {
+                Account.failTopup(opt.kop, opt.label, reason);
+                Sound.play("denied");
+                st.innerHTML = `
+                    <div class="pay-result is-failed">
+                        <img src="assets/icons/alert.svg" alt="" width="40" height="40">
+                        <p class="pr-title">Платёж отклонён</p>
+                        <p class="pr-meta">${escapeHtml(reason)}<br>Деньги не списаны. Попробуйте другую карту или СБП.</p>
+                    </div>`;
+            }
+            const actions = modal.querySelector(".modal_actions");
+            actions.innerHTML = "";
+            const done = document.createElement("button");
+            done.type = "button";
+            done.className = "btn btn-primary";
+            done.textContent = ok ? "Готово" : "Понятно";
+            done.addEventListener("click", () => Modal.close());
+            actions.appendChild(done);
+            dash.paying = false;
+            done.focus({ preventScroll: true });
+        };
+
+        const ask3ds = () => new Promise(resolve => {
+            let tries = 0;
+            stage().innerHTML = `
+                <form class="tds-form" id="tds-form" novalidate>
+                    <p class="tds-bank">3-D SECURE · ${escapeHtml(opt.label)}</p>
+                    <p>Банк отправил код подтверждения на телефон.<br><span class="muted">Тестовый код: <b>1234</b></span></p>
+                    <div class="field">
+                        <label for="tds-code">Код из SMS</label>
+                        <input class="input" id="tds-code" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+                        <span class="field-error" role="alert"></span>
+                    </div>
+                    <div class="tds-actions">
+                        <button class="btn btn-primary btn-sm" type="submit">Подтвердить</button>
+                        <button class="btn btn-sm" type="button" data-tds-cancel>Отменить</button>
+                    </div>
+                </form>`;
+            const f = $("#tds-form", modal);
+            const input = $("#tds-code", modal);
+            setTimeout(() => input.focus({ preventScroll: true }), 40);
+            f.addEventListener("submit", ev => {
+                ev.preventDefault();
+                if (input.value.trim() === "1234") { resolve(true); return; }
+                tries++;
+                Sound.play("denied");
+                if (tries >= 3) { resolve(false); return; }
+                fieldError(input, `Неверный код. Осталось попыток: ${3 - tries}`);
+                input.select();
+            });
+            f.querySelector("[data-tds-cancel]").addEventListener("click", () => resolve(null));
+        });
+
+        (async () => {
+            const wait = ms => delay(reducedMotion() ? Math.min(ms, 120) : ms);
+            for (let i = 0; i < steps.length; i++) {
+                if (!alive()) { toast("Платёж отменён — деньги не списаны", "warn"); return; }
+                mark(i, "active");
+                if (opt.method === "sbp" && i === 1) {
+                    stage().innerHTML = `<canvas class="pay-qr" id="pay-qr" width="140" height="140" aria-hidden="true"></canvas><p>Отсканируйте QR в приложении банка…<br><span class="muted">тестовый режим — подтверждение автоматически</span></p>`;
+                    const src = $("#sbp-qr");
+                    const dst = $("#pay-qr", modal);
+                    if (src && dst) { drawSbpQr(); dst.getContext("2d").drawImage(src, 0, 0, dst.width, dst.height); }
+                    await wait(2200);
+                } else if (opt.result === "3ds" && i === 2) {
+                    const ok = await ask3ds();
+                    if (!alive()) return;
+                    if (ok !== true) { mark(i, "failed"); finish(false, ok === null ? "Подтверждение 3-D Secure отменено" : "3-D Secure: неверный код подтверждения"); return; }
+                    stage().innerHTML = '<div class="pay-spinner" aria-hidden="true"></div><p>Код принят, завершаем платёж…</p>';
+                    await wait(500);
+                } else {
+                    await wait(i === 0 ? 650 : 900);
+                }
+                if (!alive()) { toast("Платёж отменён — деньги не списаны", "warn"); return; }
+                if (i === 1 && opt.result === "declined") { mark(i, "failed"); finish(false, "Банк-эмитент отклонил операцию (код 05)"); return; }
+                if (i === 1 && opt.result === "funds") { mark(i, "failed"); finish(false, "Недостаточно средств на карте (код 51)"); return; }
+                Sound.play("stdout");
+                mark(i, "done");
+            }
+            finish(true);
+        })();
+    }
+
+    /* ----- Подписка и поддержка проектов ----- */
+    function renderPlus(s, a) {
+        s = s || Auth.get();
+        a = a || Account.get();
+        if (!s || !a) return;
+        setText("plus-balance", money(a.balance));
+        const info = Account.planInfo(a);
+        setText("pc-label", info.label);
+        setText("pc-name", info.name);
+        const cur = $("#plan-current");
+        if (cur) cur.setAttribute("data-plan", info.id);
+        const days = info.until ? Math.max(0, Math.ceil((info.until - Date.now()) / 86400000)) : 0;
+        setText("pc-meta", info.id === "free" ? "Бесплатно, без ограничений по времени" :
+            info.autoRenew ? `Активен до ${dateStr(new Date(info.until))} · ${days} ${plural(days, "день", "дня", "дней")} · следующее списание ${money(info.price)}${a.balance < info.price ? " — пополните баланс" : ""}`
+                : `Автопродление выключено — тариф закончится ${dateStr(new Date(info.until))}`);
+        const renewWrap = $("#pc-renew-wrap");
+        if (renewWrap) {
+            renewWrap.hidden = info.id === "free";
+            const r = $("#pc-renew");
+            if (r) r.checked = !!info.autoRenew;
+        }
+        const cancel = $("#pc-cancel");
+        if (cancel) cancel.hidden = info.id === "free";
+
+        const grid = $("#plan-grid");
+        if (grid) {
+            const curPlan = PLANS[a.plan.id];
+            grid.innerHTML = Object.keys(PLANS).map(id => {
+                const p = PLANS[id];
+                const isCur = id === a.plan.id;
+                let btn;
+                if (isCur) btn = '<button class="btn btn-sm" type="button" disabled>Текущий тариф</button>';
+                else if (id === "free") btn = '<button class="btn btn-sm" type="button" data-plan-buy="free">Перейти на FREE</button>';
+                else {
+                    const credit = curPlan.price && a.plan.until > Date.now() ? Math.round(curPlan.price * (a.plan.until - Date.now()) / (30 * 86400000)) : 0;
+                    const price = Math.max(0, p.price - credit);
+                    btn = a.balance >= price
+                        ? `<button class="btn btn-sm btn-primary" type="button" data-plan-buy="${id}">Оформить · ${escapeHtml(money(price))}</button>`
+                        : `<button class="btn btn-sm" type="button" data-plan-topup="${price - a.balance}">Пополнить на ${escapeHtml(money(price - a.balance))}</button>`;
+                }
+                return `<article class="plan-card${isCur ? " is-current" : ""}" data-plan="${id}">
+                    ${isCur ? '<span class="plan-flag">ВАШ ТАРИФ</span>' : id === "plus" ? '<span class="plan-flag">ПОПУЛЯРНЫЙ</span>' : ""}
+                    <h3>${escapeHtml(p.label)}</h3>
+                    <p class="plan-name">${escapeHtml(p.name)}</p>
+                    <p class="plan-price"><b>${escapeHtml(money(p.price))}</b>${p.price ? " / 30 дней" : ""}</p>
+                    <p class="plan-desc">${escapeHtml(p.desc)}</p>
+                    <ul class="plan-perks">${p.perks.map(x => `<li>${escapeHtml(x)}</li>`).join("")}</ul>
+                    ${btn}
+                </article>`;
+            }).join("");
+        }
+
+        const list = $("#fund-list");
+        if (list) {
+            let total = 0;
+            list.innerHTML = PROJECTS.map(p => {
+                const f = Account.funding(p.id);
+                total += f.mine;
+                const pct = Math.min(100, Math.round(f.raised / f.goal * 100));
+                return `<li class="fund-item">
+                    <img src="assets/icons/${escapeHtml(p.icon)}.svg" alt="" width="22" height="22">
+                    <div class="fund-body">
+                        <p class="fund-head"><b>${escapeHtml(p.title)}</b><span>${pct}%</span></p>
+                        <div class="meter" aria-hidden="true"><i style="width:${pct}%"></i></div>
+                        <p class="fund-meta">${escapeHtml(money(f.raised))} из ${escapeHtml(money(f.goal))} · на ${escapeHtml(f.purpose)}${f.mine ? ` · <b>ваш вклад ${escapeHtml(money(f.mine))}</b>` : ""}</p>
+                    </div>
+                    <button class="btn btn-sm" type="button" data-donate="${escapeHtml(p.id)}"><img src="assets/icons/heart.svg" alt="" width="14" height="14">Поддержать</button>
+                </li>`;
+            }).join("");
+            setText("fund-total", total ? `Вы поддержали проекты на ${money(total)} — спасибо!` : "");
+        }
+    }
+
+    function initPlus() {
+        const panel = $("#dpanel-plus");
+        if (!panel) return;
+        panel.addEventListener("click", e => {
+            const top = e.target.closest("[data-plan-topup]");
+            if (top) { openTopup(+top.getAttribute("data-plan-topup")); return; }
+            const buy = e.target.closest("[data-plan-buy]");
+            if (buy) { confirmPlan(buy.getAttribute("data-plan-buy")); return; }
+            const don = e.target.closest("[data-donate]");
+            if (don) openDonate(don.getAttribute("data-donate"));
+        });
+        $("#pc-renew").addEventListener("change", e => {
+            Account.setAutoRenew(e.target.checked);
+            Sound.play("folder");
+            toast(`Автопродление ${e.target.checked ? "включено" : "выключено"}`, "ok");
+        });
+        $("#pc-cancel").addEventListener("click", () => {
+            const info = Account.planInfo();
+            Modal.open({
+                title: "Отменить подписку",
+                subtitle: info.label,
+                className: "confirm-modal",
+                html: `<div class="confirm-box"><img src="assets/icons/alert.svg" alt="" width="34" height="34"><p>Автопродление будет выключено, а тариф <b>${escapeHtml(info.label)}</b> останется активным до <b>${escapeHtml(dateStr(new Date(info.until)))}</b>.</p><p class="muted">Возобновить можно в любой момент до этой даты.</p></div>`,
+                buttons: [{ label: "Отменить подписку", icon: "ban", action: () => { Account.cancelPlan(false); Sound.play("panels"); toast("Подписка отменена — тариф действует до конца периода", "ok"); } }]
+            });
+        });
+    }
+
+    function confirmPlan(id) {
+        const p = PLANS[id];
+        const a = Account.get();
+        if (!p || !a) return;
+        if (id === "free") {
+            Modal.open({
+                title: "Перейти на FREE",
+                className: "confirm-modal",
+                html: `<div class="confirm-box"><img src="assets/icons/alert.svg" alt="" width="34" height="34"><p>Тариф ${escapeHtml(PLANS[a.plan.id].label)} отключится сразу, неиспользованные дни не возвращаются.</p><p class="muted">Чтобы тариф доработал до конца периода, используйте «Отменить подписку».</p></div>`,
+                buttons: [{ label: "Перейти на FREE", action: () => { Account.cancelPlan(true); Sound.play("panels"); toast("Тариф изменён на FREE", "ok"); } }]
+            });
+            return;
+        }
+        const cur = PLANS[a.plan.id];
+        const credit = cur.price && a.plan.until > Date.now() ? Math.round(cur.price * (a.plan.until - Date.now()) / (30 * 86400000)) : 0;
+        const price = Math.max(0, p.price - credit);
+        Modal.open({
+            title: `Оформить ${escapeHtml(p.label)}`,
+            subtitle: "30 дней",
+            className: "confirm-modal",
+            html: `<div class="confirm-box"><img src="assets/icons/star.svg" alt="" width="34" height="34">
+                <p>Списать <b>${escapeHtml(money(price))}</b> с баланса NEXUS ID${credit ? ` (стоимость ${escapeHtml(money(p.price))} минус остаток текущего тарифа ${escapeHtml(money(credit))})` : ""}?</p>
+                <p class="muted">Баланс после оплаты: ${escapeHtml(money(a.balance - price))}. Автопродление можно выключить в любой момент.</p></div>`,
+            buttons: [{
+                label: `Оплатить ${money(price)}`, primary: true, icon: "checkmark", action: () => {
+                    const res = Account.subscribe(id);
+                    if (!res || !res.ok) {
+                        Sound.play("denied");
+                        toast(res ? res.text : "Не удалось оформить подписку", "warn");
+                        if (res && res.error === "funds") setTimeout(() => openTopup(res.need), 200);
+                        return;
+                    }
+                    Sound.play("granted");
+                    showBanner(`${p.label} ACTIVE`, { sub: `до ${dateStr(new Date(Date.now() + 30 * 86400000))}` });
+                    toast(`Подписка ${p.label} активна`, "ok");
+                }
+            }]
+        });
+    }
+
+    function openDonate(pid) {
+        const p = PROJECTS.find(x => x.id === pid);
+        const a = Account.get();
+        if (!p || !a) return;
+        const cash = Account.planInfo(a).cashback || 0;
+        let kop = 10000;
+        const modal = Modal.open({
+            title: "Поддержать проект",
+            subtitle: escapeHtml(p.title),
+            className: "donate-modal",
+            html: `
+                <form class="donate-form" id="donate-form" novalidate>
+                    <p class="mod-lead">Сбор: ${escapeHtml(Account.funding(p.id).purpose)}. Баланс: <b>${escapeHtml(money(a.balance))}</b></p>
+                    <div class="amount-grid amount-grid-4" id="donate-grid">
+                        ${[50, 100, 250, 500].map(v => `<button type="button" class="amount-btn${v === 100 ? " active" : ""}" data-amount="${v}">${v} ₽</button>`).join("")}
+                    </div>
+                    <div class="field">
+                        <label for="donate-amount">Сумма, ₽</label>
+                        <input class="input" id="donate-amount" type="text" inputmode="decimal" value="100" autocomplete="off">
+                        <span class="field-error" role="alert"></span>
+                    </div>
+                    <div class="field">
+                        <label for="donate-comment">Комментарий для команды <i>— необязательно</i></label>
+                        <input class="input" id="donate-comment" type="text" maxlength="140" placeholder="Спасибо за проект!">
+                    </div>
+                    <p class="bonus-hint${cash ? " is-on" : ""}" id="donate-cash">${cash ? `Кешбэк ${cash}% по тарифу ${escapeHtml(PLANS[a.plan.id].label)}` : "С подпиской NEXUS+ вернём 5% на баланс"}</p>
+                </form>`,
+            buttons: [{
+                label: "Поддержать", primary: true, icon: "heart", action: () => {
+                    const input = $("#donate-amount", modal);
+                    kop = parseRub(input.value);
+                    if (!Number.isFinite(kop) || kop < 1000) { fieldError(input, "Минимум 10 ₽"); Sound.play("denied"); return false; }
+                    const res = Account.donate(p.id, kop, $("#donate-comment", modal).value.trim());
+                    if (!res || !res.ok) {
+                        if (res && res.error === "funds") {
+                            fieldError(input, `${res.text}`);
+                            Sound.play("denied");
+                            Modal.close();
+                            setTimeout(() => openTopup(res.need), 200);
+                            toast("Не хватает средств — пополните баланс", "warn");
+                            return;
+                        }
+                        fieldError(input, res ? res.text : "Ошибка");
+                        return false;
+                    }
+                    Sound.play("granted");
+                    toast(`Спасибо! ${p.title} получил ${money(kop)}`, "ok");
+                }
+            }]
+        });
+        const input = $("#donate-amount", modal);
+        const sync = () => {
+            const v = parseRub(input.value);
+            $$("#donate-grid .amount-btn", modal).forEach(b => b.classList.toggle("active", +b.getAttribute("data-amount") * 100 === v));
+            if (cash && Number.isFinite(v)) setText("donate-cash", `Кешбэк ${cash}%: вернём ${money(Math.round(v * cash / 100))} на баланс`);
+        };
+        $("#donate-grid", modal).addEventListener("click", e => {
+            const b = e.target.closest("[data-amount]");
+            if (!b) return;
+            input.value = b.getAttribute("data-amount");
+            fieldError(input, "");
+            sync();
+        });
+        input.addEventListener("input", () => { fieldError(input, ""); sync(); });
+        $("#donate-form", modal).addEventListener("submit", e => { e.preventDefault(); modal.querySelector(".modal_actions .btn-primary").click(); });
+        sync();
+    }
+
+    /* ----- Библиотека ----- */
+    function ownedVersions(s) {
+        const out = {};
+        (s.downloads || []).slice().reverse().forEach(d => {
+            const p = PROJECTS.find(x => x.id === d.id) || PROJECTS.find(x => x.title === d.build);
+            if (p) out[p.id] = d.version;
+        });
+        return out;
+    }
+
+    function libraryState(s) {
+        const owned = ownedVersions(s);
+        const rows = PROJECTS.map(p => {
+            const access = canDownload(p);
+            const mine = owned[p.id] || null;
+            let state = "new";
+            if (!access) state = "locked";
+            else if (mine && mine !== p.version) state = "update";
+            else if (mine) state = "ok";
+            return { p, access, mine, state };
+        });
+        return {
+            rows,
+            available: rows.filter(r => r.access).length,
+            owned: rows.filter(r => r.mine).length,
+            updates: rows.filter(r => r.state === "update").length
+        };
+    }
+
+    function renderLibrary(s) {
+        s = s || Auth.get();
+        if (!s) return;
+        const st = libraryState(s);
+        setText("lib-available", String(st.available));
+        setText("lib-owned", String(st.owned));
+        setText("lib-updates", String(st.updates));
+        const total = (s.downloads || []).reduce((x, d) => x + parseSizeMiB(d.size), 0);
+        setText("lib-size", total >= 1024 ? `${(total / 1024).toFixed(1)} GiB` : `${Math.round(total)} MiB`);
+        const order = { update: 0, ok: 1, new: 2, locked: 3 };
+        const list = $("#lib-list");
+        if (list) {
+            list.innerHTML = st.rows.slice().sort((x, y) => order[x.state] - order[y.state]).map(r => {
+                const p = r.p;
+                const stateHtml = {
+                    update: `<span class="lib-state is-update">Обновление ${escapeHtml(r.mine)} → ${escapeHtml(p.version)}</span>`,
+                    ok: `<span class="lib-state is-ok">Актуальная версия ${escapeHtml(p.version)}</span>`,
+                    new: `<span class="lib-state">Не скачано · ${escapeHtml(p.version)} · ${escapeHtml(p.size)}</span>`,
+                    locked: `<span class="lib-state is-locked">Нужна роль ${escapeHtml((ACCESS[p.access] || ACCESS.admin).short)}</span>`
+                }[r.state];
+                const btn = r.state === "locked"
+                    ? '<span class="btn btn-sm is-disabled" aria-disabled="true"><img src="assets/icons/lock.svg" alt="" width="14" height="14">Нет доступа</span>'
+                    : `<a class="btn btn-sm${r.state === "update" ? " btn-primary" : ""}" href="projects.html#${encodeURIComponent(p.id)}"><img src="assets/icons/download.svg" alt="" width="14" height="14">${r.state === "update" ? "Обновить" : r.state === "ok" ? "Открыть" : "Скачать"}</a>`;
+                return `<li class="lib-item is-${r.state}">
+                    <span class="lib-icon"><img src="assets/icons/${escapeHtml(p.icon)}.svg" alt="" width="22" height="22"></span>
+                    <span class="lib-text"><b>${escapeHtml(p.title)}</b><i>${escapeHtml(CATEGORIES[p.category] || p.category)} · ${escapeHtml(STATUSES[p.status].label)}</i>${stateHtml}</span>
+                    ${btn}
+                </li>`;
+            }).join("") || '<li class="muted">Каталог пуст</li>';
         }
         renderDownloads();
     }
@@ -1237,6 +2176,8 @@
         const body = $("#dl-body");
         if (!s || !body) return;
         const list = s.downloads || [];
+        const clear = $("#dl-clear");
+        if (clear) clear.hidden = !list.length;
         if (!list.length) {
             body.innerHTML = '<tr><td colspan="5" data-label="История">Загрузок пока нет — сборки скачиваются в <a href="projects.html">центре загрузок</a></td></tr>';
             return;
@@ -1249,6 +2190,443 @@
                 <td data-label="SHA-256">${d.sha === "external" ? "внешняя ссылка" : escapeHtml(d.sha) + "…"}</td>
                 <td data-label="Статус"><span class="badge badge-online">${escapeHtml(d.status)}</span></td>
             </tr>`).join("");
+    }
+
+    function initLibrary() {
+        const clear = $("#dl-clear");
+        if (clear) clear.addEventListener("click", () => {
+            Modal.open({
+                title: "Очистить историю",
+                className: "confirm-modal",
+                html: '<div class="confirm-box"><img src="assets/icons/alert.svg" alt="" width="34" height="34"><p>История загрузок будет удалена. Скачанные файлы на компьютере останутся.</p><p class="muted">Библиотека перестанет показывать обновления для этих сборок.</p></div>',
+                buttons: [{ label: "Очистить", icon: "close", action: () => { Auth.update({ downloads: [] }); Sound.play("panels"); toast("История загрузок очищена", "ok"); } }]
+            });
+        });
+    }
+
+    /* ----- Уведомления ----- */
+    function renderNotifications(s, a) {
+        a = a || Account.get();
+        if (!a) return;
+        const unread = a.notifications.filter(n => !n.read).length;
+        setText("notif-summary", a.notifications.length ? `${unread} ${plural(unread, "непрочитанное", "непрочитанных", "непрочитанных")} из ${a.notifications.length}` : "уведомлений нет");
+        const list = $("#notif-list");
+        if (list) {
+            const f = dash.notifFilter;
+            const items = a.notifications.filter(n => f === "all" || (f === "unread" ? !n.read : n.type === f));
+            list.innerHTML = items.map(n => {
+                const t = Account.NOTIF_TYPES[n.type] || Account.NOTIF_TYPES.system;
+                return `<li class="notif${n.read ? "" : " is-unread"}" data-notif="${escapeHtml(n.id)}">
+                    <span class="notif-icon"><img src="assets/icons/${t.icon}.svg" alt="" width="18" height="18"></span>
+                    <div class="notif-body">
+                        <p class="notif-title"><b>${escapeHtml(n.title)}</b><span class="notif-type">${escapeHtml(t.label)}</span></p>
+                        ${n.text ? `<p class="notif-text">${escapeHtml(n.text)}</p>` : ""}
+                        <p class="notif-time">${escapeHtml(formatDate(n.date))} · ${escapeHtml(ago(n.date))}</p>
+                    </div>
+                    <div class="notif-actions">
+                        ${n.link ? `<button class="btn btn-sm" type="button" data-notif-open="${escapeHtml(n.id)}">Открыть</button>` : ""}
+                        <button class="btn btn-sm" type="button" data-notif-remove="${escapeHtml(n.id)}" aria-label="Удалить уведомление"><img src="assets/icons/close.svg" alt="" width="12" height="12"></button>
+                    </div>
+                </li>`;
+            }).join("") || `<li class="notif-empty">${a.notifications.length ? "Нет уведомлений по этому фильтру" : "Здесь появятся платежи, релизы и события безопасности"}</li>`;
+        }
+        $$("[data-pref]").forEach(el => {
+            const k = el.getAttribute("data-pref");
+            if (k !== "security") el.checked = a.prefs[k] !== false;
+        });
+        const readAll = $("#notif-read-all");
+        if (readAll) readAll.disabled = !unread;
+        const clear = $("#notif-clear");
+        if (clear) clear.disabled = !a.notifications.length;
+    }
+
+    function initNotifications() {
+        const panel = $("#dpanel-notifications");
+        if (!panel) return;
+        panel.addEventListener("click", e => {
+            const f = e.target.closest("[data-notif-filter]");
+            if (f) {
+                dash.notifFilter = f.getAttribute("data-notif-filter");
+                $$("[data-notif-filter]").forEach(b => b.classList.toggle("active", b === f));
+                Sound.play("folder");
+                renderNotifications();
+                return;
+            }
+            const rm = e.target.closest("[data-notif-remove]");
+            if (rm) { Account.removeNotification(rm.getAttribute("data-notif-remove")); Sound.play("panels"); return; }
+            const op = e.target.closest("[data-notif-open]");
+            const a = Account.get();
+            if (op && a) {
+                const n = a.notifications.find(x => x.id === op.getAttribute("data-notif-open"));
+                if (!n) return;
+                Account.markRead(n.id);
+                if (DASH_TABS[n.link]) goTab(n.link);
+                else if (n.link) window.location.href = n.link;
+                return;
+            }
+            const item = e.target.closest("[data-notif]");
+            if (item && item.classList.contains("is-unread")) { Account.markRead(item.getAttribute("data-notif")); Sound.play("folder"); }
+        });
+        $("#notif-read-all").addEventListener("click", () => { Account.markRead(null); Sound.play("granted"); toast("Все уведомления прочитаны", "ok"); });
+        $("#notif-clear").addEventListener("click", () => {
+            Modal.open({
+                title: "Очистить уведомления",
+                className: "confirm-modal",
+                html: '<div class="confirm-box"><img src="assets/icons/alert.svg" alt="" width="34" height="34"><p>Удалить все уведомления?</p><p class="muted">История операций в кошельке останется.</p></div>',
+                buttons: [{ label: "Удалить все", icon: "close", action: () => { Account.removeNotification(null); Sound.play("panels"); toast("Уведомления удалены", "ok"); } }]
+            });
+        });
+        $$("[data-pref]").forEach(el => el.addEventListener("change", () => {
+            const k = el.getAttribute("data-pref");
+            if (k === "security") return;
+            Account.setPref(k, el.checked);
+            Sound.play("folder");
+            toast(`${el.getAttribute("data-name")[0].toUpperCase()}${el.getAttribute("data-name").slice(1)} — ${el.checked ? "включены" : "выключены"}`, "ok");
+        }));
+    }
+
+    /* ----- Безопасность ----- */
+    function renderSecurity(s, a) {
+        const sec = Account.securityScore(a, s);
+        setText("sec-score", sec.score + "%");
+        const bar = $("#sec-bar");
+        if (bar) { bar.style.width = sec.score + "%"; bar.parentElement.setAttribute("data-level", sec.score >= 75 ? "high" : sec.score >= 50 ? "mid" : "low"); }
+        const cl = $("#sec-checklist");
+        if (cl) cl.innerHTML = checklistHtml(sec.items);
+
+        const on = a.security.twoFA;
+        const box = $("#twofa-box");
+        if (box) box.classList.toggle("is-on", on);
+        setText("twofa-state", on ? "Включена · код из письма" : "Выключена");
+        setText("twofa-text", on
+            ? `При входе с нового устройства потребуется код из письма. Резервных кодов: ${a.security.backup.length}.`
+            : "При входе с нового устройства потребуется код из письма. Без него злоумышленник не войдёт, даже зная пароль.");
+        const t = $("#twofa-toggle");
+        if (t) { t.textContent = on ? "Выключить 2FA" : "Включить 2FA"; t.classList.toggle("btn-primary", !on); t.classList.toggle("btn-danger", on); }
+        const codes = $("#twofa-codes");
+        if (codes) codes.hidden = !on;
+        setText("pwd-changed", a.security.pwdChanged ? `изменён ${ago(a.security.pwdChanged)}` : "не менялся");
+
+        const sb = $("#sess-body");
+        if (sb) {
+            sb.innerHTML = a.security.sessions.map(x => `
+                <tr class="${x.current ? "is-current" : ""}">
+                    <td data-label="Устройство"><b>${escapeHtml(x.device)}</b>${x.current ? ' <span class="badge badge-online">ЭТО УСТРОЙСТВО</span>' : ""}</td>
+                    <td data-label="Где">${escapeHtml(x.place)}</td>
+                    <td data-label="IP">${escapeHtml(x.ip)}</td>
+                    <td data-label="Активность">${x.current ? "сейчас" : escapeHtml(ago(x.last))}</td>
+                    <td data-label="">${x.current ? "" : `<button class="btn btn-sm btn-danger" type="button" data-sess-end="${escapeHtml(x.id)}">Завершить</button>`}</td>
+                </tr>`).join("");
+        }
+        setText("sess-count", `${a.security.sessions.length} ${plural(a.security.sessions.length, "активный сеанс", "активных сеанса", "активных сеансов")}`);
+        const endAll = $("#sess-end-all");
+        if (endAll) endAll.hidden = a.security.sessions.length <= 1;
+
+        const lb = $("#seclog-body");
+        if (lb) lb.innerHTML = a.security.log.slice(0, 12).map(l => `
+            <tr>
+                <td data-label="Дата">${escapeHtml(formatDate(l.date))}</td>
+                <td data-label="Событие">${escapeHtml(l.event)}</td>
+                <td data-label="Устройство">${escapeHtml(l.device)}</td>
+                <td data-label="Результат"><span class="badge ${l.ok ? "badge-online" : "badge-offline"}">${l.ok ? "OK" : "ОТКАЗ"}</span></td>
+            </tr>`).join("");
+    }
+
+    function pwdStrength(v) {
+        let score = 0;
+        if (v.length >= 8) score++;
+        if (v.length >= 12) score++;
+        if (/[a-zа-яё]/.test(v) && /[A-ZА-ЯЁ]/.test(v)) score++;
+        if (/\d/.test(v)) score++;
+        if (/[^A-Za-zА-Яа-яЁё0-9]/.test(v)) score++;
+        return Math.min(4, score);
+    }
+
+    /* Подтверждение по коду из письма (письмо приходит в «Уведомления») */
+    function emailCodeFlow(opts) {
+        const s = Auth.get();
+        if (!s) return;
+        let current = String(NX.randInt(100000, 999999));
+        let tries = 0;
+        const modal = Modal.open({
+            title: opts.title,
+            subtitle: "подтверждение по email",
+            className: "confirm-modal",
+            html: `
+                <form class="tds-form" id="code-form" novalidate>
+                    <p>Мы отправили 6-значный код на <b>${escapeHtml(s.email)}</b>. Письмо продублировано в «Уведомлениях» кабинета.</p>
+                    <div class="field">
+                        <label for="code-input">Код из письма</label>
+                        <input class="input code-input" id="code-input" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000">
+                        <span class="field-error" role="alert"></span>
+                    </div>
+                    <button class="link-btn" type="button" data-resend>Отправить код ещё раз</button>
+                </form>`,
+            buttons: [{
+                label: "Подтвердить", primary: true, icon: "checkmark", action: () => {
+                    const input = $("#code-input", modal);
+                    if (input.value.trim() === current) { opts.onOk(); return; }
+                    tries++;
+                    Sound.play("denied");
+                    if (tries >= 5) { Account.logEvent(`${opts.title}: превышено число попыток`, false); toast("Слишком много попыток — запросите новый код позже", "warn"); return; }
+                    fieldError(input, `Неверный код. Осталось попыток: ${5 - tries}`);
+                    input.select();
+                    return false;
+                }
+            }]
+        });
+        const send = () => {
+            Account.notify("security", "Код подтверждения NEXUS ID", `Ваш код: ${current}. Никому его не сообщайте.`, { toast: false });
+            toast(`Письмо на ${s.email}: код ${current} (тестовый режим)`, "info", { ttl: 9000 });
+        };
+        send();
+        $("#code-form", modal).addEventListener("submit", e => { e.preventDefault(); modal.querySelector(".modal_actions .btn-primary").click(); });
+        modal.querySelector("[data-resend]").addEventListener("click", () => {
+            current = String(NX.randInt(100000, 999999));
+            send();
+            Sound.play("info");
+        });
+        const input = $("#code-input", modal);
+        input.addEventListener("input", () => { input.value = input.value.replace(/\D/g, "").slice(0, 6); fieldError(input, ""); });
+        setTimeout(() => input.focus({ preventScroll: true }), 60);
+    }
+
+    function showBackupCodes(codes) {
+        const s = Auth.get();
+        Modal.open({
+            title: "Резервные коды",
+            subtitle: "2FA",
+            className: "confirm-modal",
+            html: `<p>Каждый код можно использовать один раз, если нет доступа к почте. Храните их отдельно от пароля.</p>
+                <ol class="code-grid">${codes.map(c => `<li><code>${escapeHtml(c)}</code></li>`).join("")}</ol>`,
+            buttons: [
+                { label: "Скопировать", icon: "clipboard", action: () => { NX.copyText(codes.join("\n")); toast("Коды скопированы", "ok"); return false; } },
+                { label: "Скачать .txt", icon: "download", action: () => { downloadFile(`nexus-backup-codes-${s ? s.id : "account"}.txt`, `NEXUS ID — резервные коды 2FA\n${s ? s.callsign + " · " + s.id : ""}\n\n${codes.join("\n")}\n`); return false; } }
+            ]
+        });
+    }
+
+    function initSecurity() {
+        const panel = $("#dpanel-security");
+        if (!panel) return;
+        $("#twofa-toggle").addEventListener("click", () => {
+            const a = Account.get();
+            if (!a) return;
+            if (!a.security.twoFA) {
+                emailCodeFlow({
+                    title: "Включение 2FA",
+                    onOk: () => {
+                        const codes = Account.setTwoFA(true);
+                        Sound.play("granted");
+                        toast("Двухфакторная защита включена", "ok");
+                        setTimeout(() => showBackupCodes(codes), 250);
+                    }
+                });
+            } else {
+                emailCodeFlow({
+                    title: "Выключение 2FA",
+                    onOk: () => { Account.setTwoFA(false); Sound.play("panels"); toast("Двухфакторная защита выключена", "warn"); }
+                });
+            }
+        });
+        $("#twofa-codes").addEventListener("click", () => {
+            const a = Account.get();
+            if (!a) return;
+            Modal.open({
+                title: "Резервные коды",
+                className: "confirm-modal",
+                html: `<div class="confirm-box"><img src="assets/icons/lock.svg" alt="" width="34" height="34"><p>Осталось кодов: <b>${a.security.backup.length}</b>.</p><p class="muted">Новый набор заменит старые коды — они перестанут работать.</p></div>`,
+                buttons: [
+                    { label: "Показать текущие", action: () => { setTimeout(() => showBackupCodes(a.security.backup), 200); } },
+                    { label: "Создать новые", primary: true, action: () => { const codes = Account.regenBackup(); Sound.play("granted"); setTimeout(() => showBackupCodes(codes), 200); } }
+                ]
+            });
+        });
+
+        // Смена пароля
+        const form = $("#pwd-form");
+        const cur = $("#pwd-current"), nw = $("#pwd-new"), rep = $("#pwd-repeat");
+        const labels = ["слишком простой", "слабый", "средний", "хороший", "надёжный"];
+        nw.addEventListener("input", () => {
+            const sc = nw.value ? pwdStrength(nw.value) : 0;
+            $("#pwd-strength-meter").setAttribute("data-level", String(nw.value ? Math.max(1, sc) : 0));
+            setText("pwd-strength", nw.value ? `Надёжность: ${labels[sc]}` : "—");
+            fieldError(nw, "");
+        });
+        [cur, rep].forEach(i => i.addEventListener("input", () => fieldError(i, "")));
+        form.addEventListener("submit", e => {
+            e.preventDefault();
+            let ok = true;
+            if (cur.value.length < 6) { fieldError(cur, "Введите текущий пароль"); ok = false; }
+            if (nw.value.length < 8) { fieldError(nw, "Минимум 8 символов"); ok = false; }
+            else if (pwdStrength(nw.value) < 2) { fieldError(nw, "Добавьте цифры, заглавные буквы или символы"); ok = false; }
+            else if (nw.value === cur.value) { fieldError(nw, "Новый пароль совпадает с текущим"); ok = false; }
+            if (rep.value !== nw.value) { fieldError(rep, "Пароли не совпадают"); ok = false; }
+            if (!ok) { Sound.play("denied"); const bad = form.querySelector(".field.is-invalid .input"); if (bad) bad.focus(); return; }
+            Account.changePassword();
+            form.reset();
+            nw.dispatchEvent(new Event("input"));
+            Sound.play("granted");
+            toast("Пароль изменён. Другие устройства попросят войти заново", "ok");
+        });
+
+        panel.addEventListener("click", e => {
+            const end = e.target.closest("[data-sess-end]");
+            if (end) { Account.endSession(end.getAttribute("data-sess-end")); Sound.play("panels"); toast("Сеанс завершён", "ok"); }
+        });
+        $("#sess-end-all").addEventListener("click", () => {
+            const n = Account.endSession(null);
+            Sound.play("panels");
+            toast(n ? `Завершено сеансов: ${n}` : "Других сеансов нет", "ok");
+        });
+
+        $("#acc-export").addEventListener("click", () => {
+            const data = Account.exportData();
+            if (!data) return;
+            if (downloadFile(`nexus-account-${data.session.id}.json`, JSON.stringify(data, null, 2), "application/json")) {
+                Account.logEvent("Экспорт данных аккаунта");
+                toast("Данные аккаунта сохранены в JSON", "ok");
+            }
+        });
+        $("#acc-delete").addEventListener("click", () => {
+            const s = Auth.get();
+            if (!s) return;
+            const modal = Modal.open({
+                title: "Удаление аккаунта",
+                subtitle: escapeHtml(s.callsign),
+                className: "confirm-modal",
+                html: `<div class="confirm-box"><img src="assets/icons/alert.svg" alt="" width="34" height="34">
+                    <p>Будут удалены баланс, история операций, подписка, уведомления и настройки безопасности. Это действие нельзя отменить.</p>
+                    <p class="muted">Для подтверждения введите логин <b>${escapeHtml(s.callsign)}</b>.</p></div>
+                    <div class="field"><label for="del-confirm">Логин</label><input class="input" id="del-confirm" type="text" autocomplete="off"><span class="field-error" role="alert"></span></div>`,
+                buttons: [{
+                    label: "Удалить навсегда", icon: "ban", action: () => {
+                        const input = $("#del-confirm", modal);
+                        if (input.value.trim() !== s.callsign) { fieldError(input, "Логин не совпадает"); Sound.play("denied"); return false; }
+                        Account.destroy();
+                        Sound.play("denied");
+                        toast("Аккаунт удалён", "warn");
+                        setTimeout(() => { window.location.href = "index.html"; }, 700);
+                    }
+                }]
+            });
+        });
+    }
+
+    /* ----- Профиль и роль ----- */
+    const TIMEZONES = ["Europe/Amsterdam", "Europe/Berlin", "Europe/Brussels", "Europe/Warsaw", "Europe/London", "Europe/Kyiv", "Europe/Minsk", "Europe/Moscow", "Asia/Almaty", "Asia/Yekaterinburg", "Asia/Novosibirsk", "UTC"];
+
+    function renderProfileTab(s, a) {
+        const role = ROLES[s.role];
+        setText("pi-callsign", s.callsign);
+        setText("pi-id", s.id);
+        setText("pi-role", `${role.label} — ${role.name}`);
+        setText("pi-registered", formatDate(s.registered));
+        setText("pi-last", formatDate(s.lastLogin));
+        setText("pi-session", s.expires ? "до " + formatDate(s.expires) : "запомнена на устройстве");
+
+        if (!dash.profileDirty) fillProfileForm(s, a);
+
+        const card = $("#role-card");
+        if (card) {
+            card.setAttribute("data-role", s.role);
+            setText("role-name", role.label);
+            setText("role-title", role.name);
+            setText("role-desc", role.desc);
+        }
+        const perm = $("#perm-body");
+        if (perm) {
+            perm.innerHTML = PERMISSIONS.map(x => {
+                const cells = ROLE_IDS.map(id => {
+                    const ok = ROLES[id].rank >= ROLES[x.min].rank;
+                    return `<td data-label="${ROLES[id].label}" class="${id === s.role ? "is-current" : ""}"><span class="${ok ? "access-yes" : "access-no"}">${ok ? "YES" : "—"}</span></td>`;
+                }).join("");
+                return `<tr><td data-label="Право">${escapeHtml(x.label)}</td>${cells}</tr>`;
+            }).join("");
+            $$("#perm-head th[data-role-col]").forEach(th => th.classList.toggle("is-current", th.getAttribute("data-role-col") === s.role));
+        }
+
+        // Значки
+        const dl = s.downloads || [];
+        const closedIds = PROJECTS.filter(p => p.status === "closed").map(p => p.id);
+        const owned = ownedVersions(s);
+        const badges = [
+            { icon: "sign-in", label: "На связи", desc: "Первый вход в NEXUS ID", done: true },
+            { icon: "download", label: "Первая загрузка", desc: "Скачать любую сборку", done: dl.length > 0 },
+            { icon: "archive", label: "Коллекционер", desc: "5 загрузок", done: dl.length >= 5 },
+            { icon: "flag", label: "Тестировщик", desc: "Скачать сборку закрытого теста", done: closedIds.some(id => owned[id]) },
+            { icon: "portfolio", label: "Инвестор", desc: "Пополнить баланс", done: a.tx.some(t => t.type === "topup" && t.status === "ok") },
+            { icon: "heart", label: "Меценат", desc: "Поддержать проект", done: Object.keys(a.donations).some(k => a.donations[k] > 0) },
+            { icon: "star", label: "NEXUS+", desc: "Оформить подписку", done: a.plan.id !== "free" },
+            { icon: "lock", label: "Под защитой", desc: "Включить 2FA", done: a.security.twoFA }
+        ];
+        setText("ach-count", `${badges.filter(b => b.done).length} / ${badges.length}`);
+        const grid = $("#ach-grid");
+        if (grid) grid.innerHTML = badges.map(b => `
+            <li class="ach${b.done ? " is-done" : ""}" title="${escapeHtml(b.desc)}">
+                <img src="assets/icons/${b.icon}.svg" alt="" width="20" height="20">
+                <b>${escapeHtml(b.label)}</b>
+                <span>${escapeHtml(b.done ? "получен" : b.desc)}</span>
+            </li>`).join("");
+    }
+
+    function fillProfileForm(s, a) {
+        const f = $("#profile-form");
+        if (!f) return;
+        const tz = $("#pf-tz");
+        if (tz && !tz.options.length) {
+            const zones = TIMEZONES.slice();
+            if (a.profile.timezone && !zones.includes(a.profile.timezone)) zones.unshift(a.profile.timezone);
+            tz.innerHTML = zones.map(z => `<option value="${escapeHtml(z)}">${escapeHtml(z.replace("_", " "))}</option>`).join("");
+        }
+        $("#pf-name").value = a.profile.displayName || s.callsign;
+        $("#pf-email").value = s.email || "";
+        $("#pf-bio").value = a.profile.bio || "";
+        setText("pf-bio-count", `${(a.profile.bio || "").length}/200`);
+        $("#pf-country").value = a.profile.country || "NL";
+        if (tz) tz.value = a.profile.timezone || TIMEZONES[0];
+        $("#pf-discord").value = a.profile.discord || "";
+        $("#pf-github").value = a.profile.github || "";
+        $("#pf-public").checked = a.profile.public !== false;
+    }
+
+    function initProfileForm() {
+        const f = $("#profile-form");
+        if (!f) return;
+        f.addEventListener("input", e => {
+            dash.profileDirty = true;
+            if (e.target.classList.contains("input")) fieldError(e.target, "");
+            if (e.target.id === "pf-bio") setText("pf-bio-count", `${e.target.value.length}/200`);
+        });
+        f.addEventListener("change", () => { dash.profileDirty = true; });
+        f.addEventListener("submit", e => {
+            e.preventDefault();
+            const name = $("#pf-name"), email = $("#pf-email"), gh = $("#pf-github");
+            let ok = true;
+            const nv = name.value.trim();
+            if (nv.length < 3 || !/^[\wА-Яа-яЁё .-]+$/.test(nv)) { fieldError(name, "3–24 символа: буквы, цифры, пробел, _ . -"); ok = false; }
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.value.trim())) { fieldError(email, "Проверьте адрес email"); ok = false; }
+            if (gh.value.trim() && !/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(gh.value.trim())) { fieldError(gh, "Только латиница, цифры и дефис"); ok = false; }
+            if (!ok) { Sound.play("denied"); const bad = f.querySelector(".field.is-invalid .input"); if (bad) bad.focus(); return; }
+            const s = Auth.get();
+            const emailChanged = s && s.email !== email.value.trim();
+            dash.profileDirty = false;
+            Account.updateProfile({
+                displayName: nv,
+                bio: $("#pf-bio").value.trim().slice(0, 200),
+                country: $("#pf-country").value,
+                timezone: $("#pf-tz").value,
+                discord: $("#pf-discord").value.trim(),
+                github: gh.value.trim(),
+                public: $("#pf-public").checked
+            });
+            if (emailChanged) {
+                Auth.update({ email: email.value.trim() });
+                Account.notify("security", "Email изменён", `Новый адрес: ${email.value.trim()}`, { toast: false });
+            }
+            Sound.play("granted");
+            toast("Профиль сохранён", "ok");
+        });
     }
 
     /* ----- Цветовые схемы eDEX-UI (вкладка «Настройки HUD») ----- */
@@ -1658,5 +3036,5 @@
         $$("canvas[data-avatar-seed]").forEach(c => drawAvatar(c, c.getAttribute("data-avatar-seed")));
     });
 
-    NX.Pages = { openDetails, openEditor, openSections, confirmDelete, drawAvatar, Downloads, textToNotes, notesToText, compressImage };
+    NX.Pages = { goTab, openTopup, runPayment, openDetails, openEditor, openSections, confirmDelete, drawAvatar, Downloads, textToNotes, notesToText, compressImage };
 })();

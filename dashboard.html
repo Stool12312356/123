@@ -11,11 +11,11 @@
     <!-- Зависимость оригинального eDEX-UI: augmented-ui 1.1.2 (BSD-2-Clause) — скошенные рамки -->
     <link rel="stylesheet" href="assets/vendor/augmented-ui/augmented.css">
     <!-- Тема blade, перенесённая из eDEX-UI -->
-    <link rel="stylesheet" href="css/blade-theme.css?v=20261109-9">
+    <link rel="stylesheet" href="css/blade-theme.css?v=20261109-10">
     <!-- Адаптивная сетка: шапка, подвал, модули, терминал -->
-    <link rel="stylesheet" href="css/layout.css?v=20261109-9">
+    <link rel="stylesheet" href="css/layout.css?v=20261109-10">
     <!-- Компоненты страниц: главная, каталог, формы, кабинет, тосты -->
-    <link rel="stylesheet" href="css/pages.css?v=20261109-9">
+    <link rel="stylesheet" href="css/pages.css?v=20261109-10">
 
     <script>
         /* Ранняя инициализация: класс js и сохранённые настройки HUD (без мигания) */
@@ -82,6 +82,7 @@
             <p data-sum-state><span class="dot" id="uplink-dot" aria-hidden="true"></span><b data-sum="state">SYSTEM ONLINE</b></p>
             <p class="hide-sm">SERVERS <b id="header-servers">-/-</b></p>
             <p class="hide-sm">RELEASES <b data-sum="releases">3</b></p>
+            <p class="hdr-wallet" id="header-wallet" hidden><a href="dashboard.html#wallet" title="Баланс NEXUS ID"><span class="hw-label">BALANCE </span><b id="header-balance">0&nbsp;₽</b></a></p>
             <p>USER <b id="header-user">GUEST</b></p>
             <p class="hide-xs"><b id="header-clock">--:--:--</b></p>
         </div>
@@ -120,123 +121,590 @@
         </section>
 
         <!-- ===================== КАБИНЕТ ===================== -->
-        <section class="container page-section" id="dash-app" aria-label="Панель управления" hidden>
+        <section class="container page-section" id="dash-app" aria-label="Личный кабинет" hidden>
             <div class="dash-grid">
 
-                <!-- Левая колонка: оператор -->
-                <aside class="mod-column dash-left reveal-fade" aria-label="Профиль оператора">
-                    <h3 class="panel-title"><span>PANEL</span><span>OPERATOR</span></h3>
-                    <div class="column-stack reveal-stagger">
-                        <div class="mod profile-card">
-                            <h4 class="mod-head">IDENTITY <i>NEXUS ID</i></h4>
-                            <div class="avatar-frame">
-                                <canvas id="avatar-canvas" width="126" height="126" aria-label="Аватар пользователя" role="img"></canvas>
-                                <span class="scan" aria-hidden="true"></span>
+                <!-- Левая колонка: аккаунт и навигация -->
+                <aside class="mod-column dash-left reveal-fade" aria-label="Аккаунт и разделы">
+                    <h3 class="panel-title"><span>PANEL</span><span>NEXUS ID</span></h3>
+                    <div class="column-stack">
+                        <div class="mod id-card">
+                            <div class="id-top">
+                                <div class="avatar-frame avatar-sm" id="avatar-frame">
+                                    <canvas id="avatar-canvas" width="126" height="126" aria-label="Аватар пользователя" role="img"></canvas>
+                                    <span class="scan" aria-hidden="true"></span>
+                                </div>
+                                <div class="id-meta">
+                                    <p class="profile-name" id="profile-name">—</p>
+                                    <p class="profile-id">ID: <b id="profile-id">NX-0000-0000</b></p>
+                                    <p class="id-chips">
+                                        <span class="chip" id="id-role" title="Роль">USER</span>
+                                        <span class="chip chip-plan" id="id-plan" title="Тариф">FREE</span>
+                                    </p>
+                                </div>
                             </div>
-                            <p class="profile-name" id="profile-name">—</p>
-                            <p class="profile-id">ID: <b id="profile-id">NX-0000-0000</b></p>
-                            <div class="clearance">
-                                <p class="sub-label">Role</p>
-                                <div class="clearance-bars role-bars" id="clearance-bars" aria-hidden="true"><i></i><i></i><i></i></div>
-                                <p class="clearance-name" id="profile-level">USER // Пользователь</p>
-                            </div>
-                            <div class="profile-actions">
-                                <button class="btn btn-sm" type="button" id="avatar-regen">
-                                    <img src="assets/icons/options.svg" alt="" width="14" height="14">
-                                    Сгенерировать аватар
-                                </button>
-                                <button class="btn btn-sm" type="button" data-logout>
-                                    <img src="assets/icons/sign-out.svg" alt="" width="14" height="14">
-                                    Выйти
+                            <div class="id-balance">
+                                <div>
+                                    <p class="sub-label">Баланс</p>
+                                    <p class="id-balance-value" id="id-balance">0 ₽</p>
+                                </div>
+                                <button class="btn btn-sm btn-primary" type="button" data-topup>
+                                    <img src="assets/icons/plus.svg" alt="" width="14" height="14">
+                                    Пополнить
                                 </button>
                             </div>
                         </div>
 
-                        <div class="mod mod-clock" id="mod_clock">
+                        <nav class="mod dash-nav" aria-label="Разделы кабинета">
+                            <h4 class="mod-head">MENU <i>разделы кабинета</i></h4>
+                            <ul class="dash-tabs" role="tablist" aria-orientation="vertical" aria-label="Разделы кабинета">
+                                <li class="active" role="presentation"><button type="button" role="tab" id="dtab-overview" aria-selected="true" aria-controls="dpanel-overview"><img src="assets/icons/home.svg" alt="" width="16" height="16"><span>Обзор</span></button></li>
+                                <li role="presentation"><button type="button" role="tab" id="dtab-wallet" aria-selected="false" aria-controls="dpanel-wallet" tabindex="-1"><img src="assets/icons/portfolio.svg" alt="" width="16" height="16"><span>Кошелёк</span></button></li>
+                                <li role="presentation"><button type="button" role="tab" id="dtab-plus" aria-selected="false" aria-controls="dpanel-plus" tabindex="-1"><img src="assets/icons/star.svg" alt="" width="16" height="16"><span>Подписка и поддержка</span></button></li>
+                                <li role="presentation"><button type="button" role="tab" id="dtab-library" aria-selected="false" aria-controls="dpanel-library" tabindex="-1"><img src="assets/icons/folder.svg" alt="" width="16" height="16"><span>Библиотека</span><b class="nav-badge" id="nav-badge-library" hidden></b></button></li>
+                                <li role="presentation"><button type="button" role="tab" id="dtab-notifications" aria-selected="false" aria-controls="dpanel-notifications" tabindex="-1"><img src="assets/icons/bell.svg" alt="" width="16" height="16"><span>Уведомления</span><b class="nav-badge" id="nav-badge-notifications" hidden></b></button></li>
+                                <li role="presentation"><button type="button" role="tab" id="dtab-security" aria-selected="false" aria-controls="dpanel-security" tabindex="-1"><img src="assets/icons/lock.svg" alt="" width="16" height="16"><span>Безопасность</span><b class="nav-badge nav-badge-warn" id="nav-badge-security" hidden>!</b></button></li>
+                                <li role="presentation"><button type="button" role="tab" id="dtab-profile" aria-selected="false" aria-controls="dpanel-profile" tabindex="-1"><img src="assets/icons/user.svg" alt="" width="16" height="16"><span>Профиль и роль</span></button></li>
+                                <li role="presentation"><button type="button" role="tab" id="dtab-settings" aria-selected="false" aria-controls="dpanel-settings" tabindex="-1"><img src="assets/icons/settings.svg" alt="" width="16" height="16"><span>Настройки HUD</span></button></li>
+                            </ul>
+                        </nav>
+
+                        <div class="mod mod-clock dash-clock" id="mod_clock">
                             <h2 class="clock-face" id="clock" aria-live="off">
                                 <span>0</span><span>0</span><em>:</em><span>0</span><span>0</span><em>:</em><span>0</span><span>0</span>
                             </h2>
                         </div>
-
-                        <div class="mod mod-sysinfo">
-                            <div class="kv"><h4 class="k">YEAR</h4><p class="v" id="sys-year">----</p></div>
-                            <div class="kv"><h4 class="k">DATE</h4><p class="v" id="sys-date">---</p></div>
-                            <div class="kv"><h4 class="k">UPTIME</h4><p class="v" id="sys-uptime">0:00:00</p></div>
-                            <div class="kv"><h4 class="k">TYPE</h4><p class="v" id="sys-type">WEB</p></div>
-                            <div class="kv"><h4 class="k">POWER</h4><p class="v" id="sys-power">ON</p></div>
+                        <div class="mod dash-session">
+                            <div class="netstat-grid">
+                                <div class="kv"><h5 class="k">SESSION</h5><p class="v" id="session-timer">0:00:00</p></div>
+                                <div class="kv netstat-wide"><h5 class="k">DEVICE</h5><p class="v" id="session-device">—</p></div>
+                            </div>
+                            <button class="btn btn-sm dash-logout" type="button" data-logout>
+                                <img src="assets/icons/sign-out.svg" alt="" width="14" height="14">
+                                Выйти из аккаунта
+                            </button>
                         </div>
                     </div>
                 </aside>
 
-                <!-- Центр: терминал с вкладками -->
+                <!-- Основная панель -->
                 <div class="dash-shell shell-wrap glow">
-                    <section class="shell aug-frame shell-anim" augmented-ui="bl-clip tr-clip exe" aria-label="Терминал кабинета">
-                        <h3 class="panel-title shell-title"><span>TERMINAL</span><span>CONTROL SHELL</span></h3>
-
-                        <ul class="skew-tabs shell-tabs" role="tablist" aria-label="Разделы кабинета">
-                            <li class="active" role="presentation">
-                                <button type="button" role="tab" id="dtab-profile" aria-selected="true" aria-controls="dpanel-profile">Профиль и доступ</button>
-                            </li>
-                            <li role="presentation">
-                                <button type="button" role="tab" id="dtab-settings" aria-selected="false" aria-controls="dpanel-settings" tabindex="-1">Настройки HUD</button>
-                            </li>
-                        </ul>
+                    <section class="shell aug-frame shell-anim" augmented-ui="bl-clip tr-clip exe" aria-label="Панель кабинета">
+                        <h3 class="panel-title shell-title"><span id="dash-crumb">NEXUS ID / ОБЗОР</span><span>CONTROL PANEL</span></h3>
 
                         <div class="shell-inner">
-                            <!-- ===== Вкладка 1: Профиль и доступ ===== -->
-                            <div class="tab-panel active" id="dpanel-profile" role="tabpanel" aria-labelledby="dtab-profile">
+                            <!-- ===== Обзор ===== -->
+                            <div class="tab-panel active" id="dpanel-overview" role="tabpanel" aria-labelledby="dtab-overview">
                                 <div class="dash-tab-head">
-                                    <h2>Профиль и доступ</h2>
-                                    <p>&gt; id --verbose</p>
+                                    <h2 id="ov-greeting">Добро пожаловать</h2>
+                                    <p id="ov-date">—</p>
+                                </div>
+
+                                <div class="stat-grid">
+                                    <div class="stat-tile">
+                                        <p class="stat-label"><img src="assets/icons/portfolio.svg" alt="" width="14" height="14">Баланс</p>
+                                        <p class="stat-value" id="ov-balance">0 ₽</p>
+                                        <p class="stat-sub" id="ov-balance-sub">—</p>
+                                        <button class="link-btn stat-link" type="button" data-topup>Пополнить →</button>
+                                    </div>
+                                    <div class="stat-tile">
+                                        <p class="stat-label"><img src="assets/icons/star.svg" alt="" width="14" height="14">Тариф</p>
+                                        <p class="stat-value" id="ov-plan">FREE</p>
+                                        <p class="stat-sub" id="ov-plan-sub">—</p>
+                                        <button class="link-btn stat-link" type="button" data-goto="plus">Тарифы →</button>
+                                    </div>
+                                    <div class="stat-tile">
+                                        <p class="stat-label"><img src="assets/icons/download.svg" alt="" width="14" height="14">Загрузки</p>
+                                        <p class="stat-value" id="ov-downloads">0</p>
+                                        <p class="stat-sub" id="ov-downloads-sub">—</p>
+                                        <button class="link-btn stat-link" type="button" data-goto="library">Библиотека →</button>
+                                    </div>
+                                    <div class="stat-tile">
+                                        <p class="stat-label"><img src="assets/icons/lock.svg" alt="" width="14" height="14">Защита</p>
+                                        <p class="stat-value" id="ov-security">0%</p>
+                                        <p class="stat-sub" id="ov-security-sub">—</p>
+                                        <button class="link-btn stat-link" type="button" data-goto="security">Безопасность →</button>
+                                    </div>
                                 </div>
 
                                 <div class="dash-blocks">
                                     <div class="mod">
-                                        <h4 class="mod-head">PROFILE <i>учётная запись</i></h4>
-                                        <table class="edex-table profile-table">
-                                            <tbody>
-                                                <tr><td>Позывной</td><td id="pi-callsign">—</td></tr>
-                                                <tr><td>Email</td><td id="pi-email">—</td></tr>
-                                                <tr><td>User ID</td><td id="pi-id">—</td></tr>
-                                                <tr><td>Роль</td><td id="pi-role">—</td></tr>
-                                                <tr><td>Регистрация</td><td id="pi-registered">—</td></tr>
-                                                <tr><td>Последний вход</td><td id="pi-last">—</td></tr>
-                                                <tr><td>Сессия</td><td id="pi-session">—</td></tr>
-                                            </tbody>
-                                        </table>
+                                        <h4 class="mod-head">ACTIVITY <i>последние события</i></h4>
+                                        <ul class="feed" id="ov-feed"></ul>
                                     </div>
-                                    <div class="mod role-mod">
-                                        <h4 class="mod-head">ROLE <i>текущая роль и права</i></h4>
-                                        <div class="role-card" id="role-card" data-role="user">
-                                            <p class="role-card-name"><b id="role-name">USER</b><span id="role-title">Пользователь</span></p>
-                                            <p class="role-card-desc" id="role-desc">—</p>
-                                        </div>
-                                        <p class="sub-label">Тестовый переключатель роли</p>
-                                        <div data-role-switch></div>
-                                        <p class="role-hint">&gt; демо-режим: роль хранится в <code>nx_session</code> этого браузера · в терминале: <code>role admin</code></p>
+                                    <div class="mod">
+                                        <h4 class="mod-head">ACCOUNT CHECK <i id="ov-check-score">0%</i></h4>
+                                        <div class="meter" aria-hidden="true"><i id="ov-check-bar"></i></div>
+                                        <ul class="checklist" id="ov-checklist"></ul>
                                     </div>
-                                    <div class="mod full">
-                                        <h4 class="mod-head">PERMISSIONS <i>что может каждая роль</i></h4>
-                                        <div class="table-scroll">
-                                            <table class="edex-table perm-table stack-table">
-                                                <thead><tr id="perm-head"><th>Право</th><th data-role-col="user">USER</th><th data-role-col="admin">ADMIN</th><th data-role-col="creator">CREATOR</th></tr></thead>
-                                                <tbody id="perm-body"></tbody>
-                                            </table>
-                                        </div>
+                                    <div class="mod">
+                                        <h4 class="mod-head">RELEASES <i>свежие сборки</i></h4>
+                                        <ul class="release-list" id="ov-releases"></ul>
                                     </div>
-                                    <div class="mod full">
-                                        <h4 class="mod-head">DOWNLOAD HISTORY <i>история скачанных сборок</i></h4>
-                                        <div class="table-scroll">
-                                            <table class="edex-table dl-table stack-table">
-                                                <thead><tr><th>Сборка</th><th>Дата</th><th>Размер</th><th>SHA-256</th><th>Статус</th></tr></thead>
-                                                <tbody id="dl-body"></tbody>
-                                            </table>
+                                    <div class="mod">
+                                        <h4 class="mod-head">QUICK ACTIONS <i>быстрые действия</i></h4>
+                                        <div class="ov-quick">
+                                            <button class="quick-btn" type="button" data-topup><img src="assets/icons/plus.svg" alt="" width="20" height="20"><b>Пополнить баланс</b><span>карта, СБП, промокод</span></button>
+                                            <button class="quick-btn" type="button" data-goto="plus" data-scroll="#fund-list"><img src="assets/icons/heart.svg" alt="" width="20" height="20"><b>Поддержать проект</b><span>с кешбэком по подписке</span></button>
+                                            <a class="quick-btn" href="projects.html"><img src="assets/icons/download.svg" alt="" width="20" height="20"><b>Скачать сборки</b><span>центр загрузок</span></a>
+                                            <button class="quick-btn" type="button" data-goto="security"><img src="assets/icons/lock.svg" alt="" width="20" height="20"><b>Защитить аккаунт</b><span>2FA и активные сеансы</span></button>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
-                            <!-- ===== Вкладка 2: Настройки HUD ===== -->
+                            <!-- ===== Кошелёк ===== -->
+                            <div class="tab-panel" id="dpanel-wallet" role="tabpanel" aria-labelledby="dtab-wallet" hidden>
+                                <div class="dash-tab-head">
+                                    <h2>Кошелёк</h2>
+                                    <p><span class="test-badge">ТЕСТОВЫЙ РЕЖИМ</span> платежи не списываются с карты</p>
+                                </div>
+
+                                <div class="wallet-hero">
+                                    <div class="wallet-balance">
+                                        <p class="sub-label">Доступно на балансе</p>
+                                        <p class="wallet-amount" id="w-balance">0 ₽</p>
+                                        <p class="wallet-id">Счёт <b id="w-account">NX-…</b> · RUB</p>
+                                    </div>
+                                    <dl class="wallet-stats">
+                                        <div><dt>Пополнено за 30 дней</dt><dd id="w-in">0 ₽</dd></div>
+                                        <div><dt>Потрачено за 30 дней</dt><dd id="w-out">0 ₽</dd></div>
+                                        <div><dt>Бонусы и кешбэк</dt><dd id="w-bonus">0 ₽</dd></div>
+                                    </dl>
+                                </div>
+
+                                <div class="wallet-grid">
+                                    <!-- Пополнение -->
+                                    <form class="mod topup" id="topup-form" novalidate>
+                                        <h4 class="mod-head">TOP UP <i>пополнение баланса</i></h4>
+
+                                        <p class="pe-label">1. Сумма</p>
+                                        <div class="amount-grid" id="amount-grid" role="radiogroup" aria-label="Сумма пополнения">
+                                            <button type="button" class="amount-btn" data-amount="100">100 ₽</button>
+                                            <button type="button" class="amount-btn active" data-amount="300" aria-pressed="true">300 ₽</button>
+                                            <button type="button" class="amount-btn" data-amount="500">500 ₽</button>
+                                            <button type="button" class="amount-btn" data-amount="1000">1 000 ₽<small>+5%</small></button>
+                                            <button type="button" class="amount-btn" data-amount="2500">2 500 ₽<small>+5%</small></button>
+                                            <button type="button" class="amount-btn" data-amount="5000">5 000 ₽<small>+10%</small></button>
+                                        </div>
+                                        <div class="field amount-field">
+                                            <label for="topup-amount">Своя сумма, ₽ <i>— от 50 до 50 000</i></label>
+                                            <input class="input" id="topup-amount" type="text" inputmode="decimal" autocomplete="off" value="300">
+                                            <span class="field-error" id="topup-amount-error" role="alert"></span>
+                                        </div>
+                                        <p class="bonus-hint" id="topup-bonus">Бонус от 1 000 ₽ — +5%, от 5 000 ₽ — +10%</p>
+
+                                        <p class="pe-label">2. Способ оплаты</p>
+                                        <div class="pay-methods" role="radiogroup" aria-label="Способ оплаты" id="pay-methods">
+                                            <label class="pay-method"><input type="radio" name="pay-method" value="card" checked><span><img src="assets/icons/portfolio.svg" alt="" width="18" height="18"><b>Банковская карта</b><i>Visa · Mastercard · МИР</i></span></label>
+                                            <label class="pay-method"><input type="radio" name="pay-method" value="sbp"><span><img src="assets/icons/lightning.svg" alt="" width="18" height="18"><b>СБП</b><i>по QR-коду, без комиссии</i></span></label>
+                                            <label class="pay-method" id="pay-saved-wrap" hidden><input type="radio" name="pay-method" value="saved"><span><img src="assets/icons/checkmark.svg" alt="" width="18" height="18"><b>Сохранённая карта</b><i id="pay-saved-label">—</i></span></label>
+                                        </div>
+
+                                        <!-- Карта -->
+                                        <div class="pay-pane" id="pane-card">
+                                            <div class="card-row">
+                                                <div class="card-preview" id="card-preview" aria-hidden="true">
+                                                    <span class="cp-chip"></span>
+                                                    <span class="cp-brand" id="cp-brand">CARD</span>
+                                                    <span class="cp-number" id="cp-number">•••• •••• •••• ••••</span>
+                                                    <span class="cp-holder" id="cp-holder">CARDHOLDER</span>
+                                                    <span class="cp-exp" id="cp-exp">MM/YY</span>
+                                                </div>
+                                                <div class="card-fields">
+                                                    <div class="field">
+                                                        <label for="card-number">Номер карты</label>
+                                                        <input class="input" id="card-number" type="text" inputmode="numeric" autocomplete="cc-number" placeholder="0000 0000 0000 0000" maxlength="23">
+                                                        <span class="field-error" role="alert"></span>
+                                                    </div>
+                                                    <div class="pe-row">
+                                                        <div class="field">
+                                                            <label for="card-exp">Срок</label>
+                                                            <input class="input" id="card-exp" type="text" inputmode="numeric" autocomplete="cc-exp" placeholder="MM/YY" maxlength="5">
+                                                            <span class="field-error" role="alert"></span>
+                                                        </div>
+                                                        <div class="field">
+                                                            <label for="card-cvc">CVC</label>
+                                                            <input class="input" id="card-cvc" type="password" inputmode="numeric" autocomplete="cc-csc" placeholder="•••" maxlength="4">
+                                                            <span class="field-error" role="alert"></span>
+                                                        </div>
+                                                    </div>
+                                                    <div class="field">
+                                                        <label for="card-holder">Имя на карте <i>— латиницей</i></label>
+                                                        <input class="input" id="card-holder" type="text" autocomplete="cc-name" placeholder="IVAN PETROV" maxlength="26">
+                                                        <span class="field-error" role="alert"></span>
+                                                    </div>
+                                                    <label class="check">
+                                                        <input type="checkbox" id="card-save" checked>
+                                                        <span class="box"><i></i></span>
+                                                        <span>Сохранить карту для следующих пополнений</span>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                            <details class="test-cards">
+                                                <summary>Тестовые карты</summary>
+                                                <ul id="test-cards"></ul>
+                                                <p>Срок — любая будущая дата, CVC — любые 3 цифры.</p>
+                                            </details>
+                                        </div>
+
+                                        <!-- СБП -->
+                                        <div class="pay-pane" id="pane-sbp" hidden>
+                                            <div class="sbp-box">
+                                                <canvas id="sbp-qr" width="168" height="168" aria-label="QR-код для оплаты через СБП (тестовый)" role="img"></canvas>
+                                                <div>
+                                                    <p><b>Оплата через Систему быстрых платежей</b></p>
+                                                    <ol>
+                                                        <li>Нажмите «Оплатить» — сформируется платёж.</li>
+                                                        <li>Отсканируйте QR-код в приложении банка.</li>
+                                                        <li>Подтвердите оплату — деньги зачислятся сразу.</li>
+                                                    </ol>
+                                                    <p class="muted">В тестовом режиме банк подтверждает платёж автоматически.</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="topup-submit">
+                                            <p class="topup-total">К оплате: <b id="topup-total">300 ₽</b> <span id="topup-credit"></span></p>
+                                            <button class="btn btn-primary" type="submit" id="topup-submit">
+                                                <img src="assets/icons/lock.svg" alt="" width="18" height="18">
+                                                <span>Оплатить</span>
+                                            </button>
+                                        </div>
+                                        <p class="pay-secure"><img src="assets/icons/lock.svg" alt="" width="12" height="12"> Данные карты не сохраняются: в аккаунте остаются только платёжная система и последние 4 цифры.</p>
+                                    </form>
+
+                                    <div class="wallet-side">
+                                        <div class="mod">
+                                            <h4 class="mod-head">PROMO <i>промокод</i></h4>
+                                            <form class="promo-form" id="promo-form" novalidate>
+                                                <input class="input" id="promo-code" type="text" placeholder="Например, WELCOME" autocomplete="off" maxlength="20" aria-label="Промокод">
+                                                <button class="btn" type="submit">Активировать</button>
+                                            </form>
+                                            <p class="promo-msg" id="promo-msg" role="status"></p>
+                                        </div>
+                                        <div class="mod">
+                                            <h4 class="mod-head">CARDS <i>сохранённые карты</i></h4>
+                                            <ul class="saved-cards" id="saved-cards"></ul>
+                                        </div>
+                                        <div class="mod">
+                                            <h4 class="mod-head">LIMITS <i>условия</i></h4>
+                                            <ul class="limits">
+                                                <li><span>Минимум</span><b>50 ₽</b></li>
+                                                <li><span>Максимум за операцию</span><b>50 000 ₽</b></li>
+                                                <li><span>Лимит пополнений в сутки</span><b>100 000 ₽</b></li>
+                                                <li><span>Использовано сегодня</span><b id="w-today">0 ₽</b></li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mod">
+                                    <h4 class="mod-head">TRANSACTIONS <i id="tx-count">0 операций</i></h4>
+                                    <div class="tx-toolbar">
+                                        <div class="cat-chips" id="tx-filter" role="group" aria-label="Фильтр операций">
+                                            <button type="button" class="cat-chip active" data-tx-filter="all">Все</button>
+                                            <button type="button" class="cat-chip" data-tx-filter="in">Пополнения</button>
+                                            <button type="button" class="cat-chip" data-tx-filter="out">Списания</button>
+                                            <button type="button" class="cat-chip" data-tx-filter="failed">Отклонённые</button>
+                                        </div>
+                                        <button class="btn btn-sm" type="button" id="tx-export"><img src="assets/icons/download.svg" alt="" width="14" height="14">Выписка CSV</button>
+                                    </div>
+                                    <div class="table-scroll">
+                                        <table class="edex-table tx-table stack-table">
+                                            <thead><tr><th>Дата</th><th>Операция</th><th>Способ</th><th>Статус</th><th class="num">Сумма</th></tr></thead>
+                                            <tbody id="tx-body"></tbody>
+                                        </table>
+                                    </div>
+                                    <button class="btn btn-sm tx-more" type="button" id="tx-more" hidden>Показать ещё</button>
+                                </div>
+                            </div>
+
+                            <!-- ===== Подписка и поддержка ===== -->
+                            <div class="tab-panel" id="dpanel-plus" role="tabpanel" aria-labelledby="dtab-plus" hidden>
+                                <div class="dash-tab-head">
+                                    <h2>Подписка и поддержка</h2>
+                                    <p>оплата с баланса NEXUS ID · <span id="plus-balance">0 ₽</span></p>
+                                </div>
+
+                                <div class="plan-current" id="plan-current">
+                                    <div>
+                                        <p class="sub-label">Текущий тариф</p>
+                                        <p class="plan-current-name"><b id="pc-label">FREE</b> <span id="pc-name">Базовый</span></p>
+                                        <p class="plan-current-meta" id="pc-meta">—</p>
+                                    </div>
+                                    <div class="plan-current-actions" id="pc-actions">
+                                        <label class="toggle plan-renew" id="pc-renew-wrap" hidden>
+                                            <span class="toggle-text"><b>Автопродление</b><span>списывается с баланса</span></span>
+                                            <input type="checkbox" id="pc-renew" data-name="автопродление">
+                                            <span class="switch" aria-hidden="true"></span>
+                                        </label>
+                                        <button class="btn btn-sm" type="button" id="pc-cancel" hidden>Отменить подписку</button>
+                                    </div>
+                                </div>
+
+                                <div class="plan-grid" id="plan-grid"></div>
+
+                                <div class="mod" id="fund-list-wrap">
+                                    <h4 class="mod-head">SUPPORT <i>поддержка проектов</i></h4>
+                                    <p class="mod-lead">Проекты делаются бесплатно и без рекламы — сборы идут на серверы, ассеты и тесты. <span id="fund-total"></span></p>
+                                    <ul class="fund-list" id="fund-list"></ul>
+                                </div>
+                            </div>
+
+                            <!-- ===== Библиотека ===== -->
+                            <div class="tab-panel" id="dpanel-library" role="tabpanel" aria-labelledby="dtab-library" hidden>
+                                <div class="dash-tab-head">
+                                    <h2>Библиотека</h2>
+                                    <p>ваши сборки и обновления</p>
+                                </div>
+                                <div class="stat-grid stat-grid-sm">
+                                    <div class="stat-tile"><p class="stat-label">Доступно вам</p><p class="stat-value" id="lib-available">0</p></div>
+                                    <div class="stat-tile"><p class="stat-label">Скачано</p><p class="stat-value" id="lib-owned">0</p></div>
+                                    <div class="stat-tile"><p class="stat-label">Обновления</p><p class="stat-value" id="lib-updates">0</p></div>
+                                    <div class="stat-tile"><p class="stat-label">Всего загружено</p><p class="stat-value" id="lib-size">0 MiB</p></div>
+                                </div>
+                                <div class="mod">
+                                    <h4 class="mod-head">BUILDS <i>каталог с учётом вашей роли</i></h4>
+                                    <ul class="lib-list" id="lib-list"></ul>
+                                </div>
+                                <div class="mod">
+                                    <h4 class="mod-head">DOWNLOAD HISTORY <i>история загрузок</i></h4>
+                                    <div class="table-scroll">
+                                        <table class="edex-table dl-table stack-table">
+                                            <thead><tr><th>Сборка</th><th>Дата</th><th>Размер</th><th>SHA-256</th><th>Статус</th></tr></thead>
+                                            <tbody id="dl-body"></tbody>
+                                        </table>
+                                    </div>
+                                    <button class="btn btn-sm tx-more" type="button" id="dl-clear">
+                                        <img src="assets/icons/close.svg" alt="" width="14" height="14">
+                                        Очистить историю
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- ===== Уведомления ===== -->
+                            <div class="tab-panel" id="dpanel-notifications" role="tabpanel" aria-labelledby="dtab-notifications" hidden>
+                                <div class="dash-tab-head">
+                                    <h2>Уведомления</h2>
+                                    <p id="notif-summary">—</p>
+                                </div>
+                                <div class="notif-layout">
+                                    <div class="mod">
+                                        <div class="tx-toolbar">
+                                            <div class="cat-chips" id="notif-filter" role="group" aria-label="Фильтр уведомлений">
+                                                <button type="button" class="cat-chip active" data-notif-filter="all">Все</button>
+                                                <button type="button" class="cat-chip" data-notif-filter="unread">Непрочитанные</button>
+                                                <button type="button" class="cat-chip" data-notif-filter="payment">Платежи</button>
+                                                <button type="button" class="cat-chip" data-notif-filter="release">Релизы</button>
+                                                <button type="button" class="cat-chip" data-notif-filter="security">Безопасность</button>
+                                            </div>
+                                            <div class="notif-tools">
+                                                <button class="btn btn-sm" type="button" id="notif-read-all"><img src="assets/icons/checkmark.svg" alt="" width="14" height="14">Прочитать все</button>
+                                                <button class="btn btn-sm btn-danger" type="button" id="notif-clear"><img src="assets/icons/close.svg" alt="" width="14" height="14">Очистить</button>
+                                            </div>
+                                        </div>
+                                        <ul class="notif-list" id="notif-list"></ul>
+                                    </div>
+                                    <div class="mod">
+                                        <h4 class="mod-head">PREFERENCES <i>что присылать</i></h4>
+                                        <label class="toggle"><span class="toggle-text"><b>Релизы и обновления</b><span>новые сборки и патчи</span></span><input type="checkbox" data-pref="release" data-name="уведомления о релизах"><span class="switch" aria-hidden="true"></span></label>
+                                        <label class="toggle"><span class="toggle-text"><b>Платежи</b><span>пополнения, списания, подписка</span></span><input type="checkbox" data-pref="payment" data-name="уведомления о платежах"><span class="switch" aria-hidden="true"></span></label>
+                                        <label class="toggle"><span class="toggle-text"><b>Системные</b><span>новости NEXUS ID</span></span><input type="checkbox" data-pref="system" data-name="системные уведомления"><span class="switch" aria-hidden="true"></span></label>
+                                        <label class="toggle"><span class="toggle-text"><b>Безопасность</b><span>входы, пароль, 2FA — всегда</span></span><input type="checkbox" data-pref="security" checked disabled><span class="switch" aria-hidden="true"></span></label>
+                                        <label class="toggle"><span class="toggle-text"><b>Всплывающие окна</b><span>показывать HUD-тосты</span></span><input type="checkbox" data-pref="toast" data-name="всплывающие уведомления"><span class="switch" aria-hidden="true"></span></label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- ===== Безопасность ===== -->
+                            <div class="tab-panel" id="dpanel-security" role="tabpanel" aria-labelledby="dtab-security" hidden>
+                                <div class="dash-tab-head">
+                                    <h2>Безопасность</h2>
+                                    <p>уровень защиты: <b id="sec-score">0%</b></p>
+                                </div>
+                                <div class="meter meter-lg" aria-hidden="true"><i id="sec-bar"></i></div>
+                                <ul class="checklist checklist-row" id="sec-checklist"></ul>
+
+                                <div class="dash-blocks">
+                                    <div class="mod">
+                                        <h4 class="mod-head">2FA <i>двухфакторная защита</i></h4>
+                                        <div class="twofa" id="twofa-box">
+                                            <p class="twofa-state" id="twofa-state">Выключена</p>
+                                            <p class="mod-lead" id="twofa-text">При входе с нового устройства потребуется код из письма. Без него злоумышленник не войдёт, даже зная пароль.</p>
+                                            <div class="twofa-actions">
+                                                <button class="btn btn-sm btn-primary" type="button" id="twofa-toggle">Включить 2FA</button>
+                                                <button class="btn btn-sm" type="button" id="twofa-codes" hidden>Резервные коды</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <form class="mod" id="pwd-form" novalidate>
+                                        <h4 class="mod-head">PASSWORD <i id="pwd-changed">не менялся</i></h4>
+                                        <div class="field">
+                                            <label for="pwd-current">Текущий пароль</label>
+                                            <input class="input" id="pwd-current" type="password" autocomplete="current-password">
+                                            <span class="field-error" role="alert"></span>
+                                        </div>
+                                        <div class="field">
+                                            <label for="pwd-new">Новый пароль <i>— от 8 символов</i></label>
+                                            <input class="input" id="pwd-new" type="password" autocomplete="new-password">
+                                            <div class="strength" id="pwd-strength-meter" data-level="0" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+                                            <span class="strength-label" id="pwd-strength">—</span>
+                                            <span class="field-error" role="alert"></span>
+                                        </div>
+                                        <div class="field">
+                                            <label for="pwd-repeat">Повторите новый пароль</label>
+                                            <input class="input" id="pwd-repeat" type="password" autocomplete="new-password">
+                                            <span class="field-error" role="alert"></span>
+                                        </div>
+                                        <button class="btn btn-sm" type="submit"><img src="assets/icons/lock.svg" alt="" width="14" height="14">Сменить пароль</button>
+                                    </form>
+                                </div>
+
+                                <div class="mod">
+                                    <h4 class="mod-head">SESSIONS <i id="sess-count">активные сеансы</i></h4>
+                                    <div class="table-scroll">
+                                        <table class="edex-table sess-table stack-table">
+                                            <thead><tr><th>Устройство</th><th>Где</th><th>IP</th><th>Активность</th><th></th></tr></thead>
+                                            <tbody id="sess-body"></tbody>
+                                        </table>
+                                    </div>
+                                    <button class="btn btn-sm btn-danger tx-more" type="button" id="sess-end-all"><img src="assets/icons/sign-out.svg" alt="" width="14" height="14">Завершить все другие сеансы</button>
+                                </div>
+
+                                <div class="mod">
+                                    <h4 class="mod-head">LOGIN HISTORY <i>журнал безопасности</i></h4>
+                                    <div class="table-scroll">
+                                        <table class="edex-table stack-table log-table">
+                                            <thead><tr><th>Дата</th><th>Событие</th><th>Устройство</th><th>Результат</th></tr></thead>
+                                            <tbody id="seclog-body"></tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                <div class="mod danger-zone">
+                                    <h4 class="mod-head">DANGER ZONE <i>данные аккаунта</i></h4>
+                                    <div class="danger-row">
+                                        <div><b>Экспорт данных</b><span>профиль, операции, уведомления — файл JSON</span></div>
+                                        <button class="btn btn-sm" type="button" id="acc-export"><img src="assets/icons/download.svg" alt="" width="14" height="14">Скачать</button>
+                                    </div>
+                                    <div class="danger-row">
+                                        <div><b>Удалить аккаунт</b><span>баланс, история и настройки будут стёрты без возможности восстановления</span></div>
+                                        <button class="btn btn-sm btn-danger" type="button" id="acc-delete"><img src="assets/icons/ban.svg" alt="" width="14" height="14">Удалить</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- ===== Профиль и роль ===== -->
+                            <div class="tab-panel" id="dpanel-profile" role="tabpanel" aria-labelledby="dtab-profile" hidden>
+                                <div class="dash-tab-head">
+                                    <h2>Профиль и роль</h2>
+                                    <p>&gt; id --verbose</p>
+                                </div>
+
+                                <div class="dash-blocks">
+                                    <form class="mod" id="profile-form" novalidate>
+                                        <h4 class="mod-head">PROFILE <i>публичные данные</i></h4>
+                                        <div class="field">
+                                            <label for="pf-name">Отображаемое имя</label>
+                                            <input class="input" id="pf-name" type="text" maxlength="24" autocomplete="nickname">
+                                            <span class="field-error" role="alert"></span>
+                                        </div>
+                                        <div class="field">
+                                            <label for="pf-email">Email</label>
+                                            <input class="input" id="pf-email" type="email" maxlength="80" autocomplete="email">
+                                            <span class="field-error" role="alert"></span>
+                                        </div>
+                                        <div class="field">
+                                            <label for="pf-bio">О себе <span class="pe-count" id="pf-bio-count">0/200</span></label>
+                                            <textarea class="input pe-textarea" id="pf-bio" rows="3" maxlength="200" placeholder="Чем занимаетесь, во что играете"></textarea>
+                                        </div>
+                                        <div class="pe-row">
+                                            <div class="field">
+                                                <label for="pf-country">Страна</label>
+                                                <select class="select" id="pf-country">
+                                                    <option value="NL">Нидерланды</option>
+                                                    <option value="DE">Германия</option>
+                                                    <option value="BE">Бельгия</option>
+                                                    <option value="RU">Россия</option>
+                                                    <option value="UA">Украина</option>
+                                                    <option value="BY">Беларусь</option>
+                                                    <option value="KZ">Казахстан</option>
+                                                    <option value="PL">Польша</option>
+                                                    <option value="OTHER">Другая</option>
+                                                </select>
+                                            </div>
+                                            <div class="field">
+                                                <label for="pf-tz">Часовой пояс</label>
+                                                <select class="select" id="pf-tz"></select>
+                                            </div>
+                                        </div>
+                                        <div class="pe-row">
+                                            <div class="field">
+                                                <label for="pf-discord">Discord</label>
+                                                <input class="input" id="pf-discord" type="text" maxlength="32" placeholder="nickname">
+                                            </div>
+                                            <div class="field">
+                                                <label for="pf-github">GitHub</label>
+                                                <input class="input" id="pf-github" type="text" maxlength="39" placeholder="username">
+                                                <span class="field-error" role="alert"></span>
+                                            </div>
+                                        </div>
+                                        <label class="toggle">
+                                            <span class="toggle-text"><b>Публичный профиль</b><span>имя и значки видны в титрах и списках тестеров</span></span>
+                                            <input type="checkbox" id="pf-public">
+                                            <span class="switch" aria-hidden="true"></span>
+                                        </label>
+                                        <div class="form-actions">
+                                            <button class="btn btn-primary btn-sm" type="submit"><img src="assets/icons/checkmark.svg" alt="" width="14" height="14">Сохранить</button>
+                                            <button class="btn btn-sm" type="button" id="avatar-regen"><img src="assets/icons/options.svg" alt="" width="14" height="14">Новый аватар</button>
+                                        </div>
+                                    </form>
+
+                                    <div class="profile-side">
+                                        <div class="mod">
+                                            <h4 class="mod-head">ACCOUNT <i>учётная запись</i></h4>
+                                            <table class="edex-table profile-table">
+                                                <tbody>
+                                                    <tr><td>Логин</td><td id="pi-callsign">—</td></tr>
+                                                    <tr><td>User ID</td><td id="pi-id">—</td></tr>
+                                                    <tr><td>Роль</td><td id="pi-role">—</td></tr>
+                                                    <tr><td>Регистрация</td><td id="pi-registered">—</td></tr>
+                                                    <tr><td>Последний вход</td><td id="pi-last">—</td></tr>
+                                                    <tr><td>Сессия</td><td id="pi-session">—</td></tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <div class="mod">
+                                            <h4 class="mod-head">BADGES <i id="ach-count">0 / 0</i></h4>
+                                            <ul class="ach-grid" id="ach-grid"></ul>
+                                        </div>
+                                    </div>
+
+                                    <div class="mod role-mod full">
+                                        <h4 class="mod-head">ROLE <i>текущая роль и права</i></h4>
+                                        <div class="role-layout">
+                                            <div>
+                                                <div class="role-card" id="role-card" data-role="user">
+                                                    <p class="role-card-name"><b id="role-name">USER</b><span id="role-title">Пользователь</span></p>
+                                                    <p class="role-card-desc" id="role-desc">—</p>
+                                                </div>
+                                                <p class="sub-label">Режим тестирования ролей</p>
+                                                <div data-role-switch></div>
+                                                <p class="role-hint">&gt; роль хранится в <code>nx_session</code> этого браузера · в терминале: <code>role admin</code></p>
+                                            </div>
+                                            <div class="table-scroll">
+                                                <table class="edex-table perm-table stack-table">
+                                                    <thead><tr id="perm-head"><th>Право</th><th data-role-col="user">USER</th><th data-role-col="admin">ADMIN</th><th data-role-col="creator">CREATOR</th></tr></thead>
+                                                    <tbody id="perm-body"></tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- ===== Настройки HUD ===== -->
                             <div class="tab-panel" id="dpanel-settings" role="tabpanel" aria-labelledby="dtab-settings" hidden>
                                 <div class="dash-tab-head">
                                     <h2>Настройки HUD</h2>
@@ -306,41 +774,6 @@
                     </section>
                 </div>
 
-                <!-- Правая колонка: сеть и сессия -->
-                <aside class="mod-column dash-right reveal-fade" aria-label="Сеть и сессия">
-                    <h3 class="panel-title"><span>PANEL</span><span>GRID</span></h3>
-                    <div class="column-stack reveal-stagger">
-                        <div class="mod mod-globe" id="mod_globe">
-                            <h4 class="mod-head">WORLD VIEW <i>SERVER RADAR</i></h4>
-                            <p class="globe-sub"><span>EU-CENTRAL</span><i id="radar-info">7 SERVERS</i></p>
-                            <canvas id="radar-canvas" aria-hidden="true"></canvas>
-                        </div>
-
-                        <div class="mod mod-netstat">
-                            <h4 class="mod-head">NETWORK STATUS <i>Interface: browser</i></h4>
-                            <div class="netstat-grid">
-                                <div class="kv"><h5 class="k">STATE</h5><p class="v" id="net-state">ONLINE</p></div>
-                                <div class="kv netstat-wide"><h5 class="k">CONNECTION</h5><p class="v" id="net-type">—</p></div>
-                                <div class="kv"><h5 class="k">PING</h5><p class="v" id="net-ping">-- ms</p></div>
-                            </div>
-                        </div>
-
-                        <div class="mod">
-                            <h4 class="mod-head">SESSION <i>текущая</i></h4>
-                            <div class="netstat-grid">
-                                <div class="kv"><h5 class="k">TIME</h5><p class="v" id="session-timer">0:00:00</p></div>
-                                <div class="kv netstat-wide"><h5 class="k">MODE</h5><p class="v">DEMO · LOCAL</p></div>
-                            </div>
-                        </div>
-
-                        <div class="mod mod-toplist">
-                            <h4 class="mod-head">TOP SERVERS <i>PID | NAME | PLAYERS | CPU</i></h4>
-                            <table class="toplist" id="toplist">
-                                <tbody></tbody>
-                            </table>
-                        </div>
-                    </div>
-                </aside>
             </div>
         </section>
     </main>
@@ -391,7 +824,7 @@
         </div>
     </footer>
 
-    <script src="js/ui-effects.js?v=20261109-9" defer></script>
-    <script src="js/pages.js?v=20261109-9" defer></script>
+    <script src="js/ui-effects.js?v=20261109-10" defer></script>
+    <script src="js/pages.js?v=20261109-10" defer></script>
 </body>
 </html>
