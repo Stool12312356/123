@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ru" class="no-js">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Вход / Регистрация — NEXUS//DEV</title>
+    <meta name="description" content="Вход и регистрация NEXUS ID — единый аккаунт для портала NEXUS//DEV, серверов Minecraft и плейтестов BASTION.">
+    <meta name="theme-color" content="#090B0A">
+    <link rel="icon" type="image/svg+xml" href="assets/icons/terminal.svg">
+
+    <!-- Зависимость оригинального eDEX-UI: augmented-ui 1.1.2 (BSD-2-Clause) — скошенные рамки -->
+    <link rel="stylesheet" href="assets/vendor/augmented-ui/augmented.css">
+    <!-- Тема blade, перенесённая из eDEX-UI -->
+    <link rel="stylesheet" href="css/blade-theme.css">
+    <!-- Адаптивная сетка сайта -->
+    <link rel="stylesheet" href="css/layout.css">
+    <!-- Компоненты страниц NEXUS//DEV (формы, карточки проектов, кабинет) -->
+    <link rel="stylesheet" href="css/pages.css">
+
+    <script>
+        /* Ранняя инициализация: класс js и сохранённые настройки HUD (без мигания) */
+        (function () {
+            var d = document.documentElement;
+            d.classList.remove("no-js");
+            d.classList.add("js");
+            try {
+                var s = JSON.parse(localStorage.getItem("nx_settings") || "{}");
+                if (s.grid === false) d.classList.add("hud-no-grid");
+                if (s.glow === false) d.classList.add("hud-no-glow");
+                if (s.motion === false) d.classList.add("hud-reduced");
+                if (s.scale && s.scale !== "normal") d.setAttribute("data-hud-scale", s.scale);
+            } catch (e) { /* localStorage недоступен */ }
+        })();
+    </script>
+</head>
+<body data-page="auth">
+    <a class="skip-link" href="#main">Перейти к содержимому</a>
+
+    <!-- ===================== ШАПКА ===================== -->
+    <header class="site-header" id="top">
+        <div class="container header-inner">
+            <a class="brand" href="index.html" aria-label="NEXUS//DEV — на главную">
+                <img src="assets/icons/terminal.svg" alt="" width="26" height="26">
+                <span class="brand-name">NEXUS<em>//</em>DEV</span>
+            </a>
+
+            <nav class="site-nav" id="site-nav" aria-label="Основная навигация">
+                <ul class="skew-tabs nav-tabs">
+                    <li><a href="index.html" data-nav="home">Главная</a></li>
+                    <li><a href="projects.html" data-nav="projects">Проекты</a></li>
+                    <li><a href="dashboard.html" data-nav="dashboard">Кабинет</a></li>
+                    <li class="active"><a href="auth.html" data-nav="auth" aria-current="page">Вход / Регистрация</a></li>
+                </ul>
+            </nav>
+
+            <div class="header-tools">
+                <button class="tool-btn" id="sound-toggle" type="button" aria-pressed="false" title="Звуковые эффекты eDEX-UI">
+                    <img class="icon-off" src="assets/icons/mute.svg" alt="" width="18" height="18">
+                    <img class="icon-on" src="assets/icons/volume.svg" alt="" width="18" height="18">
+                    <span class="tool-label">SFX <b id="sound-state">OFF</b></span>
+                </button>
+                <button class="tool-btn menu-toggle" id="menu-toggle" type="button" aria-controls="site-nav" aria-expanded="false" aria-label="Открыть меню">
+                    <img class="icon-menu" src="assets/icons/menu.svg" alt="" width="20" height="20">
+                    <img class="icon-close" src="assets/icons/close.svg" alt="" width="16" height="16">
+                </button>
+            </div>
+        </div>
+
+        <div class="container header-status">
+            <p><span class="dot" id="uplink-dot" aria-hidden="true"></span>UPLINK: <b id="uplink-state">ONLINE</b></p>
+            <p class="hide-sm">SERVERS: <b id="header-servers">-/-</b></p>
+            <p>USER: <b id="header-user">GUEST</b></p>
+            <p><b id="header-clock">--:--:--</b> <span class="hide-sm">UTC<span id="header-tz">+0</span></span></p>
+        </div>
+    </header>
+
+    <main id="main">
+        <section class="container auth-section" aria-labelledby="page-title">
+            <div class="auth-wrap">
+                <p class="crumbs"><a href="index.html">~</a> / auth <span class="prompt-sign">_</span></p>
+                <h1 class="visually-hidden" id="page-title">Вход и регистрация NEXUS ID</h1>
+
+                <div class="glow">
+                    <section class="auth-panel aug-frame shell-anim" id="auth-panel" augmented-ui="bl-clip tr-clip exe" aria-label="Защищённый терминал авторизации">
+                        <h3 class="panel-title shell-title"><span>SECURE TERMINAL</span><span>NEXUS ID</span></h3>
+
+                        <!-- ===== Формы (для гостя) ===== -->
+                        <div id="auth-forms">
+                            <ul class="skew-tabs auth-tabs" role="tablist" aria-label="Вход или регистрация">
+                                <li class="active" role="presentation">
+                                    <button type="button" role="tab" id="atab-login" aria-selected="true" aria-controls="apanel-login">LOGIN // ВХОД</button>
+                                </li>
+                                <li role="presentation">
+                                    <button type="button" role="tab" id="atab-register" aria-selected="false" aria-controls="apanel-register" tabindex="-1">REGISTER // РЕГИСТРАЦИЯ</button>
+                                </li>
+                            </ul>
+
+                            <div class="auth-body">
+                                <!-- ВХОД -->
+                                <div class="tab-panel active" id="apanel-login" role="tabpanel" aria-labelledby="atab-login">
+                                    <p class="auth-kicker"><span class="prompt-sign">&gt;</span> nexus-id login</p>
+                                    <h2 class="auth-title">Идентификация оператора</h2>
+                                    <p class="auth-note">Войдите, чтобы открыть кабинет, сборки и управление серверами.</p>
+
+                                    <form class="form-grid" id="login-form" novalidate>
+                                        <div class="field">
+                                            <label for="login-id">Логин или email</label>
+                                            <input class="input" id="login-id" name="login" type="text" autocomplete="username" spellcheck="false" autocapitalize="off" placeholder="callsign / you@example.com" required>
+                                            <p class="field-error" aria-live="polite"></p>
+                                        </div>
+                                        <div class="field">
+                                            <label for="login-pass">Пароль</label>
+                                            <div class="input-wrap">
+                                                <input class="input" id="login-pass" name="password" type="password" autocomplete="current-password" placeholder="••••••••" required minlength="6">
+                                                <button class="input-btn" type="button" data-reveal="login-pass" aria-pressed="false" aria-label="Показать пароль"><img src="assets/icons/eye.svg" alt="" width="18" height="18"></button>
+                                            </div>
+                                            <p class="field-error" aria-live="polite"></p>
+                                        </div>
+                                        <div class="field">
+                                            <label for="login-code">Код доступа <i>— необязательно, повышает уровень допуска</i></label>
+                                            <input class="input" id="login-code" name="code" type="text" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX" data-upper>
+                                            <p class="field-error" aria-live="polite"></p>
+                                        </div>
+                                        <div class="auth-checks">
+                                            <label class="check">
+                                                <input type="checkbox" id="login-remember" checked>
+                                                <span class="box" aria-hidden="true"><i></i></span>
+                                                <span>Запомнить это устройство</span>
+                                            </label>
+                                        </div>
+                                        <div class="auth-actions">
+                                            <button class="btn btn-primary" type="submit">
+                                                <img src="assets/icons/sign-in.svg" alt="" width="18" height="18">
+                                                ВОЙТИ // AUTHENTICATE
+                                            </button>
+                                            <div class="auth-divider">или</div>
+                                            <button class="btn" type="button" data-demo-login>
+                                                <img src="assets/icons/unlock.svg" alt="" width="18" height="18">
+                                                ТЕСТОВЫЙ ВХОД (DEMO ACCESS)
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+
+                                <!-- РЕГИСТРАЦИЯ -->
+                                <div class="tab-panel" id="apanel-register" role="tabpanel" aria-labelledby="atab-register" hidden>
+                                    <p class="auth-kicker"><span class="prompt-sign">&gt;</span> nexus-id register</p>
+                                    <h2 class="auth-title">Новый оператор</h2>
+                                    <p class="auth-note">Один аккаунт для сайта, серверов NEXUS CRAFT и плейтестов BASTION.</p>
+
+                                    <form class="form-grid" id="register-form" novalidate>
+                                        <div class="auth-row">
+                                            <div class="field">
+                                                <label for="reg-callsign">Логин (позывной)</label>
+                                                <input class="input" id="reg-callsign" name="callsign" type="text" autocomplete="username" spellcheck="false" autocapitalize="off" placeholder="trench_rat" required>
+                                                <p class="field-error" aria-live="polite"></p>
+                                            </div>
+                                            <div class="field">
+                                                <label for="reg-email">Email</label>
+                                                <input class="input" id="reg-email" name="email" type="email" autocomplete="email" spellcheck="false" placeholder="you@example.com" required>
+                                                <p class="field-error" aria-live="polite"></p>
+                                            </div>
+                                        </div>
+                                        <div class="auth-row">
+                                            <div class="field">
+                                                <label for="reg-pass">Пароль</label>
+                                                <div class="input-wrap">
+                                                    <input class="input" id="reg-pass" name="password" type="password" autocomplete="new-password" placeholder="минимум 8 символов" required minlength="8">
+                                                    <button class="input-btn" type="button" data-reveal="reg-pass" aria-pressed="false" aria-label="Показать пароль"><img src="assets/icons/eye.svg" alt="" width="18" height="18"></button>
+                                                </div>
+                                                <div class="strength" id="reg-strength" data-level="0" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+                                                <p class="field-error" aria-live="polite"></p>
+                                            </div>
+                                            <div class="field">
+                                                <label for="reg-pass2">Повтор пароля</label>
+                                                <input class="input" id="reg-pass2" name="password2" type="password" autocomplete="new-password" placeholder="••••••••" required>
+                                                <p class="field-error" aria-live="polite"></p>
+                                            </div>
+                                        </div>
+                                        <div class="field">
+                                            <label for="reg-code">Код доступа <i>— необязательно, выдаётся командой для плейтестов</i></label>
+                                            <input class="input" id="reg-code" name="code" type="text" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX" data-upper>
+                                            <p class="field-error" aria-live="polite"></p>
+                                        </div>
+                                        <div class="field auth-checks">
+                                            <label class="check">
+                                                <input type="checkbox" id="reg-rules" required>
+                                                <span class="box" aria-hidden="true"><i></i></span>
+                                                <span>Принимаю <button class="link-btn" type="button" data-doc="rules">правила серверов</button> и понимаю, что проект некоммерческий</span>
+                                            </label>
+                                            <p class="field-error" aria-live="polite"></p>
+                                            <label class="check">
+                                                <input type="checkbox" id="reg-news">
+                                                <span class="box" aria-hidden="true"><i></i></span>
+                                                <span>Сообщать о новых плейтестах и devlog</span>
+                                            </label>
+                                        </div>
+                                        <div class="auth-actions">
+                                            <button class="btn btn-primary" type="submit">
+                                                <img src="assets/icons/plus.svg" alt="" width="18" height="18">
+                                                СОЗДАТЬ АККАУНТ // REGISTER
+                                            </button>
+                                            <div class="auth-divider">или</div>
+                                            <button class="btn" type="button" data-demo-login>
+                                                <img src="assets/icons/unlock.svg" alt="" width="18" height="18">
+                                                ТЕСТОВЫЙ ВХОД (DEMO ACCESS)
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+
+                                <pre class="verify-log" id="verify-log" aria-live="polite"></pre>
+
+                                <p class="auth-hint">
+                                    DEMO MODE: данные никуда не отправляются, пароль не сохраняется — в localStorage
+                                    записывается только профиль. Любой логин и пароль от 6 символов подойдут.
+                                    Коды доступа: <code>PLAYTEST</code> — уровень 3, <code>NEXUS-DEV</code> — уровень 4.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- ===== Уже вошли ===== -->
+                        <div class="auth-body auth-session" id="auth-session" hidden>
+                            <p class="auth-kicker"><span class="prompt-sign">&gt;</span> session active</p>
+                            <div class="avatar-frame">
+                                <canvas id="auth-avatar" width="126" height="126" aria-hidden="true"></canvas>
+                                <span class="scan" aria-hidden="true"></span>
+                            </div>
+                            <h2 class="auth-title" id="auth-session-name">—</h2>
+                            <p class="auth-note" id="auth-session-meta">—</p>
+                            <div class="auth-actions">
+                                <a class="btn btn-primary" href="dashboard.html">
+                                    <img src="assets/icons/user.svg" alt="" width="18" height="18">
+                                    Перейти в кабинет
+                                </a>
+                                <button class="btn" type="button" id="auth-logout">
+                                    <img src="assets/icons/sign-out.svg" alt="" width="18" height="18">
+                                    Выйти
+                                </button>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- ===================== ПОДВАЛ ===================== -->
+    <footer class="site-footer">
+        <div class="container">
+            <h2 class="panel-title"><span>NEXUS//DEV</span><span>EOF</span></h2>
+            <div class="footer-grid">
+                <div class="footer-about">
+                    <p class="brand footer-brand">
+                        <img src="assets/icons/terminal.svg" alt="" width="22" height="22">
+                        <span class="brand-name">NEXUS<em>//</em>DEV</span>
+                    </p>
+                    <p>Некоммерческий портал инди-разработки: тактическая RTS BASTION: LINE ZERO на Unreal Engine 5, серверы Minecraft NEXUS CRAFT и собственные моды.</p>
+                </div>
+                <nav class="footer-col" aria-label="Навигация в подвале">
+                    <h3>Навигация</h3>
+                    <ul>
+                        <li><a href="index.html">Главная</a></li>
+                        <li><a href="projects.html">Проекты</a></li>
+                        <li><a href="dashboard.html">Кабинет</a></li>
+                        <li><a href="auth.html">Вход / Регистрация</a></li>
+                    </ul>
+                </nav>
+                <div class="footer-col">
+                    <h3>Проект</h3>
+                    <ul>
+                        <li><a href="projects.html#dossier-bastion">Досье BASTION</a></li>
+                        <li><a href="https://github.com/Stool12312356/123" target="_blank" rel="noopener noreferrer">Исходный код сайта</a></li>
+                        <li><a href="LICENSE">Лицензия GPL-3.0</a></li>
+                        <li><button class="link-btn" type="button" data-doc="faq">Частые вопросы</button></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="footer-bottom">
+                <p>&copy; <span class="js-year">2026</span> NEXUS//DEV. Некоммерческий проект. Код сайта распространяется под лицензией <a href="LICENSE">GPL-3.0</a>.</p>
+                <p class="credit">
+                    <img src="assets/img/edex-logo.svg" alt="" width="18" height="18">
+                    <span>UI inspired by &amp; adapted from <a href="https://github.com/GitSquared/edex-ui" target="_blank" rel="noopener noreferrer">eDEX-UI</a> (GPL-3.0)</span>
+                </p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="js/ui-effects.js" defer></script>
+    <script src="js/pages.js" defer></script>
+</body>
+</html>

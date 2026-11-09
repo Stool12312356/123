@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="ru" class="no-js">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Личный кабинет — NEXUS//DEV</title>
+    <meta name="description" content="Личный кабинет NEXUS//DEV: профиль и уровень допуска, история загрузок сборок, мониторинг и управление игровыми серверами, настройки HUD.">
+    <meta name="theme-color" content="#090B0A">
+    <link rel="icon" type="image/svg+xml" href="assets/icons/terminal.svg">
+
+    <!-- Зависимость оригинального eDEX-UI: augmented-ui 1.1.2 (BSD-2-Clause) — скошенные рамки -->
+    <link rel="stylesheet" href="assets/vendor/augmented-ui/augmented.css">
+    <!-- Тема blade, перенесённая из eDEX-UI -->
+    <link rel="stylesheet" href="css/blade-theme.css">
+    <!-- Адаптивная сетка сайта -->
+    <link rel="stylesheet" href="css/layout.css">
+    <!-- Компоненты страниц NEXUS//DEV (формы, карточки проектов, кабинет) -->
+    <link rel="stylesheet" href="css/pages.css">
+
+    <script>
+        /* Ранняя инициализация: класс js и сохранённые настройки HUD (без мигания) */
+        (function () {
+            var d = document.documentElement;
+            d.classList.remove("no-js");
+            d.classList.add("js");
+            try {
+                var s = JSON.parse(localStorage.getItem("nx_settings") || "{}");
+                if (s.grid === false) d.classList.add("hud-no-grid");
+                if (s.glow === false) d.classList.add("hud-no-glow");
+                if (s.motion === false) d.classList.add("hud-reduced");
+                if (s.scale && s.scale !== "normal") d.setAttribute("data-hud-scale", s.scale);
+            } catch (e) { /* localStorage недоступен */ }
+        })();
+    </script>
+</head>
+<body data-page="dashboard">
+    <a class="skip-link" href="#main">Перейти к содержимому</a>
+
+    <!-- ===================== ШАПКА ===================== -->
+    <header class="site-header" id="top">
+        <div class="container header-inner">
+            <a class="brand" href="index.html" aria-label="NEXUS//DEV — на главную">
+                <img src="assets/icons/terminal.svg" alt="" width="26" height="26">
+                <span class="brand-name">NEXUS<em>//</em>DEV</span>
+            </a>
+
+            <nav class="site-nav" id="site-nav" aria-label="Основная навигация">
+                <ul class="skew-tabs nav-tabs">
+                    <li><a href="index.html" data-nav="home">Главная</a></li>
+                    <li><a href="projects.html" data-nav="projects">Проекты</a></li>
+                    <li class="active"><a href="dashboard.html" data-nav="dashboard" aria-current="page">Кабинет</a></li>
+                    <li><a href="auth.html" data-nav="auth">Вход / Регистрация</a></li>
+                </ul>
+            </nav>
+
+            <div class="header-tools">
+                <button class="tool-btn" id="sound-toggle" type="button" aria-pressed="false" title="Звуковые эффекты eDEX-UI">
+                    <img class="icon-off" src="assets/icons/mute.svg" alt="" width="18" height="18">
+                    <img class="icon-on" src="assets/icons/volume.svg" alt="" width="18" height="18">
+                    <span class="tool-label">SFX <b id="sound-state">OFF</b></span>
+                </button>
+                <button class="tool-btn menu-toggle" id="menu-toggle" type="button" aria-controls="site-nav" aria-expanded="false" aria-label="Открыть меню">
+                    <img class="icon-menu" src="assets/icons/menu.svg" alt="" width="20" height="20">
+                    <img class="icon-close" src="assets/icons/close.svg" alt="" width="16" height="16">
+                </button>
+            </div>
+        </div>
+
+        <div class="container header-status">
+            <p><span class="dot" id="uplink-dot" aria-hidden="true"></span>UPLINK: <b id="uplink-state">ONLINE</b></p>
+            <p class="hide-sm">SERVERS: <b id="header-servers">-/-</b></p>
+            <p>USER: <b id="header-user">GUEST</b></p>
+            <p><b id="header-clock">--:--:--</b> <span class="hide-sm">UTC<span id="header-tz">+0</span></span></p>
+        </div>
+    </header>
+
+    <main id="main">
+        <section class="container page-head" aria-labelledby="page-title">
+            <h2 class="panel-title section-title"><span>Личный кабинет</span><span>/dashboard</span></h2>
+            <p class="crumbs"><a href="index.html">~</a> / dashboard <span class="prompt-sign">_</span></p>
+            <h1 class="visually-hidden" id="page-title">Личный кабинет NEXUS//DEV</h1>
+        </section>
+
+        <!-- ===================== ЗАМОК ДЛЯ ГОСТЯ ===================== -->
+        <section class="container page-section" id="dash-lock" aria-labelledby="lock-title" hidden>
+            <div class="glow">
+                <div class="lock-panel aug-frame" augmented-ui="tr-clip bl-clip exe">
+                    <img class="lock-icon" src="assets/icons/lock.svg" alt="" width="64" height="64">
+                    <h2 id="lock-title">ACCESS RESTRICTED</h2>
+                    <p>Кабинет доступен только авторизованным участникам NEXUS ID. Войдите, зарегистрируйтесь или воспользуйтесь демо-доступом, чтобы посмотреть, как всё устроено.</p>
+                    <div class="lock-actions">
+                        <a class="btn btn-primary" href="auth.html">
+                            <img src="assets/icons/sign-in.svg" alt="" width="18" height="18">
+                            Вход
+                        </a>
+                        <a class="btn" href="auth.html#register">
+                            <img src="assets/icons/plus.svg" alt="" width="18" height="18">
+                            Регистрация
+                        </a>
+                        <button class="btn" type="button" id="dash-demo">
+                            <img src="assets/icons/unlock.svg" alt="" width="18" height="18">
+                            ТЕСТОВЫЙ ВХОД (DEMO ACCESS)
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================== КАБИНЕТ ===================== -->
+        <section class="container page-section" id="dash-app" aria-label="Панель управления" hidden>
+            <div class="dash-grid">
+
+                <!-- Левая колонка: оператор -->
+                <aside class="mod-column dash-left reveal-fade" aria-label="Профиль оператора">
+                    <h3 class="panel-title"><span>PANEL</span><span>OPERATOR</span></h3>
+                    <div class="column-stack reveal-stagger">
+                        <div class="mod profile-card">
+                            <h4 class="mod-head">IDENTITY <i>NEXUS ID</i></h4>
+                            <div class="avatar-frame">
+                                <canvas id="avatar-canvas" width="126" height="126" aria-label="Аватар пользователя" role="img"></canvas>
+                                <span class="scan" aria-hidden="true"></span>
+                            </div>
+                            <p class="profile-name" id="profile-name">—</p>
+                            <p class="profile-id">ID: <b id="profile-id">NX-0000-0000</b></p>
+                            <div class="clearance">
+                                <p class="sub-label">Clearance level</p>
+                                <div class="clearance-bars" id="clearance-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+                                <p class="clearance-name" id="profile-level">LEVEL 1 // OBSERVER</p>
+                            </div>
+                            <div class="profile-actions">
+                                <button class="btn btn-sm" type="button" id="avatar-regen">
+                                    <img src="assets/icons/options.svg" alt="" width="14" height="14">
+                                    Сгенерировать аватар
+                                </button>
+                                <button class="btn btn-sm" type="button" data-logout>
+                                    <img src="assets/icons/sign-out.svg" alt="" width="14" height="14">
+                                    Выйти
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="mod mod-clock" id="mod_clock">
+                            <h2 class="clock-face" id="clock" aria-live="off">
+                                <span>0</span><span>0</span><em>:</em><span>0</span><span>0</span><em>:</em><span>0</span><span>0</span>
+                            </h2>
+                        </div>
+
+                        <div class="mod mod-sysinfo">
+                            <div class="kv"><h4 class="k">YEAR</h4><p class="v" id="sys-year">----</p></div>
+                            <div class="kv"><h4 class="k">DATE</h4><p class="v" id="sys-date">---</p></div>
+                            <div class="kv"><h4 class="k">UPTIME</h4><p class="v" id="sys-uptime">0:00:00</p></div>
+                            <div class="kv"><h4 class="k">TYPE</h4><p class="v" id="sys-type">WEB</p></div>
+                            <div class="kv"><h4 class="k">POWER</h4><p class="v" id="sys-power">ON</p></div>
+                        </div>
+                    </div>
+                </aside>
+
+                <!-- Центр: терминал с вкладками -->
+                <div class="dash-shell shell-wrap glow">
+                    <section class="shell aug-frame shell-anim" augmented-ui="bl-clip tr-clip exe" aria-label="Терминал кабинета">
+                        <h3 class="panel-title shell-title"><span>TERMINAL</span><span>CONTROL SHELL</span></h3>
+
+                        <ul class="skew-tabs shell-tabs" role="tablist" aria-label="Разделы кабинета">
+                            <li class="active" role="presentation">
+                                <button type="button" role="tab" id="dtab-profile" aria-selected="true" aria-controls="dpanel-profile">Профиль и доступ</button>
+                            </li>
+                            <li role="presentation">
+                                <button type="button" role="tab" id="dtab-servers" aria-selected="false" aria-controls="dpanel-servers" tabindex="-1">Управление серверами</button>
+                            </li>
+                            <li role="presentation">
+                                <button type="button" role="tab" id="dtab-settings" aria-selected="false" aria-controls="dpanel-settings" tabindex="-1">Настройки HUD</button>
+                            </li>
+                        </ul>
+
+                        <div class="shell-inner">
+                            <!-- ===== Вкладка 1: Профиль и доступ ===== -->
+                            <div class="tab-panel active" id="dpanel-profile" role="tabpanel" aria-labelledby="dtab-profile">
+                                <div class="dash-tab-head">
+                                    <h2>Профиль и доступ</h2>
+                                    <p>&gt; id --verbose</p>
+                                </div>
+
+                                <div class="dash-blocks">
+                                    <div class="mod">
+                                        <h4 class="mod-head">PROFILE <i>учётная запись</i></h4>
+                                        <table class="edex-table profile-table">
+                                            <tbody>
+                                                <tr><td>Позывной</td><td id="pi-callsign">—</td></tr>
+                                                <tr><td>Email</td><td id="pi-email">—</td></tr>
+                                                <tr><td>User ID</td><td id="pi-id">—</td></tr>
+                                                <tr><td>Допуск</td><td id="pi-level">—</td></tr>
+                                                <tr><td>Регистрация</td><td id="pi-registered">—</td></tr>
+                                                <tr><td>Последний вход</td><td id="pi-last">—</td></tr>
+                                                <tr><td>Сессия</td><td id="pi-session">—</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div class="mod">
+                                        <h4 class="mod-head">ACCESS MATRIX <i>уровни допуска</i></h4>
+                                        <table class="edex-table access-table stack-table">
+                                            <thead><tr><th>Ресурс</th><th>Уровень</th><th>Доступ</th></tr></thead>
+                                            <tbody id="access-body"></tbody>
+                                        </table>
+                                    </div>
+                                    <div class="mod full">
+                                        <h4 class="mod-head">AVAILABLE BUILDS <i>сборки по уровню допуска</i></h4>
+                                        <div class="table-scroll">
+                                            <table class="edex-table dl-table stack-table">
+                                                <thead><tr><th>Сборка</th><th>Размер</th><th>Допуск</th><th>Действие</th></tr></thead>
+                                                <tbody id="build-list"></tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                    <div class="mod full">
+                                        <h4 class="mod-head">DOWNLOAD HISTORY <i>история загрузок сборок</i></h4>
+                                        <div class="table-scroll">
+                                            <table class="edex-table dl-table stack-table">
+                                                <thead><tr><th>Сборка</th><th>Дата</th><th>Размер</th><th>SHA-256</th><th>Статус</th></tr></thead>
+                                                <tbody id="dl-body"></tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- ===== Вкладка 2: Управление серверами ===== -->
+                            <div class="tab-panel" id="dpanel-servers" role="tabpanel" aria-labelledby="dtab-servers" hidden>
+                                <div class="dash-tab-head">
+                                    <h2>Управление серверами</h2>
+                                    <p>LIVE · обновлено <b id="srv-updated">--:--:--</b></p>
+                                </div>
+
+                                <div class="srv-summary">
+                                    <div class="mod summary-item"><h3 class="mod-head">ONLINE</h3><p class="summary-value" data-dsum="online">-/-</p></div>
+                                    <div class="mod summary-item"><h3 class="mod-head">PLAYERS</h3><p class="summary-value" data-dsum="players">0</p></div>
+                                    <div class="mod summary-item"><h3 class="mod-head">AVG PING</h3><p class="summary-value" data-dsum="ping">-- ms</p></div>
+                                    <div class="mod summary-item"><h3 class="mod-head">OPERATIONS</h3><p class="summary-value" data-dsum="ops">IDLE</p></div>
+                                </div>
+
+                                <div class="table-scroll">
+                                    <table class="edex-table srv-table stack-table">
+                                        <caption class="visually-hidden">Мониторинг игровых серверов</caption>
+                                        <thead>
+                                            <tr>
+                                                <th scope="col">Сервер</th>
+                                                <th scope="col">Статус</th>
+                                                <th scope="col">Игроки</th>
+                                                <th scope="col">Ping</th>
+                                                <th scope="col">CPU / RAM</th>
+                                                <th scope="col">Действия</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="srv-body"></tbody>
+                                    </table>
+                                </div>
+
+                                <div class="settings-actions" style="margin: 14px 0;">
+                                    <button class="btn btn-sm" type="button" id="srv-restart-all">
+                                        <img src="assets/icons/play.svg" alt="" width="14" height="14">
+                                        Перезапустить проблемные (DEGRADED / OFFLINE)
+                                    </button>
+                                </div>
+
+                                <h4 class="mod-head">ACTION LOG <i>действия оператора</i></h4>
+                                <pre class="action-log" id="action-log" aria-live="polite"></pre>
+                            </div>
+
+                            <!-- ===== Вкладка 3: Настройки HUD ===== -->
+                            <div class="tab-panel" id="dpanel-settings" role="tabpanel" aria-labelledby="dtab-settings" hidden>
+                                <div class="dash-tab-head">
+                                    <h2>Настройки HUD</h2>
+                                    <p>&gt; сохраняются в localStorage этого браузера</p>
+                                </div>
+
+                                <div class="settings-grid">
+                                    <div class="mod">
+                                        <h4 class="mod-head">AUDIO / INTRO</h4>
+                                        <label class="toggle">
+                                            <span class="toggle-text"><b>Звуки интерфейса (SFX)</b><span>Оригинальные звуки eDEX-UI</span></span>
+                                            <input type="checkbox" id="set-sfx" data-name="SFX">
+                                            <span class="switch" aria-hidden="true"></span>
+                                        </label>
+                                        <label class="toggle">
+                                            <span class="toggle-text"><b>Анимация загрузки</b><span>Boot-лог на главной (раз за сессию)</span></span>
+                                            <input type="checkbox" id="set-intro" data-name="анимация загрузки">
+                                            <span class="switch" aria-hidden="true"></span>
+                                        </label>
+                                        <label class="toggle">
+                                            <span class="toggle-text"><b>Анимации интерфейса</b><span>Выключите, если укачивает</span></span>
+                                            <input type="checkbox" id="set-motion" data-name="анимации">
+                                            <span class="switch" aria-hidden="true"></span>
+                                        </label>
+                                    </div>
+                                    <div class="mod">
+                                        <h4 class="mod-head">VISUAL</h4>
+                                        <label class="toggle">
+                                            <span class="toggle-text"><b>Фоновая сетка</b><span>Сетка из main.css eDEX-UI</span></span>
+                                            <input type="checkbox" id="set-grid" data-name="сетка">
+                                            <span class="switch" aria-hidden="true"></span>
+                                        </label>
+                                        <label class="toggle">
+                                            <span class="toggle-text"><b>Свечение (glow)</b><span>Ореол вокруг рамок и текста</span></span>
+                                            <input type="checkbox" id="set-glow" data-name="свечение">
+                                            <span class="switch" aria-hidden="true"></span>
+                                        </label>
+                                        <div class="toggle">
+                                            <span class="toggle-text"><b><label for="set-scale">Масштаб HUD</label></b><span>Размер всего интерфейса</span></span>
+                                            <select class="select" id="set-scale" style="width: 150px;">
+                                                <option value="compact">Компактный</option>
+                                                <option value="normal">Обычный</option>
+                                                <option value="large">Крупный</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="settings-actions">
+                                    <button class="btn" type="button" id="set-reset">
+                                        <img src="assets/icons/options.svg" alt="" width="18" height="18">
+                                        Сбросить настройки
+                                    </button>
+                                    <button class="btn" type="button" id="set-replay">
+                                        <img src="assets/icons/play.svg" alt="" width="18" height="18">
+                                        Показать загрузку снова
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Правая колонка: сеть и сессия -->
+                <aside class="mod-column dash-right reveal-fade" aria-label="Сеть и сессия">
+                    <h3 class="panel-title"><span>PANEL</span><span>GRID</span></h3>
+                    <div class="column-stack reveal-stagger">
+                        <div class="mod mod-globe" id="mod_globe">
+                            <h4 class="mod-head">WORLD VIEW <i>SERVER RADAR</i></h4>
+                            <p class="globe-sub"><span>EU-CENTRAL</span><i id="radar-info">7 SERVERS</i></p>
+                            <canvas id="radar-canvas" aria-hidden="true"></canvas>
+                        </div>
+
+                        <div class="mod mod-netstat">
+                            <h4 class="mod-head">NETWORK STATUS <i>Interface: browser</i></h4>
+                            <div class="netstat-grid">
+                                <div class="kv"><h5 class="k">STATE</h5><p class="v" id="net-state">ONLINE</p></div>
+                                <div class="kv netstat-wide"><h5 class="k">CONNECTION</h5><p class="v" id="net-type">—</p></div>
+                                <div class="kv"><h5 class="k">PING</h5><p class="v" id="net-ping">-- ms</p></div>
+                            </div>
+                        </div>
+
+                        <div class="mod">
+                            <h4 class="mod-head">SESSION <i>текущая</i></h4>
+                            <div class="netstat-grid">
+                                <div class="kv"><h5 class="k">TIME</h5><p class="v" id="session-timer">0:00:00</p></div>
+                                <div class="kv netstat-wide"><h5 class="k">MODE</h5><p class="v">DEMO · LOCAL</p></div>
+                            </div>
+                        </div>
+
+                        <div class="mod mod-toplist">
+                            <h4 class="mod-head">TOP SERVERS <i>PID | NAME | PLAYERS | CPU</i></h4>
+                            <table class="toplist" id="toplist">
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+        </section>
+    </main>
+
+    <!-- ===================== ПОДВАЛ ===================== -->
+    <footer class="site-footer">
+        <div class="container">
+            <h2 class="panel-title"><span>NEXUS//DEV</span><span>EOF</span></h2>
+            <div class="footer-grid">
+                <div class="footer-about">
+                    <p class="brand footer-brand">
+                        <img src="assets/icons/terminal.svg" alt="" width="22" height="22">
+                        <span class="brand-name">NEXUS<em>//</em>DEV</span>
+                    </p>
+                    <p>Некоммерческий портал инди-разработки: тактическая RTS BASTION: LINE ZERO на Unreal Engine 5, серверы Minecraft NEXUS CRAFT и собственные моды.</p>
+                </div>
+                <nav class="footer-col" aria-label="Навигация в подвале">
+                    <h3>Навигация</h3>
+                    <ul>
+                        <li><a href="index.html">Главная</a></li>
+                        <li><a href="projects.html">Проекты</a></li>
+                        <li><a href="dashboard.html">Кабинет</a></li>
+                        <li><a href="auth.html">Вход / Регистрация</a></li>
+                    </ul>
+                </nav>
+                <div class="footer-col">
+                    <h3>Проект</h3>
+                    <ul>
+                        <li><a href="projects.html#dossier-bastion">Досье BASTION</a></li>
+                        <li><a href="https://github.com/Stool12312356/123" target="_blank" rel="noopener noreferrer">Исходный код сайта</a></li>
+                        <li><a href="LICENSE">Лицензия GPL-3.0</a></li>
+                        <li><button class="link-btn" type="button" data-doc="faq">Частые вопросы</button></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="footer-bottom">
+                <p>&copy; <span class="js-year">2026</span> NEXUS//DEV. Некоммерческий проект. Код сайта распространяется под лицензией <a href="LICENSE">GPL-3.0</a>.</p>
+                <p class="credit">
+                    <img src="assets/img/edex-logo.svg" alt="" width="18" height="18">
+                    <span>UI inspired by &amp; adapted from <a href="https://github.com/GitSquared/edex-ui" target="_blank" rel="noopener noreferrer">eDEX-UI</a> (GPL-3.0)</span>
+                </p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="js/ui-effects.js" defer></script>
+    <script src="js/pages.js" defer></script>
+</body>
+</html>

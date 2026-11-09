@@ -1,0 +1,870 @@
+/*
+ * blade-theme.css
+ * ------------------------------------------------------------------
+ * Тема «blade», перенесённая из eDEX-UI (GitSquared/edex-ui, GPL-3.0):
+ *   - src/assets/themes/blade.json        → CSS-переменные :root
+ *   - src/assets/css/main.css             → фон-сетка, скроллбары, заголовки панелей
+ *   - src/assets/css/boot_screen.css      → экран загрузки и glitch-заголовок
+ *   - src/assets/css/main_shell.css       → скошенные вкладки, рамка терминала
+ *   - src/assets/css/mod_*.css            → модули с «засечками» по углам
+ *   - src/assets/css/modal.css            → модальные окна и кнопки
+ *   - src/assets/css/keyboard.css         → анимация «blink»
+ *
+ * Адаптация под браузер:
+ *   В оригинале все размеры заданы в vh и рассчитаны на окно Electron
+ *   1920×1080 без прокрутки. Здесь введена единица --u (= 1vh при 1080p,
+ *   т.е. 10.8px). Все оригинальные значения пересчитаны как
+ *   calc(<значение vh> * var(--u)), поэтому пропорции сохранены 1 в 1,
+ *   но интерфейс больше не зависит от высоты окна и нормально скроллится.
+ * ------------------------------------------------------------------
+ */
+
+/* ============ Шрифты (assets/fonts, скопированы из eDEX-UI) ============ */
+@font-face {
+    font-family: "United Sans Medium";
+    src: url("../assets/fonts/united_sans_medium.woff2") format("woff2");
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: "United Sans Light";
+    src: url("../assets/fonts/united_sans_light.woff2") format("woff2");
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: "Fira Mono";
+    src: url("../assets/fonts/fira_mono.woff2") format("woff2");
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: "Fira Code";
+    src: url("../assets/fonts/fira_code.woff2") format("woff2");
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* ============ Переменные темы (assets/themes/blade.json) ============ */
+:root {
+    /* colors */
+    --color_r: 204;
+    --color_g: 94;
+    --color_b: 55;
+    --color_black: #000000;
+    --color_light_black: #090B0A;
+    --color_grey: #262827;
+    /* modal.css: error / warning */
+    --color_red: red;
+    --color_yellow: yellow;
+
+    /* cssvars + terminal.fontFamily */
+    /* United Sans не содержит кириллицы — для неё задан близкий по духу
+       (DIN-подобный) системный fallback. Латиница/цифры остаются в United Sans. */
+    --font_main: "United Sans Medium", "Bahnschrift", "DIN Alternate", "Roboto Condensed", "Arial Narrow", sans-serif;
+    --font_main_light: "United Sans Light", "Bahnschrift Light", "Bahnschrift", "Roboto", "Segoe UI", sans-serif;
+    --font_mono: "Fira Mono", monospace;
+    --font_code: "Fira Code", "Fira Mono", monospace;
+
+    /* Удобные производные от темы */
+    --c: rgb(var(--color_r), var(--color_g), var(--color_b));
+    --c-90: rgba(var(--color_r), var(--color_g), var(--color_b), 0.9);
+    --c-80: rgba(var(--color_r), var(--color_g), var(--color_b), 0.8);
+    --c-70: rgba(var(--color_r), var(--color_g), var(--color_b), 0.7);
+    --c-60: rgba(var(--color_r), var(--color_g), var(--color_b), 0.6);
+    --c-50: rgba(var(--color_r), var(--color_g), var(--color_b), 0.5);
+    --c-40: rgba(var(--color_r), var(--color_g), var(--color_b), 0.4);
+    --c-30: rgba(var(--color_r), var(--color_g), var(--color_b), 0.3);
+    --c-20: rgba(var(--color_r), var(--color_g), var(--color_b), 0.2);
+    --c-10: rgba(var(--color_r), var(--color_g), var(--color_b), 0.1);
+    --selection: rgba(204, 94, 55, 0.3);
+
+    /* Базовая единица: 1vh оригинала при 1080p */
+    --u: 10.8px;
+
+    /* Свечение (glow) */
+    --glow-text: 0 0 calc(0.6 * var(--u)) rgba(var(--color_r), var(--color_g), var(--color_b), 0.55);
+    --glow-soft: 0 0 calc(1.2 * var(--u)) rgba(var(--color_r), var(--color_g), var(--color_b), 0.25);
+    --glow-drop: drop-shadow(0 0 calc(0.8 * var(--u)) rgba(var(--color_r), var(--color_g), var(--color_b), 0.3));
+
+    /* Кривая анимаций eDEX-UI */
+    --ease-edex: cubic-bezier(0.4, 0, 1, 1);
+    --ease-expand: cubic-bezier(0.85, 0.5, 0.85, 0.5);
+
+    color-scheme: dark;
+}
+
+@media (max-width: 767px) {
+    :root { --u: 9.6px; }
+}
+
+/* ============ База (main.css) ============ */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
+    scroll-padding-top: calc(8 * var(--u));
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    background: var(--color_light_black);
+    /* Firefox scrollbar */
+    scrollbar-color: var(--c) var(--color_light_black);
+    scrollbar-width: thin;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    color: var(--c);
+    font-family: var(--font_main), sans-serif;
+    line-height: 1.45;
+    /* Фон-сетка из main.css — оригинальная формула, пересчитанная в --u */
+    background:
+        linear-gradient(90deg, var(--color_light_black) calc(1.85 * var(--u)), transparent 1%) center,
+        linear-gradient(var(--color_light_black) calc(1.85 * var(--u)), transparent 1%) center,
+        var(--color_grey);
+    background-size: calc(2.04 * var(--u)) calc(2.04 * var(--u));
+    overflow-x: hidden;
+}
+
+body.solidBackground {
+    background: var(--color_light_black);
+}
+
+body.is-booting {
+    overflow: hidden;
+}
+
+::selection {
+    background: var(--selection);
+    color: var(--c);
+}
+
+a {
+    color: inherit;
+}
+
+img,
+svg {
+    max-width: 100%;
+}
+
+/* ============ Скроллбары (main.css) ============ */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-button {
+    display: none;
+}
+::-webkit-scrollbar-track {
+    background: rgba(var(--color_r), var(--color_g), var(--color_b), 0.4);
+    border: 3px solid var(--color_light_black);
+}
+::-webkit-scrollbar-thumb {
+    background: rgb(var(--color_r), var(--color_g), var(--color_b));
+    height: auto;
+}
+::-webkit-scrollbar-corner {
+    background: var(--color_light_black);
+}
+
+/* Фокус для клавиатурной навигации */
+:focus-visible {
+    outline: 1px dashed var(--c);
+    outline-offset: 3px;
+}
+
+/* ============ Заголовок панели: section > h3.title (main.css) ============
+ * Оригинал: position: fixed + ширина в процентах окна.
+ * Здесь — обычный блочный элемент внутри потока.
+ */
+.panel-title {
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 1em;
+    margin: 0 0 calc(1.2 * var(--u));
+    padding: 0 calc(0.925 * var(--u));
+    font-family: var(--font_main);
+    font-size: max(11px, calc(1.02 * var(--u)));
+    font-weight: bold;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--c-30);
+}
+.panel-title > p,
+.panel-title > span {
+    margin: 0;
+}
+.panel-title > :last-child {
+    text-align: right;
+    white-space: nowrap;
+}
+.panel-title::before,
+.panel-title::after {
+    content: "";
+    position: absolute;
+    bottom: calc(-0.555 * var(--u));
+    height: calc(0.46 * var(--u));
+}
+.panel-title::before {
+    left: 0;
+    border-left: 1px solid var(--c-30);
+}
+.panel-title::after {
+    right: 0;
+    border-right: 1px solid var(--c-30);
+}
+
+/* ============ Модуль с засечками (mod_clock / mod_sysinfo / mod_netstat …) ============ */
+.mod {
+    position: relative;
+    border-top: 1px solid var(--c-30);
+    font-family: var(--font_main_light);
+    letter-spacing: 1px;
+    padding-top: calc(0.645 * var(--u));
+}
+.mod::before,
+.mod::after {
+    content: "";
+    position: absolute;
+    top: calc(-0.466 * var(--u));
+    height: calc(0.833 * var(--u));
+}
+.mod::before {
+    left: -1px;
+    border-left: 1px solid var(--c-30);
+}
+.mod::after {
+    right: -1px;
+    border-right: 1px solid var(--c-30);
+}
+
+/* Заголовок модуля: «h1 + i» (mod_cpuinfo_innercontainer > h1:first-child) */
+.mod-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0 0.5em;
+    white-space: nowrap;
+    margin: 0 0 calc(0.6 * var(--u));
+    padding-left: 2%;
+    font-family: var(--font_main_light);
+    font-size: max(13px, calc(1.48 * var(--u)));
+    font-weight: normal;
+}
+.mod-head > i {
+    margin-left: auto;
+    font-style: normal;
+    font-size: max(11px, calc(1.2 * var(--u)));
+    opacity: 0.5;
+    text-align: right;
+}
+
+/* Пары «подпись / значение» (mod_sysinfo h1 / h2) */
+.kv {
+    display: flex;
+    flex-direction: column;
+    gap: calc(0.3 * var(--u));
+    padding: calc(0.925 * var(--u)) calc(0.46 * var(--u));
+    font-size: max(12px, calc(1.111 * var(--u)));
+    min-width: 0;
+}
+.kv > .k {
+    margin: 0;
+    opacity: 0.5;
+    font-weight: bold;
+    font-size: inherit;
+}
+.kv > .v {
+    margin: 0;
+    font-weight: bold;
+    font-size: inherit;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Пунктирные разделители (mod_cpuinfo / mod_conninfo canvas) */
+.dashed-y {
+    border-top: 1px dashed var(--c-30);
+    border-bottom: 1px dashed var(--c-30);
+}
+
+/* ============ Рамка «терминала» (main_shell.css + augmented-ui) ============ */
+.aug-frame {
+    --aug-border: 2px;
+    --aug-border-bg: rgb(var(--color_r), var(--color_g), var(--color_b));
+    --aug-border-opacity: 0.5;
+    --aug-inset: 0px;
+    --aug-inset-bg: rgba(9, 11, 10, 0.92);
+}
+
+.aug-frame.is-solid {
+    --aug-border-opacity: 1;
+}
+
+.aug-card {
+    --aug-border: 1px;
+    --aug-border-bg: rgb(var(--color_r), var(--color_g), var(--color_b));
+    --aug-border-opacity: 0.55;
+    --aug-inset: 0px;
+    --aug-inset-bg: rgba(9, 11, 10, 0.9);
+    --aug-tl: 14px;
+    --aug-br: 14px;
+}
+
+/* Свечение для элементов, обрезанных clip-path (box-shadow обрезается,
+   поэтому используем filter на обёртке) */
+.glow {
+    filter: var(--glow-drop);
+}
+
+.glow-text {
+    text-shadow: var(--glow-text);
+}
+
+/* ============ Скошенные вкладки (ul#main_shell_tabs) ============ */
+.skew-tabs {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    justify-content: space-evenly;
+    flex-wrap: nowrap;
+    border-bottom: 2px solid var(--c-50);
+    overflow: hidden;
+    isolation: isolate;
+}
+.skew-tabs > li {
+    display: block;
+    width: 100%;
+    background: var(--color_light_black);
+    transform: skewX(35deg);
+    position: relative;
+    z-index: 1;
+}
+.skew-tabs > li:not(:first-child) {
+    border-left: 2px solid var(--c-50);
+}
+.skew-tabs > li > a,
+.skew-tabs > li > button {
+    display: block;
+    width: 100%;
+    margin: 0;
+    padding: calc(0.7 * var(--u)) calc(1 * var(--u)) calc(0.4 * var(--u));
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-family: var(--font_main);
+    text-align: center;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+    transform: skewX(-35deg);
+}
+.skew-tabs > li:hover {
+    background: var(--c-20);
+}
+.skew-tabs > li.active {
+    background: rgb(var(--color_r), var(--color_g), var(--color_b));
+    color: var(--color_light_black);
+    font-weight: bold;
+    transform: skewX(35deg) scale(1.2);
+    z-index: 0;
+}
+.skew-tabs > li.active > a,
+.skew-tabs > li.active > button {
+    font-weight: bold;
+}
+
+/* ============ Кнопки (div.modal_popup button) ============ */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6em;
+    background: transparent;
+    border: 2px solid var(--c-70);
+    border-radius: 3px;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    color: var(--c);
+    font-family: var(--font_main);
+    font-size: max(15px, calc(1.85 * var(--u)));
+    font-weight: bold;
+    line-height: 1.1;
+    padding: calc(0.6 * var(--u)) calc(1.6 * var(--u)) calc(0.8 * var(--u));
+    text-decoration: none;
+    cursor: pointer;
+    transition: background-color 0.15s linear, color 0.15s linear, box-shadow 0.15s linear;
+}
+.btn:hover {
+    background: var(--c-50);
+}
+.btn:active {
+    animation: blink 0.1s linear infinite;
+}
+.btn.btn-primary {
+    background: var(--c);
+    border-color: var(--c);
+    color: var(--color_light_black);
+    box-shadow: var(--glow-soft);
+}
+.btn.btn-primary:hover {
+    background: var(--c-80);
+}
+.btn img,
+.btn svg {
+    width: 1.1em;
+    height: 1.1em;
+    flex: none;
+}
+.btn.btn-primary img {
+    filter: brightness(0);
+}
+
+/* ============ Экран загрузки (boot_screen.css) ============ */
+#boot_screen {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    padding: calc(1 * var(--u));
+    margin: 0;
+    overflow: hidden;
+    font-family: var(--font_mono), monospace;
+    font-size: max(11px, calc(1.4 * var(--u)));
+    line-height: 1.3;
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-end;
+    color: var(--c);
+    word-break: break-word;
+    background: var(--color_light_black);
+}
+body:not(.solidBackground) #boot_screen.center {
+    background: transparent;
+}
+#boot_screen.center {
+    align-items: center;
+    justify-content: center;
+}
+#boot_screen .boot_log {
+    width: 100%;
+    max-height: 100%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+}
+#boot_screen .boot_log > div {
+    min-height: 1.3em;
+}
+
+#boot_screen h1 {
+    font-family: var(--font_main);
+    font-size: clamp(42px, 13vw, calc(10 * var(--u)));
+    font-weight: bold;
+    line-height: 1.15;
+    text-align: center;
+    margin: 0;
+    border-bottom: calc(0.46 * var(--u)) solid rgb(var(--color_r), var(--color_g), var(--color_b));
+    padding-top: calc(2 * var(--u));
+    padding-right: calc(2 * var(--u));
+    padding-left: calc(1.5 * var(--u));
+    background-color: transparent;
+    white-space: nowrap;
+
+    opacity: 0;
+    animation-name: fadeInTitle;
+    animation-duration: 300ms;
+    animation-timing-function: linear;
+    animation-fill-mode: forwards;
+    animation-iteration-count: 1;
+}
+#boot_screen h1.glitch {
+    border-color: transparent;
+    color: transparent;
+}
+#boot_screen h1.flash {
+    background-color: rgb(var(--color_r), var(--color_g), var(--color_b));
+    border-bottom: 5px solid rgb(var(--color_r), var(--color_g), var(--color_b));
+}
+#boot_screen h1.boxed {
+    border: 5px solid rgb(var(--color_r), var(--color_g), var(--color_b));
+}
+
+/* Оригинал хардкодит content: "eDEX-UI" — здесь берём текст из data-text */
+#boot_screen h1::before {
+    content: attr(data-text);
+    display: block;
+    transform: translateY(100%) translateX(-2%);
+    clip-path: polygon(100% 0%, 100% 40%, 0% 40%, 0% 0%);
+    color: rgba(var(--color_r), var(--color_g), var(--color_b), 0.8);
+
+    animation-name: derezzer_top;
+    animation-duration: 50ms;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+    animation-direction: alternate-reverse;
+    animation-play-state: paused;
+    height: 0px;
+    opacity: 0;
+}
+#boot_screen h1.glitch::before {
+    height: auto;
+    opacity: 1;
+    animation-play-state: running;
+}
+#boot_screen h1::after {
+    content: attr(data-text);
+    display: block;
+    transform: translateY(-100%) translateX(2%);
+    clip-path: polygon(100% 40%, 100% 100%, 0% 100%, 0% 40%);
+    color: rgba(var(--color_r), var(--color_g), var(--color_b), 0.9);
+
+    animation-name: derezzer_bottom;
+    animation-duration: 50ms;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+    animation-direction: alternate-reverse;
+    animation-play-state: paused;
+    height: 0px;
+    opacity: 0;
+}
+#boot_screen h1.glitch::after {
+    height: auto;
+    opacity: 1;
+    animation-play-state: running;
+}
+/* Пока заголовок «не глючит», псевдоэлементы не должны занимать место */
+#boot_screen h1:not(.glitch)::before,
+#boot_screen h1:not(.glitch)::after {
+    position: absolute;
+}
+
+.boot_skip {
+    position: fixed;
+    right: calc(1.5 * var(--u));
+    top: calc(1.5 * var(--u));
+    z-index: 10000;
+    font-family: var(--font_main);
+    font-size: 12px;
+    letter-spacing: 1px;
+    padding: 6px 10px 7px;
+    background: var(--color_light_black);
+    color: var(--c);
+    border: 1px solid var(--c-50);
+    cursor: pointer;
+    opacity: 0.75;
+}
+.boot_skip:hover {
+    opacity: 1;
+    background: var(--c-30);
+}
+
+/* ============ Модальное окно (modal.css) ============ */
+.modal_backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2400;
+    background: rgba(0, 0, 0, 0.55);
+    opacity: 0;
+    transition: opacity 0.2s linear;
+}
+.modal_backdrop.visible {
+    opacity: 1;
+}
+
+.modal_popup {
+    position: fixed;
+    z-index: 2500;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(92vw, 640px);
+    max-height: 86vh;
+    background: var(--color_light_black);
+    color: var(--c);
+    padding: calc(2 * var(--u));
+    padding-bottom: calc(1.4 * var(--u));
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    cursor: default;
+
+    --aug-border: 2px;
+    --aug-border-bg: rgb(var(--color_r), var(--color_g), var(--color_b));
+    --aug-inset: 5px;
+    --aug-inset-bg: var(--color_light_black);
+    --aug-tr: 18px;
+    --aug-bl: 18px;
+}
+.modal_popup.info {
+    --aug-border: 2px;
+}
+.modal_popup.warning {
+    --aug-b-width: 20%;
+    --aug-b-origin-x: 30%;
+    border-top: 2px solid var(--color_yellow);
+}
+.modal_popup.blink {
+    animation-name: blink;
+    animation-duration: 0.1s;
+    animation-iteration-count: infinite;
+    animation-timing-function: linear;
+}
+.modal_popup > h1 {
+    width: 100%;
+    cursor: move;
+    font-size: clamp(22px, calc(3.2 * var(--u)), 40px);
+    margin: 0 0 calc(1.6 * var(--u));
+    padding-right: 1.5em;
+    line-height: 1.1;
+    user-select: none;
+    touch-action: none;
+}
+.modal_popup > h1 i {
+    font-size: 0.55em;
+    opacity: 0.6;
+    font-style: normal;
+}
+.modal_popup .modal_body {
+    width: 100%;
+    overflow: auto;
+    font-family: var(--font_main_light);
+    font-size: 16px;
+    padding-right: 6px;
+}
+.modal_popup .modal_body h5 {
+    font-size: 17px;
+    font-weight: normal;
+    margin: 0 0 1em;
+}
+.modal_popup .modal_actions {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: stretch;
+    justify-content: flex-end;
+    margin-top: calc(1.6 * var(--u));
+}
+.modal_popup .modal_actions .btn {
+    font-size: 15px;
+}
+.modal_close {
+    position: absolute;
+    top: calc(1.6 * var(--u));
+    right: calc(1.6 * var(--u));
+    width: 30px;
+    height: 30px;
+    padding: 6px;
+    border: 1px solid var(--c-50);
+    background: transparent;
+    cursor: pointer;
+    z-index: 2;
+}
+.modal_close:hover {
+    background: var(--c-30);
+}
+.modal_close img {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+/* Таблицы (div.modal_popup table) */
+.edex-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.edex-table,
+.edex-table th,
+.edex-table td {
+    border: 1px solid var(--c);
+}
+.edex-table th,
+.edex-table td {
+    padding: 4px 8px;
+}
+.edex-table th {
+    background: var(--c-60);
+    color: var(--color_light_black);
+    font-family: var(--font_main);
+    text-align: left;
+}
+
+/* Блоки кода — шрифт терминала */
+pre,
+code,
+kbd {
+    font-family: var(--font_code), var(--font_mono), monospace;
+    font-feature-settings: "liga" 1, "calt" 1;
+}
+pre.code {
+    margin: 0 0 1em;
+    padding: 12px 14px;
+    background: rgba(var(--color_r), var(--color_g), var(--color_b), 0.06);
+    border-left: 2px solid var(--c-60);
+    color: var(--c);
+    font-size: 13.5px;
+    line-height: 1.55;
+    overflow-x: auto;
+    white-space: pre;
+}
+kbd {
+    padding: 0 5px;
+    border: 1px solid var(--c-50);
+    border-bottom-width: 2px;
+    font-size: 0.9em;
+}
+
+/* ============ Анимации (boot_screen.css / mod_column.css / modal.css / keyboard.css) ============ */
+@keyframes fadeInTitle {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+@keyframes derezzer_top {
+    from { transform: translateY(100%) translateX(-1%); }
+    to   { transform: translateY(100%) translateX(-5%); }
+}
+
+@keyframes derezzer_bottom {
+    from { transform: translateY(-100%) translateX(1%); }
+    to   { transform: translateY(-100%) translateX(3%); }
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+@keyframes blink {
+    0%   { background-color: rgba(var(--color_r), var(--color_g), var(--color_b), 0.0); }
+    50%  { background-color: rgba(var(--color_r), var(--color_g), var(--color_b), 1); }
+    100% { background-color: rgba(var(--color_r), var(--color_g), var(--color_b), 0.0); }
+}
+
+/* Раскрытие main_shell: сначала по ширине, затем по высоте
+   (в оригинале — transition width/height .5s cubic-bezier(0.85, 0.5, 0.85, 0.5)).
+   Используем transform, т.к. clip-path уже занят augmented-ui. */
+@keyframes shellExpand {
+    0%   { transform: scale(0, 0.004); opacity: 1; }
+    45%  { transform: scale(1, 0.004); opacity: 1; }
+    100% { transform: scale(1, 1); opacity: 1; }
+}
+
+/* Строки клавиатуры (keyboard.css animation_state_1 → animation_state_2) */
+@keyframes rowReveal {
+    0%   { clip-path: inset(0 50% 0 50%); filter: brightness(170%); }
+    80%  { clip-path: inset(0 0 0 0); filter: brightness(170%); }
+    100% { clip-path: inset(0 0 0 0); filter: brightness(100%); }
+}
+
+@keyframes cursorBlink {
+    0%, 49%   { opacity: 1; }
+    50%, 100% { opacity: 0; }
+}
+
+@keyframes scanline {
+    from { transform: translateY(-100%); }
+    to   { transform: translateY(100vh); }
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.35; }
+}
+
+/* Состояния появления интерфейса (mod_column.activated) */
+.reveal-fade {
+    opacity: 0;
+    transition: opacity 0.5s var(--ease-edex);
+}
+.ui-ready .reveal-fade,
+.reveal-fade.is-visible {
+    opacity: 1;
+}
+
+.reveal-stagger > * {
+    opacity: 0;
+}
+.ui-ready .reveal-stagger > * {
+    animation: fadeIn 0.5s var(--ease-edex) forwards;
+}
+.ui-ready .reveal-stagger > *:nth-child(1) { animation-delay: 0.05s; }
+.ui-ready .reveal-stagger > *:nth-child(2) { animation-delay: 0.2s; }
+.ui-ready .reveal-stagger > *:nth-child(3) { animation-delay: 0.35s; }
+.ui-ready .reveal-stagger > *:nth-child(4) { animation-delay: 0.5s; }
+.ui-ready .reveal-stagger > *:nth-child(5) { animation-delay: 0.65s; }
+.ui-ready .reveal-stagger > *:nth-child(6) { animation-delay: 0.8s; }
+
+.shell-anim {
+    opacity: 0;
+    transform-origin: center;
+}
+.ui-ready .shell-anim {
+    animation: shellExpand 0.9s var(--ease-expand) forwards;
+}
+
+/* Появление секций при скролле */
+.on-scroll {
+    opacity: 0;
+    transform: translateY(14px);
+    transition: opacity 0.5s var(--ease-edex), transform 0.5s var(--ease-edex);
+}
+.on-scroll.is-visible {
+    opacity: 1;
+    transform: none;
+}
+
+/* Без JavaScript всё должно быть видно */
+.no-js .reveal-fade,
+.no-js .reveal-stagger > *,
+.no-js .shell-anim,
+.no-js .on-scroll {
+    opacity: 1 !important;
+    transform: none !important;
+    animation: none !important;
+}
+
+/* Уважение к настройке «уменьшить движение» */
+@media (prefers-reduced-motion: reduce) {
+    html {
+        scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+    .reveal-fade,
+    .reveal-stagger > *,
+    .shell-anim,
+    .on-scroll {
+        opacity: 1 !important;
+        transform: none !important;
+    }
+}

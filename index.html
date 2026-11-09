@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="ru" class="no-js">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>NEXUS//DEV — инди-разработка: RTS на Unreal Engine 5 и серверы Minecraft</title>
+    <meta name="description" content="NEXUS//DEV — некоммерческий портал инди-разработки: тактическая RTS BASTION: LINE ZERO на Unreal Engine 5 с системой укреплений, сеть серверов Minecraft NEXUS CRAFT и собственные моды.">
+    <meta name="theme-color" content="#090B0A">
+    <link rel="icon" type="image/svg+xml" href="assets/icons/terminal.svg">
+
+    <!-- Зависимость оригинального eDEX-UI: augmented-ui 1.1.2 (BSD-2-Clause) — скошенные рамки -->
+    <link rel="stylesheet" href="assets/vendor/augmented-ui/augmented.css">
+    <!-- Тема blade, перенесённая из eDEX-UI -->
+    <link rel="stylesheet" href="css/blade-theme.css">
+    <!-- Адаптивная сетка сайта -->
+    <link rel="stylesheet" href="css/layout.css">
+    <!-- Компоненты страниц NEXUS//DEV (формы, карточки проектов, кабинет) -->
+    <link rel="stylesheet" href="css/pages.css">
+
+    <script>
+        /* Ранняя инициализация: класс js и сохранённые настройки HUD (без мигания) */
+        (function () {
+            var d = document.documentElement;
+            d.classList.remove("no-js");
+            d.classList.add("js");
+            try {
+                var s = JSON.parse(localStorage.getItem("nx_settings") || "{}");
+                if (s.grid === false) d.classList.add("hud-no-grid");
+                if (s.glow === false) d.classList.add("hud-no-glow");
+                if (s.motion === false) d.classList.add("hud-reduced");
+                if (s.scale && s.scale !== "normal") d.setAttribute("data-hud-scale", s.scale);
+            } catch (e) { /* localStorage недоступен */ }
+        })();
+    </script>
+</head>
+<body data-page="home">
+    <a class="skip-link" href="#main">Перейти к содержимому</a>
+
+    <!-- ===================== ШАПКА ===================== -->
+    <header class="site-header" id="top">
+        <div class="container header-inner">
+            <a class="brand" href="index.html" aria-label="NEXUS//DEV — на главную">
+                <img src="assets/icons/terminal.svg" alt="" width="26" height="26">
+                <span class="brand-name">NEXUS<em>//</em>DEV</span>
+            </a>
+
+            <nav class="site-nav" id="site-nav" aria-label="Основная навигация">
+                <ul class="skew-tabs nav-tabs">
+                    <li class="active"><a href="index.html" data-nav="home" aria-current="page">Главная</a></li>
+                    <li><a href="projects.html" data-nav="projects">Проекты</a></li>
+                    <li><a href="dashboard.html" data-nav="dashboard">Кабинет</a></li>
+                    <li><a href="auth.html" data-nav="auth">Вход / Регистрация</a></li>
+                </ul>
+            </nav>
+
+            <div class="header-tools">
+                <button class="tool-btn" id="sound-toggle" type="button" aria-pressed="false" title="Звуковые эффекты eDEX-UI">
+                    <img class="icon-off" src="assets/icons/mute.svg" alt="" width="18" height="18">
+                    <img class="icon-on" src="assets/icons/volume.svg" alt="" width="18" height="18">
+                    <span class="tool-label">SFX <b id="sound-state">OFF</b></span>
+                </button>
+                <button class="tool-btn menu-toggle" id="menu-toggle" type="button" aria-controls="site-nav" aria-expanded="false" aria-label="Открыть меню">
+                    <img class="icon-menu" src="assets/icons/menu.svg" alt="" width="20" height="20">
+                    <img class="icon-close" src="assets/icons/close.svg" alt="" width="16" height="16">
+                </button>
+            </div>
+        </div>
+
+        <div class="container header-status">
+            <p><span class="dot" id="uplink-dot" aria-hidden="true"></span>UPLINK: <b id="uplink-state">ONLINE</b></p>
+            <p class="hide-sm">SERVERS: <b id="header-servers">-/-</b></p>
+            <p>USER: <b id="header-user">GUEST</b></p>
+            <p><b id="header-clock">--:--:--</b> <span class="hide-sm">UTC<span id="header-tz">+0</span></span></p>
+        </div>
+    </header>
+
+    <main id="main">
+        <!-- ===================== HERO / ГЛАВНЫЙ ЭКРАН ===================== -->
+        <section class="hero container" id="home" aria-labelledby="hero-title">
+            <div class="hero-grid">
+
+                <!-- Левая колонка: PANEL / SYSTEM (mod_column_left) -->
+                <aside class="mod-column mod-column-left reveal-fade" aria-label="Системная панель">
+                    <h3 class="panel-title"><span>PANEL</span><span>SYSTEM</span></h3>
+                    <div class="column-stack reveal-stagger">
+
+                        <!-- mod_clock -->
+                        <div class="mod mod-clock" id="mod_clock">
+                            <h2 class="clock-face" id="clock" aria-live="off">
+                                <span>0</span><span>0</span><em>:</em><span>0</span><span>0</span><em>:</em><span>0</span><span>0</span>
+                            </h2>
+                        </div>
+
+                        <!-- mod_sysinfo -->
+                        <div class="mod mod-sysinfo">
+                            <div class="kv"><h4 class="k">YEAR</h4><p class="v" id="sys-year">----</p></div>
+                            <div class="kv"><h4 class="k">DATE</h4><p class="v" id="sys-date">---</p></div>
+                            <div class="kv"><h4 class="k">UPTIME</h4><p class="v" id="sys-uptime">0:00:00</p></div>
+                            <div class="kv"><h4 class="k">TYPE</h4><p class="v" id="sys-type">WEB</p></div>
+                            <div class="kv"><h4 class="k">POWER</h4><p class="v" id="sys-power">ON</p></div>
+                        </div>
+
+                        <!-- mod_hardwareInspector -->
+                        <div class="mod mod-hw">
+                            <div><h4>PLATFORM</h4><p id="hw-platform">—</p></div>
+                            <div><h4>CORES</h4><p id="hw-cores">—</p></div>
+                            <div><h4>SCREEN</h4><p id="hw-screen">—</p></div>
+                            <div><h4>LANG</h4><p id="hw-lang">—</p></div>
+                        </div>
+
+                        <!-- mod_cpuinfo → нагрузка билд-фермы -->
+                        <div class="mod mod-cpu">
+                            <h4 class="mod-head">BUILD FARM <i>UE5 shader compile</i></h4>
+                            <div class="cpu-row">
+                                <div class="cpu-label"><h5>AG <em>1</em>-<em>2</em></h5><i>AVG <span id="cpu-avg1">0</span>%</i></div>
+                                <canvas class="dashed-y" id="cpu-canvas-1" aria-hidden="true"></canvas>
+                            </div>
+                            <div class="cpu-row">
+                                <div class="cpu-label"><h5>AG <em>3</em>-<em>4</em></h5><i>AVG <span id="cpu-avg2">0</span>%</i></div>
+                                <canvas class="dashed-y" id="cpu-canvas-2" aria-hidden="true"></canvas>
+                            </div>
+                            <div class="cpu-stats">
+                                <div><h5>FPS</h5><i id="cpu-fps">--</i></div>
+                                <div><h5>LOAD</h5><i id="cpu-load">--</i></div>
+                                <div><h5>MAX</h5><i id="cpu-max">--</i></div>
+                                <div><h5>SHADERS</h5><i id="cpu-tasks">--</i></div>
+                            </div>
+                        </div>
+
+                        <!-- mod_ramwatcher → кэш сборок -->
+                        <div class="mod mod-ram">
+                            <h4 class="mod-head">DDC CACHE <i id="ram-info">USING 0.0 OUT OF 0.0 GiB</i></h4>
+                            <div class="ram-pointmap" id="ram-pointmap" aria-hidden="true"></div>
+                            <div class="ram-swap">
+                                <h5>SWAP</h5>
+                                <progress id="ram-swapbar" max="100" value="0">0%</progress>
+                                <h5 id="ram-swaptext">0.0 GiB</h5>
+                            </div>
+                        </div>
+                    </div>
+                </aside>
+
+                <!-- Центр: TERMINAL / MAIN SHELL (section#main_shell) -->
+                <div class="shell-wrap glow">
+                    <section class="shell aug-frame shell-anim" augmented-ui="bl-clip tr-clip exe" aria-label="Главный экран">
+                        <h3 class="panel-title shell-title"><span>TERMINAL</span><span>MAIN SHELL</span></h3>
+
+                        <ul class="skew-tabs shell-tabs" role="tablist" aria-label="Вкладки терминала">
+                            <li class="active" role="presentation">
+                                <button type="button" role="tab" id="tabbtn-main" aria-selected="true" aria-controls="tab-main">MAIN SHELL</button>
+                            </li>
+                            <li role="presentation">
+                                <button type="button" role="tab" id="tabbtn-log" aria-selected="false" aria-controls="tab-log" tabindex="-1">SYSLOG</button>
+                            </li>
+                            <li role="presentation">
+                                <button type="button" role="tab" id="tabbtn-help" aria-selected="false" aria-controls="tab-help" tabindex="-1">HELP</button>
+                            </li>
+                        </ul>
+
+                        <div class="shell-inner">
+                            <!-- Вкладка 1: Hero -->
+                            <div class="tab-panel active" id="tab-main" role="tabpanel" aria-labelledby="tabbtn-main">
+                                <p class="hero-kicker"><span class="prompt-sign">&gt;</span> whoami <span class="muted">// некоммерческая инди-студия</span></p>
+                                <h1 class="hero-title glow-text" id="hero-title">
+                                    Мы строим<br>
+                                    <span class="hero-accent" data-text="линии обороны">линии обороны</span>
+                                </h1>
+                                <p class="hero-lead">
+                                    NEXUS//DEV — команда энтузиастов, которая делает тактическую RTS
+                                    <b>BASTION: LINE ZERO</b> на Unreal Engine 5 с окопами, рвами и противотанковыми ежами,
+                                    а ещё держит бесплатную сеть серверов Minecraft с собственными модами.
+                                    Без доната, без рекламы, с открытым кодом.
+                                </p>
+                                <div class="hero-actions">
+                                    <a class="btn btn-primary" href="projects.html">
+                                        <img src="assets/icons/portfolio.svg" alt="" width="18" height="18">
+                                        Проекты студии
+                                    </a>
+                                    <a class="btn" href="auth.html" data-auth-href="auth.html|dashboard.html">
+                                        <img src="assets/icons/sign-in.svg" alt="" width="18" height="18">
+                                        <span data-auth-label="Вход / Регистрация|Личный кабинет">Вход / Регистрация</span>
+                                    </a>
+                                </div>
+
+                                <!-- Интерактивная консоль -->
+                                <div class="term" id="term">
+                                    <div class="term-output" id="term-output" role="log" aria-live="polite" aria-label="Вывод консоли"></div>
+                                    <form class="term-line" id="term-form" autocomplete="off">
+                                        <label class="term-prompt" id="term-prompt" for="term-input">guest@nexus:~$</label>
+                                        <input class="term-input" id="term-input" type="text" spellcheck="false" autocapitalize="off" autocomplete="off" enterkeyhint="send" aria-label="Введите команду, например help">
+                                    </form>
+                                </div>
+                            </div>
+
+                            <!-- Вкладка 2: SYSLOG -->
+                            <div class="tab-panel" id="tab-log" role="tabpanel" aria-labelledby="tabbtn-log" hidden>
+                                <pre class="syslog" id="syslog" aria-live="off"></pre>
+                            </div>
+
+                            <!-- Вкладка 3: HELP -->
+                            <div class="tab-panel" id="tab-help" role="tabpanel" aria-labelledby="tabbtn-help" hidden>
+                                <h2 class="help-title">Справка по консоли</h2>
+                                <p class="help-text">Кликните в область консоли на вкладке MAIN SHELL и введите команду. Основное:</p>
+                                <table class="edex-table help-table">
+                                    <thead><tr><th>Команда</th><th>Описание</th></tr></thead>
+                                    <tbody>
+                                        <tr><td><kbd>help</kbd></td><td>Список всех команд</td></tr>
+                                        <tr><td><kbd>projects</kbd> [ue5|minecraft|network]</td><td>Реестр разработок с прогрессом</td></tr>
+                                        <tr><td><kbd>open bastion</kbd></td><td>Открыть досье проекта</td></tr>
+                                        <tr><td><kbd>status</kbd>, <kbd>servers</kbd></td><td>Состояние игровых серверов</td></tr>
+                                        <tr><td><kbd>ip</kbd></td><td>Скопировать адрес сервера Minecraft</td></tr>
+                                        <tr><td><kbd>faction</kbd>, <kbd>fortify</kbd></td><td>Лор Синдиката и таблица укреплений</td></tr>
+                                        <tr><td><kbd>login</kbd>, <kbd>register</kbd>, <kbd>logout</kbd></td><td>Вход, регистрация, выход</td></tr>
+                                        <tr><td><kbd>dashboard</kbd>, <kbd>whoami</kbd></td><td>Кабинет и текущий пользователь</td></tr>
+                                        <tr><td><kbd>sfx on</kbd> / <kbd>sfx off</kbd></td><td>Звуки интерфейса</td></tr>
+                                        <tr><td><kbd>reboot</kbd>, <kbd>clear</kbd></td><td>Анимация загрузки, очистка экрана</td></tr>
+                                    </tbody>
+                                </table>
+                                <p class="help-text">Клавиши <kbd>↑</kbd> / <kbd>↓</kbd> листают историю, <kbd>Tab</kbd> дополняет команду.</p>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Правая колонка: PANEL / NETWORK (mod_column_right) -->
+                <aside class="mod-column mod-column-right reveal-fade" aria-label="Сетевая панель">
+                    <h3 class="panel-title"><span>PANEL</span><span>NETWORK</span></h3>
+                    <div class="column-stack reveal-stagger">
+
+                        <!-- mod_netstat -->
+                        <div class="mod mod-netstat">
+                            <h4 class="mod-head">NETWORK STATUS <i>Interface: browser</i></h4>
+                            <div class="netstat-grid">
+                                <div class="kv"><h5 class="k">STATE</h5><p class="v" id="net-state">ONLINE</p></div>
+                                <div class="kv netstat-wide"><h5 class="k">CONNECTION</h5><p class="v" id="net-type">—</p></div>
+                                <div class="kv"><h5 class="k">PING</h5><p class="v" id="net-ping">-- ms</p></div>
+                            </div>
+                        </div>
+
+                        <!-- mod_conninfo -->
+                        <div class="mod mod-conninfo" id="mod_conninfo">
+                            <h4 class="mod-head">PLAYER TRAFFIC <i>UP / DOWN, MB/S</i></h4>
+                            <p class="conninfo-total"><span>TOTAL</span><i id="net-total">0 MB OUT, 0 MB IN</i></p>
+                            <canvas id="conn-canvas-top" class="dashed-y" aria-hidden="true"></canvas>
+                            <canvas id="conn-canvas-bottom" class="dashed-y" aria-hidden="true"></canvas>
+                            <h3 class="offline-label">OFFLINE</h3>
+                        </div>
+
+                        <!-- mod_globe (адаптация: радар игровых серверов вместо 3D-глобуса) -->
+                        <div class="mod mod-globe" id="mod_globe">
+                            <h4 class="mod-head">WORLD VIEW <i>SERVER RADAR</i></h4>
+                            <p class="globe-sub"><span>EU-CENTRAL</span><i id="radar-info">7 SERVERS</i></p>
+                            <canvas id="radar-canvas" aria-hidden="true"></canvas>
+                        </div>
+
+                        <!-- mod_toplist -->
+                        <div class="mod mod-toplist">
+                            <h4 class="mod-head">TOP SERVERS <i>PID | NAME | PLAYERS | CPU</i></h4>
+                            <table class="toplist" id="toplist">
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+        </section>
+
+        <!-- ===================== ФЛАГМАН: BASTION ===================== -->
+        <section class="section container" id="flagship" aria-labelledby="flagship-title">
+            <h2 class="panel-title section-title" id="flagship-title"><span>Флагманский проект</span><span>MODULE // 01</span></h2>
+
+            <div class="flagship-grid">
+                <div class="glow on-scroll">
+                    <article class="flagship-main aug-frame" augmented-ui="tr-clip bl-clip exe" aria-labelledby="bastion-name">
+                        <p class="flagship-tag">
+                            <span class="prompt-sign">&gt;</span> NX-01
+                            <span class="status-chip is-pre">PRE-ALPHA</span>
+                            <span class="chip">UNREAL ENGINE 5.4</span>
+                            <span class="chip">RTS · CITY-BUILDING</span>
+                        </p>
+                        <h3 class="flagship-title" id="bastion-name">BASTION: LINE ZERO</h3>
+                        <p class="flagship-sub">Тактическая RTS о линии фронта, которую нужно удержать любой ценой.</p>
+                        <p class="desc">
+                            Днём вы расширяете посёлок за линией обороны: строите сектора, налаживаете энергию и снабжение.
+                            Ночью — копаете окопы, заливаете рвы и расставляете противотанковые ежи, пока колонны противника
+                            ищут слабое место. Градостроительство намеренно упрощено, чтобы главное внимание оставалось на тактике
+                            и инженерной обороне.
+                        </p>
+                        <div class="progress progress-lg" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="38" aria-label="Готовность BASTION">
+                            <span>READY</span>
+                            <span class="progress-track"><span class="progress-fill" data-progress="38"></span></span>
+                            <span class="progress-val">38%</span>
+                        </div>
+                        <p class="sub-label">Tech stack</p>
+                        <ul class="chips">
+                            <li>Unreal Engine 5.4</li><li>C++</li><li>Blueprints</li><li>Mass Entity</li><li>Nanite / Lumen</li><li>World Partition</li><li>GAS</li>
+                        </ul>
+                        <div class="flagship-actions">
+                            <a class="btn btn-primary" href="projects.html#dossier-bastion">
+                                <img src="assets/icons/archive.svg" alt="" width="18" height="18">
+                                ОТКРЫТЬ ДОСЬЕ
+                            </a>
+                            <button class="btn" type="button" data-doc="devlog">
+                                <img src="assets/icons/edit.svg" alt="" width="18" height="18">
+                                Devlog #7
+                            </button>
+                            <button class="btn" type="button" data-doc="fortify">
+                                <img src="assets/icons/flag.svg" alt="" width="18" height="18">
+                                Укрепления
+                            </button>
+                        </div>
+                    </article>
+                </div>
+
+                <div class="flagship-side">
+                    <div class="mod faction-mod on-scroll">
+                        <h4 class="mod-head">FACTION FILE <i>вымышленная фракция</i></h4>
+                        <div class="faction-emblem">
+                            <svg viewBox="0 0 64 64" aria-hidden="true">
+                                <polygon points="32,3 58,18 58,46 32,61 6,46 6,18" fill="none" stroke="#cc5e37" stroke-width="2"/>
+                                <polygon points="32,13 49,23 49,41 32,51 15,41 15,23" fill="rgba(204,94,55,0.15)" stroke="#cc5e37" stroke-width="1"/>
+                                <path d="M24 26 L32 21 L40 26 L40 38 L32 43 L24 38 Z" fill="#cc5e37"/>
+                                <path d="M32 21 L32 43 M24 26 L40 38 M40 26 L24 38" stroke="#090B0A" stroke-width="1.5"/>
+                            </svg>
+                            <div>
+                                <b>КОБАЛЬТОВЫЙ СИНДИКАТ</b>
+                                <span>COBALT SYNDICATE · ID CS-07</span>
+                            </div>
+                        </div>
+                        <p>Колонисты внешних лун, отказавшиеся подчиняться метрополии. Их мало, но они технологичны: дроны-сапёры, энергощиты, мобильные ДОТы и орбитальные удары по запросу командира.</p>
+                        <p class="muted">«Держи линию. Остальное — инженерия.»</p>
+                    </div>
+
+                    <div class="mod on-scroll">
+                        <h4 class="mod-head">ROADMAP <i>milestones</i></h4>
+                        <ol class="roadmap">
+                            <li class="done"><span class="rm-date">2025 Q4</span><span class="rm-text"><b>Прототип</b> — камера, юниты, Mass Entity</span></li>
+                            <li class="done"><span class="rm-date">2026 Q2</span><span class="rm-text"><b>Инженерия</b> — окопы, рвы, ежи, навигация</span></li>
+                            <li class="current"><span class="rm-date">2026 Q4</span><span class="rm-text"><b>Pre-alpha</b> — город-крепость, закрытые плейтесты</span></li>
+                            <li><span class="rm-date">2027 Q2</span><span class="rm-text"><b>Alpha</b> — кампания Синдиката, 6 карт</span></li>
+                            <li><span class="rm-date">2027 Q4</span><span class="rm-text"><b>Open playtest</b> — мультиплеер 4v4</span></li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card-grid">
+                <div class="card-wrap glow on-scroll">
+                    <article class="card aug-card" augmented-ui="tl-clip br-clip exe">
+                        <header class="card-head"><img src="assets/icons/flag.svg" alt="" width="34" height="34"><span class="card-id">0x01</span></header>
+                        <h3>Окопы в реальном времени</h3>
+                        <p>Нарисуйте линию — и сапёры начнут копать прямо в ландшафте. Траншеи дают укрытие пехоте и меняют маршруты ИИ на лету.</p>
+                        <footer class="card-foot">COVER: <b>−60% DMG</b></footer>
+                    </article>
+                </div>
+                <div class="card-wrap glow on-scroll">
+                    <article class="card aug-card" augmented-ui="tl-clip br-clip exe">
+                        <header class="card-head"><img src="assets/icons/location.svg" alt="" width="34" height="34"><span class="card-id">0x02</span></header>
+                        <h3>Рвы и противотанковые ежи</h3>
+                        <p>Рвы замедляют технику, ежи перекрывают проходы. Противник оценивает каждое препятствие и решает — объехать или прорываться.</p>
+                        <footer class="card-foot">ARMOR: <b>SLOWED −70%</b></footer>
+                    </article>
+                </div>
+                <div class="card-wrap glow on-scroll">
+                    <article class="card aug-card" augmented-ui="tl-clip br-clip exe">
+                        <header class="card-head"><img src="assets/icons/home.svg" alt="" width="34" height="34"><span class="card-id">0x03</span></header>
+                        <h3>Город за линией фронта</h3>
+                        <p>Упрощённое градостроительство: сектора вместо отдельных зданий, три ресурса и одна линия снабжения, которую нужно защищать.</p>
+                        <footer class="card-foot">SECTORS: <b>9 TYPES</b></footer>
+                    </article>
+                </div>
+                <div class="card-wrap glow on-scroll">
+                    <article class="card aug-card" augmented-ui="tl-clip br-clip exe">
+                        <header class="card-head"><img src="assets/icons/lightning.svg" alt="" width="34" height="34"><span class="card-id">0x04</span></header>
+                        <h3>Кобальтовый Синдикат</h3>
+                        <p>Sci-Fi фракция с дронами-сапёрами, энергощитами и шагающими ДОТами. Технологии против численного превосходства.</p>
+                        <footer class="card-foot">UNITS: <b>14</b></footer>
+                    </article>
+                </div>
+                <div class="card-wrap glow on-scroll">
+                    <article class="card aug-card" augmented-ui="tl-clip br-clip exe">
+                        <header class="card-head"><img src="assets/icons/activity.svg" alt="" width="34" height="34"><span class="card-id">0x05</span></header>
+                        <h3>Снабжение и мораль</h3>
+                        <p>Отрезанные от снабжения отряды теряют мораль и боеприпасы. Удержать дорогу иногда важнее, чем удержать холм.</p>
+                        <footer class="card-foot">LOGISTICS: <b>CRITICAL</b></footer>
+                    </article>
+                </div>
+                <div class="card-wrap glow on-scroll">
+                    <article class="card aug-card" augmented-ui="tl-clip br-clip exe">
+                        <header class="card-head"><img src="assets/icons/unreal.svg" alt="" width="34" height="34"><span class="card-id">0x06</span></header>
+                        <h3>Технологии UE5</h3>
+                        <p>Mass Entity для 1200+ юнитов, World Partition для больших карт, Nanite и Lumen для разрушаемых позиций.</p>
+                        <footer class="card-foot">ENGINE: <b>UE 5.4</b></footer>
+                    </article>
+                </div>
+            </div>
+
+            <!-- Меню постройки укреплений — в стиле клавиш экранной клавиатуры eDEX-UI -->
+            <div class="keys-block build-menu on-scroll">
+                <h3 class="panel-title"><span>BUILD MENU</span><span>FORTIFICATIONS // F1–F6</span></h3>
+                <div class="key-row" id="key-row">
+                    <button class="keycap" type="button" data-desc="TRENCH · 20 ед. · 8 c — окоп: пехота в укрытии получает на 60% меньше урона."><small>F1</small>TRENCH</button>
+                    <button class="keycap" type="button" data-desc="MOAT · 35 ед. · 14 c — ров: техника замедляется на 70%, мосты строят только сапёры."><small>F2</small>MOAT</button>
+                    <button class="keycap keycap-wide" type="button" data-desc="HEDGEHOG · 15 ед. · 5 c — противотанковый ёж: полностью перекрывает проход для техники."><small>F3</small>HEDGEHOG</button>
+                    <button class="keycap" type="button" data-desc="BUNKER · 120 ед. · 40 c — ДОТ: огневая точка на 6 бойцов, у Синдиката — со щитом."><small>F4</small>BUNKER</button>
+                    <button class="keycap" type="button" data-desc="WIRE · 10 ед. · 4 c — колючая проволока: пехота противника замедляется на 50%."><small>F5</small>WIRE</button>
+                    <button class="keycap" type="button" data-desc="SANDBAG · 8 ед. · 3 c — мешки с песком: гасят осколки и взрывную волну."><small>F6</small>SANDBAG</button>
+                </div>
+                <p class="key-caption" id="key-caption" aria-live="polite"><span class="prompt-sign">&gt;</span> Выберите укрепление (клик или клавиши F1–F6).</p>
+            </div>
+        </section>
+
+        <!-- ===================== MINECRAFT ===================== -->
+        <section class="section container" id="minecraft" aria-labelledby="minecraft-title">
+            <h2 class="panel-title section-title" id="minecraft-title"><span>Minecraft-экосистема</span><span>MODULE // 02</span></h2>
+
+            <div class="mc-grid">
+                <div class="mc-intro on-scroll">
+                    <p class="flagship-tag"><img src="assets/icons/minecraft.svg" alt="" width="22" height="22"> NEXUS CRAFT · <span class="status-chip is-live">LIVE</span></p>
+                    <h3 class="flagship-title">NEXUS CRAFT</h3>
+                    <p>
+                        Бесплатная сеть серверов Minecraft Java Edition. Здесь мы обкатываем механики BASTION:
+                        мод <b>FORTIFY</b> добавляет окопы, мешки с песком и противотанковые ежи прямо в Survival.
+                        Никаких привилегий за деньги — сервер полностью некоммерческий.
+                    </p>
+                    <div class="ip-box">
+                        <code>play.nexusdev.example</code>
+                        <button class="btn" type="button" data-copy="play.nexusdev.example">
+                            <img src="assets/icons/clipboard.svg" alt="" width="18" height="18">
+                            Копировать IP
+                        </button>
+                    </div>
+                    <div class="mc-meta">
+                        <div class="mod"><h4 class="mod-head">VERSION</h4><p class="summary-value">1.21.1</p></div>
+                        <div class="mod"><h4 class="mod-head">PLAYERS</h4><p class="summary-value" data-sum="players">0</p></div>
+                        <div class="mod"><h4 class="mod-head">DONATE</h4><p class="summary-value">0 ₽</p></div>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="mc-servers">
+                        <div class="glow on-scroll">
+                            <article class="card aug-card mc-server" augmented-ui="tl-clip br-clip exe">
+                                <h3>Hub <span data-srv="mc-hub-01" data-field="status"></span></h3>
+                                <p>Лобби сети, порталы на все режимы, туториал по моду FORTIFY.</p>
+                                <div class="mc-line"><span>mc-hub-01</span><span><span data-srv="mc-hub-01" data-field="players">—</span> · <span data-srv="mc-hub-01" data-field="ping">—</span></span></div>
+                            </article>
+                        </div>
+                        <div class="glow on-scroll">
+                            <article class="card aug-card mc-server" augmented-ui="tl-clip br-clip exe">
+                                <h3>Survival+ <span data-srv="mc-surv-01" data-field="status"></span></h3>
+                                <p>Выживание с модом укреплений, сезонные осады и зона «Фронт».</p>
+                                <div class="mc-line"><span>mc-surv-01</span><span><span data-srv="mc-surv-01" data-field="players">—</span> · <span data-srv="mc-surv-01" data-field="ping">—</span></span></div>
+                            </article>
+                        </div>
+                        <div class="glow on-scroll">
+                            <article class="card aug-card mc-server" augmented-ui="tl-clip br-clip exe">
+                                <h3>Creative <span data-srv="mc-build-01" data-field="status"></span></h3>
+                                <p>Плоские миры для строителей, WorldEdit и конкурсы баз.</p>
+                                <div class="mc-line"><span>mc-build-01</span><span><span data-srv="mc-build-01" data-field="players">—</span> · <span data-srv="mc-build-01" data-field="ping">—</span></span></div>
+                            </article>
+                        </div>
+                        <div class="glow on-scroll">
+                            <article class="card aug-card mc-server" augmented-ui="tl-clip br-clip exe">
+                                <h3>Mini-games <span data-srv="mc-games-01" data-field="status"></span></h3>
+                                <p>«Осада», «Сапёр» и другие мини-игры по мотивам BASTION.</p>
+                                <div class="mc-line"><span>mc-games-01</span><span><span data-srv="mc-games-01" data-field="players">—</span> · <span data-srv="mc-games-01" data-field="ping">—</span></span></div>
+                            </article>
+                        </div>
+                    </div>
+
+                    <div class="mods-row">
+                        <div class="mod on-scroll">
+                            <h4 class="mod-head">FORTIFY MOD <i>Fabric 1.21.1 · BETA</i></h4>
+                            <p class="qs-text">Окопы, колючая проволока, мешки с песком и ежи — порт инженерной системы BASTION.</p>
+                            <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="54" aria-label="Готовность FORTIFY">
+                                <span>READY</span><span class="progress-track"><span class="progress-fill" data-progress="54"></span></span><span class="progress-val">54%</span>
+                            </div>
+                            <p><a class="btn btn-sm" href="projects.html#dossier-fortify"><img src="assets/icons/archive.svg" alt="" width="14" height="14">Досье</a></p>
+                        </div>
+                        <div class="mod on-scroll">
+                            <h4 class="mod-head">NEXUS TECH <i>NeoForge 1.21.1 · DEV</i></h4>
+                            <p class="qs-text">Sci-Fi мод во вселенной Синдиката: энергосети, дроны-строители, щитовые генераторы.</p>
+                            <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="27" aria-label="Готовность NEXUS TECH">
+                                <span>READY</span><span class="progress-track"><span class="progress-fill" data-progress="27"></span></span><span class="progress-val">27%</span>
+                            </div>
+                            <p><a class="btn btn-sm" href="projects.html#dossier-nexustech"><img src="assets/icons/archive.svg" alt="" width="14" height="14">Досье</a></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================== СТАТУС СЕРВЕРОВ ===================== -->
+        <section class="section container" id="status" aria-labelledby="status-title">
+            <h2 class="panel-title section-title" id="status-title"><span>Статус серверов</span><span>MODULE // 03</span></h2>
+
+            <div class="status-summary on-scroll">
+                <div class="mod summary-item">
+                    <h3 class="mod-head">SERVERS ONLINE <i>сейчас</i></h3>
+                    <p class="summary-value" data-sum="online">-/-</p>
+                </div>
+                <div class="mod summary-item">
+                    <h3 class="mod-head">PLAYERS <i>Minecraft + UE5</i></h3>
+                    <p class="summary-value" data-sum="players">0</p>
+                </div>
+                <div class="mod summary-item">
+                    <h3 class="mod-head">AVG PING <i>до серверов</i></h3>
+                    <p class="summary-value" data-sum="ping">-- ms</p>
+                </div>
+                <div class="mod summary-item">
+                    <h3 class="mod-head">UPTIME <i>30 дней</i></h3>
+                    <p class="summary-value">99.84%</p>
+                </div>
+            </div>
+
+            <div class="status-wrap glow on-scroll">
+                <div class="status-panel aug-frame" augmented-ui="tr-clip bl-clip exe">
+                    <div class="status-toolbar">
+                        <p><span class="dot pulse" aria-hidden="true"></span>LIVE TELEMETRY · обновлено <b id="status-updated">--:--:--</b></p>
+                        <div class="legend" aria-label="Легенда">
+                            <span class="badge badge-online">ONLINE</span>
+                            <span class="badge badge-degraded">DEGRADED</span>
+                            <span class="badge badge-offline">OFFLINE</span>
+                        </div>
+                    </div>
+                    <div class="table-scroll">
+                        <table class="edex-table status-table" id="status-table">
+                            <caption class="visually-hidden">Состояние игровых серверов NEXUS//DEV</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Сервер</th>
+                                    <th scope="col">Проект</th>
+                                    <th scope="col">Локация</th>
+                                    <th scope="col">Статус</th>
+                                    <th scope="col">Игроки</th>
+                                    <th scope="col">Ping</th>
+                                    <th scope="col">CPU</th>
+                                    <th scope="col">Аптайм</th>
+                                </tr>
+                            </thead>
+                            <tbody id="status-body"></tbody>
+                        </table>
+                    </div>
+                    <p class="status-note">
+                        <img src="assets/icons/info.svg" alt="" width="16" height="16">
+                        <span>Демонстрационная телеметрия генерируется в браузере. Перезапуск и логи серверов — в
+                        <a href="dashboard.html#servers">личном кабинете</a>. Для реального мониторинга замените функцию
+                        <code>tickTelemetry()</code> в <code>js/ui-effects.js</code>.</span>
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================== ФАЙЛЫ ===================== -->
+        <section class="section container" id="files" aria-labelledby="files-title">
+            <h2 class="panel-title section-title" id="files-title"><span>Файлы и devlog</span><span>MODULE // 04</span></h2>
+
+            <div class="docs-grid">
+                <!-- section#filesystem -->
+                <div class="filesystem on-scroll">
+                    <h3 class="panel-title"><span>FILESYSTEM</span><span id="fs-path">/srv/nexus/docs</span></h3>
+                    <div class="fs-container" id="fs-container">
+                        <button class="fs-item" type="button" data-doc="readme"><img src="assets/icons/readme.svg" alt="" width="42" height="42"><span>README.md</span></button>
+                        <button class="fs-item" type="button" data-doc="devlog"><img src="assets/icons/markdown.svg" alt="" width="42" height="42"><span>devlog-07.md</span></button>
+                        <button class="fs-item" type="button" data-doc="patch"><img src="assets/icons/file.svg" alt="" width="42" height="42"><span>patchnotes-0.3.7.txt</span></button>
+                        <button class="fs-item" type="button" data-doc="fortify"><img src="assets/icons/flag.svg" alt="" width="42" height="42"><span>fortifications.md</span></button>
+                        <button class="fs-item" type="button" data-doc="modpack"><img src="assets/icons/json.svg" alt="" width="42" height="42"><span>modpack.json</span></button>
+                        <button class="fs-item" type="button" data-doc="rules"><img src="assets/icons/minecraft.svg" alt="" width="42" height="42"><span>server-rules.md</span></button>
+                        <button class="fs-item" type="button" data-doc="faq"><img src="assets/icons/info.svg" alt="" width="42" height="42"><span>FAQ.md</span></button>
+                        <button class="fs-item" type="button" data-doc="license"><img src="assets/icons/book.svg" alt="" width="42" height="42"><span>LICENSE</span></button>
+                    </div>
+                    <p class="fs-hint">Нажмите на файл, чтобы открыть его.</p>
+                </div>
+
+                <!-- Быстрый старт -->
+                <div class="quickstart on-scroll">
+                    <h3 class="panel-title"><span>QUICK START</span><span>~/nexus</span></h3>
+                    <div class="mod qs-mod">
+                        <h4 class="mod-head">1. Зайдите на сервер <i>Java 1.21.1</i></h4>
+<pre class="code"><code>Multiplayer → Add Server
+Address: play.nexusdev.example</code></pre>
+                    </div>
+                    <div class="mod qs-mod">
+                        <h4 class="mod-head">2. Создайте аккаунт <i>NEXUS ID</i></h4>
+                        <p class="qs-text">Один аккаунт для сайта, серверов и плейтестов. Код доступа открывает сборки BASTION.</p>
+                        <a class="btn" href="auth.html#register">
+                            <img src="assets/icons/sign-in.svg" alt="" width="18" height="18">
+                            Регистрация
+                        </a>
+                    </div>
+                    <div class="mod qs-mod">
+                        <h4 class="mod-head">3. Попадите на плейтест <i>LEVEL 3</i></h4>
+                        <p class="qs-text">Плейтесты BASTION проходят раз в две недели. Сборки и история загрузок — в кабинете.</p>
+                        <a class="btn" href="dashboard.html">
+                            <img src="assets/icons/user.svg" alt="" width="18" height="18">
+                            Личный кабинет
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- ===================== ПОДВАЛ ===================== -->
+    <footer class="site-footer">
+        <div class="container">
+            <h2 class="panel-title"><span>NEXUS//DEV</span><span>EOF</span></h2>
+            <div class="footer-grid">
+                <div class="footer-about">
+                    <p class="brand footer-brand">
+                        <img src="assets/icons/terminal.svg" alt="" width="22" height="22">
+                        <span class="brand-name">NEXUS<em>//</em>DEV</span>
+                    </p>
+                    <p>Некоммерческий портал инди-разработки: тактическая RTS BASTION: LINE ZERO на Unreal Engine 5, серверы Minecraft NEXUS CRAFT и собственные моды.</p>
+                </div>
+                <nav class="footer-col" aria-label="Навигация в подвале">
+                    <h3>Навигация</h3>
+                    <ul>
+                        <li><a href="index.html">Главная</a></li>
+                        <li><a href="projects.html">Проекты</a></li>
+                        <li><a href="dashboard.html">Кабинет</a></li>
+                        <li><a href="auth.html">Вход / Регистрация</a></li>
+                    </ul>
+                </nav>
+                <div class="footer-col">
+                    <h3>Проект</h3>
+                    <ul>
+                        <li><a href="projects.html#dossier-bastion">Досье BASTION</a></li>
+                        <li><a href="https://github.com/Stool12312356/123" target="_blank" rel="noopener noreferrer">Исходный код сайта</a></li>
+                        <li><a href="LICENSE">Лицензия GPL-3.0</a></li>
+                        <li><button class="link-btn" type="button" data-doc="faq">Частые вопросы</button></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="footer-bottom">
+                <p>&copy; <span class="js-year">2026</span> NEXUS//DEV. Некоммерческий проект. Код сайта распространяется под лицензией <a href="LICENSE">GPL-3.0</a>.</p>
+                <p class="credit">
+                    <img src="assets/img/edex-logo.svg" alt="" width="18" height="18">
+                    <span>UI inspired by &amp; adapted from <a href="https://github.com/GitSquared/edex-ui" target="_blank" rel="noopener noreferrer">eDEX-UI</a> (GPL-3.0)</span>
+                </p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="js/ui-effects.js" defer></script>
+    <script src="js/pages.js" defer></script>
+</body>
+</html>
