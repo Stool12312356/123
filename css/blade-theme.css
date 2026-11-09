@@ -127,9 +127,15 @@ html {
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
     background: var(--color_light_black);
-    /* Firefox scrollbar */
-    scrollbar-color: var(--c) var(--color_light_black);
-    scrollbar-width: thin;
+}
+/* Firefox: стандартные свойства скроллбара. Только там, где нет ::-webkit-scrollbar —
+   иначе Chrome 121+ отдаёт им приоритет, игнорирует стили ниже и рисует
+   системные стрелки-«треугольники» на каждом прокручиваемом блоке. */
+@supports not selector(::-webkit-scrollbar) {
+    html {
+        scrollbar-color: var(--c) var(--color_light_black);
+        scrollbar-width: thin;
+    }
 }
 
 body {

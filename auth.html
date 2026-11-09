@@ -11,11 +11,11 @@
     <!-- Зависимость оригинального eDEX-UI: augmented-ui 1.1.2 (BSD-2-Clause) — скошенные рамки -->
     <link rel="stylesheet" href="assets/vendor/augmented-ui/augmented.css">
     <!-- Тема blade, перенесённая из eDEX-UI -->
-    <link rel="stylesheet" href="css/blade-theme.css?v=20261109-7">
+    <link rel="stylesheet" href="css/blade-theme.css?v=20261109-9">
     <!-- Адаптивная сетка: шапка, подвал, модули, терминал -->
-    <link rel="stylesheet" href="css/layout.css?v=20261109-7">
+    <link rel="stylesheet" href="css/layout.css?v=20261109-9">
     <!-- Компоненты страниц: главная, каталог, формы, кабинет, тосты -->
-    <link rel="stylesheet" href="css/pages.css?v=20261109-7">
+    <link rel="stylesheet" href="css/pages.css?v=20261109-9">
 
     <script>
         /* Ранняя инициализация: класс js и сохранённые настройки HUD (без мигания) */
@@ -130,7 +130,7 @@
                                             <p class="field-error" aria-live="polite"></p>
                                         </div>
                                         <div class="field">
-                                            <label for="login-code">Код доступа <i>— необязательно, повышает уровень допуска</i></label>
+                                            <label for="login-code">Код роли <i>— необязательно, выдаёт роль ADMIN или CREATOR</i></label>
                                             <input class="input" id="login-code" name="code" type="text" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX" data-upper>
                                             <p class="field-error" aria-live="polite"></p>
                                         </div>
@@ -191,7 +191,7 @@
                                             </div>
                                         </div>
                                         <div class="field">
-                                            <label for="reg-code">Код доступа <i>— необязательно, выдаётся командой для плейтестов</i></label>
+                                            <label for="reg-code">Код роли <i>— необязательно, без кода вы получите роль USER</i></label>
                                             <input class="input" id="reg-code" name="code" type="text" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX" data-upper>
                                             <p class="field-error" aria-live="polite"></p>
                                         </div>
@@ -227,7 +227,8 @@
                                 <p class="auth-hint">
                                     DEMO MODE: данные никуда не отправляются, пароль не сохраняется — в localStorage
                                     записывается только профиль. Любой логин и пароль от 6 символов подойдут.
-                                    Коды доступа: <code>PLAYTEST</code> — уровень 3, <code>NEXUS-DEV</code> — уровень 4.
+                                    Новый аккаунт получает роль <code>USER</code>. Коды ролей: <code>NEXUS-ADMIN</code> — ADMIN,
+                                    <code>NEXUS-CREATOR</code> — CREATOR. Роль можно сменить и позже — в кабинете или командой <code>role</code> в терминале.
                                 </p>
                             </div>
                         </div>
@@ -292,6 +293,7 @@
 
             <div class="footer-bottom">
                 <p>&copy; <span class="js-year">2026</span> NEXUS//DEV. Некоммерческий проект. Код сайта распространяется под лицензией <a href="LICENSE">GPL-3.0</a>.</p>
+                <div class="footer-role" data-role-switch data-compact></div>
                 <p class="credit">
                     <button class="term-secret" type="button" data-terminal aria-expanded="false" aria-label="Терминал" title="&gt;_">
                         <img src="assets/icons/terminal.svg" alt="" width="16" height="16">
@@ -303,7 +305,7 @@
         </div>
     </footer>
 
-    <script src="js/ui-effects.js?v=20261109-7" defer></script>
-    <script src="js/pages.js?v=20261109-7" defer></script>
+    <script src="js/ui-effects.js?v=20261109-9" defer></script>
+    <script src="js/pages.js?v=20261109-9" defer></script>
 </body>
 </html>

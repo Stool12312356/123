@@ -44,8 +44,9 @@
                 return fallback;
             }
         },
+        /* Возвращает false, если запись не удалась (приватный режим или переполнение квоты) */
         set(key, value) {
-            try { window.localStorage.setItem(key, value); } catch (e) { /* приватный режим */ }
+            try { window.localStorage.setItem(key, value); return true; } catch (e) { return false; }
         },
         remove(key) {
             try { window.localStorage.removeItem(key); } catch (e) { /* ignore */ }
@@ -59,7 +60,7 @@
             }
         },
         setJSON(key, value) {
-            this.set(key, JSON.stringify(value));
+            return this.set(key, JSON.stringify(value));
         },
         sessionGet(key) {
             try { return window.sessionStorage.getItem(key); } catch (e) { return null; }
@@ -411,15 +412,49 @@
      * Сессия пользователя (демо-авторизация, только localStorage)
      * Пароли НЕ сохраняются — хранится лишь профиль.
      * ================================================================ */
-    const LEVELS = {
-        1: "OBSERVER",
-        2: "MEMBER",
-        3: "PLAYTESTER",
-        4: "DEVELOPER"
+    /* Роли: USER — просмотр и скачивание, ADMIN — управление проектами, CREATOR — владелец, все права */
+    const ROLES = {
+        user: {
+            id: "user", label: "USER", name: "Пользователь", rank: 1,
+            desc: "Просматривает каталог и досье, скачивает доступные релизы и сборки закрытых тестов."
+        },
+        admin: {
+            id: "admin", label: "ADMIN", name: "Администратор", rank: 2,
+            desc: "Скачивает все сборки, включая dev. Создаёт и редактирует любые проекты, удаляет созданные через сайт."
+        },
+        creator: {
+            id: "creator", label: "CREATOR", name: "Создатель", rank: 3,
+            desc: "Владелец экосистемы — полный доступ: любые проекты, включая официальные, разделы каталога и сброс каталога."
+        }
     };
+    const ROLE_IDS = ["user", "admin", "creator"];
+
+    /* Матрица прав (для кабинета и команды role). min — минимальная роль. */
+    const PERMISSIONS = [
+        { id: "view", label: "Каталог и досье проектов", min: "user" },
+        { id: "download", label: "Скачивание публичных релизов и закрытых тестов", min: "user" },
+        { id: "download-dev", label: "Скачивание dev-сборок", min: "admin" },
+        { id: "create", label: "Создание проектов", min: "admin" },
+        { id: "edit", label: "Редактирование любых проектов", min: "admin" },
+        { id: "delete", label: "Удаление проектов, созданных через сайт", min: "admin" },
+        { id: "delete-any", label: "Удаление официальных проектов каталога", min: "creator" },
+        { id: "sections", label: "Управление разделами и сброс каталога", min: "creator" }
+    ];
+
+    /* Доступ к скачиванию: public — без входа, user/admin/creator — минимальная роль */
+    const ACCESS = {
+        public: { label: "Без входа", short: "PUBLIC" },
+        user: { label: "Вход · USER и выше", short: "USER+" },
+        admin: { label: "ADMIN и выше", short: "ADMIN+" },
+        creator: { label: "Только CREATOR", short: "CREATOR" }
+    };
+
+    /* Необязательный код роли при входе / регистрации (демо). Старые коды тоже принимаются. */
     const ACCESS_CODES = {
-        "PLAYTEST": 3,
-        "NEXUS-DEV": 4
+        "NEXUS-ADMIN": "admin",
+        "NEXUS-CREATOR": "creator",
+        "NEXUS-DEV": "admin",
+        "PLAYTEST": "user"
     };
 
     const Auth = {
@@ -431,33 +466,67 @@
                 storage.remove(this.KEY);
                 return null;
             }
-            return s;
+            return this.normalize(s);
         },
         isLoggedIn() {
             return !!this.get();
         },
-        level() {
+        /* Текущая роль: "user" | "admin" | "creator" или null для гостя */
+        role() {
             const s = this.get();
-            return s ? s.level : 0;
+            return s ? s.role : null;
+        },
+        rank() {
+            const r = this.role();
+            return r ? ROLES[r].rank : 0;
+        },
+        roleInfo(role) {
+            return ROLES[role] || ROLES.user;
+        },
+        /* Проверка права. p — проект (для удаления: официальные удаляет только CREATOR) */
+        can(perm, p) {
+            const rank = this.rank();
+            if (perm === "delete") {
+                if (p && !p.custom) return rank >= ROLES.creator.rank;
+                return rank >= ROLES.admin.rank;
+            }
+            const def = PERMISSIONS.find(x => x.id === perm);
+            if (!def) return false;
+            return rank >= ROLES[def.min].rank;
+        },
+        canDownload(p) {
+            const need = p && p.access ? p.access : "public";
+            if (need === "public") return true;
+            return this.rank() >= (ROLES[need] ? ROLES[need].rank : 1);
+        },
+        /* Сменить роль текущей сессии (тестовый режим) */
+        setRole(role) {
+            if (!ROLES[role]) return null;
+            const s = this.update({ role });
+            if (s) document.dispatchEvent(new CustomEvent("nexus:role", { detail: { role } }));
+            return s;
         },
         makeId(callsign) {
             const h = hashString(callsign.toLowerCase()).toString(16).toUpperCase().padStart(8, "0");
             return `NX-${h.slice(0, 4)}-${h.slice(4, 8)}`;
         },
-        levelName(level) {
-            return LEVELS[level] || "OBSERVER";
+        /* Сессии старого формата (уровни 1–4) переводятся в роли */
+        normalize(s) {
+            if (!ROLES[s.role]) s.role = s.level >= 4 ? "admin" : "user";
+            delete s.level;
+            return s;
         },
         login(opts) {
             const callsign = String(opts.callsign || "guest").trim().slice(0, 24);
             const prev = this.get();
             const now = Date.now();
-            const level = clamp(opts.level || 2, 1, 4);
+            const role = ROLES[opts.role] ? opts.role : "user";
             const same = prev && prev.callsign === callsign;
             const session = {
                 callsign,
                 email: opts.email || `${callsign.toLowerCase().replace(/[^a-z0-9._-]/g, "")}@nexus.dev.example`,
                 id: this.makeId(callsign),
-                level,
+                role,
                 demo: !!opts.demo,
                 registered: (same && prev.registered) || opts.registered || now,
                 lastLogin: now,
@@ -500,7 +569,7 @@
     function updateUserUI() {
         const s = Auth.get();
         const userEl = $("#header-user");
-        if (userEl) userEl.textContent = s ? `${s.callsign.toUpperCase()} · L${s.level}` : "GUEST";
+        if (userEl) userEl.textContent = s ? `${s.callsign.toUpperCase()} · ${ROLES[s.role].label}` : "GUEST";
         $$("[data-auth-label]").forEach(el => {
             const [guest, user] = el.getAttribute("data-auth-label").split("|");
             el.textContent = s ? user : guest;
@@ -511,7 +580,64 @@
         });
         const prompt = $("#term-prompt");
         if (prompt) prompt.textContent = `${s ? s.callsign.toLowerCase() : "guest"}@nexus:~$`;
+        applyPermissions();
         document.dispatchEvent(new CustomEvent("nexus:auth"));
+    }
+
+    /* Элементы с data-require="create|edit|delete|sections…" показываются только при наличии права.
+       data-require-id — id проекта (для удаления официальных проектов нужна роль CREATOR). */
+    function applyPermissions(root) {
+        const role = Auth.role();
+        document.documentElement.setAttribute("data-role", role || "guest");
+        $$("[data-require]", root || document).forEach(el => {
+            const pid = el.getAttribute("data-require-id");
+            const p = pid ? PROJECTS.find(x => x.id === pid) : null;
+            el.hidden = !Auth.can(el.getAttribute("data-require"), p);
+        });
+        renderRoleSwitches();
+    }
+
+    /* Переключатели тестовой роли: [data-role-switch] (кабинет, подвал) */
+    function renderRoleSwitches() {
+        const role = Auth.role();
+        $$("[data-role-switch]").forEach(box => {
+            if (!box.childElementCount) {
+                const compact = box.hasAttribute("data-compact");
+                box.classList.add("role-switch");
+                if (compact) box.classList.add("role-switch-sm");
+                box.setAttribute("role", "group");
+                box.setAttribute("aria-label", "Тестовая роль");
+                box.innerHTML = (compact ? '<span class="role-switch-label">ROLE</span>' : "") + ROLE_IDS.map(id =>
+                    `<button type="button" class="role-btn" data-set-role="${id}" title="${escapeHtml(ROLES[id].name)}">${ROLES[id].label}</button>`).join("");
+            }
+            $$("[data-set-role]", box).forEach(b => {
+                const on = b.getAttribute("data-set-role") === role;
+                b.classList.toggle("active", on);
+                b.setAttribute("aria-pressed", String(on));
+            });
+        });
+    }
+
+    /* Смена тестовой роли с уведомлением и звуком. Гостю создаётся демо-сессия с этой ролью. */
+    function switchRole(role, opts) {
+        opts = opts || {};
+        role = String(role || "").toLowerCase();
+        if (!ROLES[role]) return { ok: false, error: "unknown" };
+        const s = Auth.get();
+        if (s && s.role === role) {
+            if (!opts.quiet) toast(`Роль ${ROLES[role].label} уже активна`);
+            return { ok: true, same: true, role };
+        }
+        let created = false;
+        if (!s) {
+            Auth.login({ callsign: "demo_operator", role, demo: true, remember: true });
+            created = true;
+        }
+        Auth.setRole(role);
+        Sound.play(role === "user" ? "panels" : "granted");
+        Syslog.add(`auth: роль сессии → ${ROLES[role].label}`);
+        if (!opts.quiet) toast(`Роль: ${ROLES[role].label} // ${ROLES[role].name}${created ? " · создана демо-сессия" : ""}`, "ok");
+        return { ok: true, role, created };
     }
 
     /* ================================================================
@@ -1298,6 +1424,7 @@
             $$("[data-sum='state']").forEach(el => { el.textContent = ok ? "SYSTEM ONLINE" : "SYSTEM DEGRADED"; });
             $$("[data-sum-state]").forEach(el => el.classList.toggle("is-degraded", !ok));
         };
+        document.addEventListener("nexus:catalog", render);
         Telemetry.on(render);
         render();
     }
@@ -1490,7 +1617,10 @@
         init() {
             const tpl = [
                 () => { const n = pick(SERVERS.filter(s => s.type === "MINECRAFT" && Telemetry.isUp(s))); return n ? `[${n.id}] ${pick(NICKS)} joined the game` : null; },
-                () => `cdn: ${pick(PROJECTS.filter(p => p.status === "available")).title} — ${randInt(3, 40)} downloads/min`,
+                () => {
+                    const rel = PROJECTS.filter(p => p.status === "available");
+                    return rel.length ? `cdn: ${pick(rel).title} — ${randInt(3, 40)} downloads/min` : `cdn: edge cache hit ratio ${randInt(90, 99)}%`;
+                },
                 () => `backup: mc-surv-01 world snapshot saved (${rand(1.8, 3.2).toFixed(1)} GiB)`,
                 () => `nexus-id: ${randInt(2, 40)} logins/min, 0 failed signatures`
             ];
@@ -1559,26 +1689,29 @@
     /* ================================================================
      * Каталог проектов (центр загрузок)
      * status: "available" — доступно для скачивания
-     *         "closed"    — закрытый тест (нужен уровень допуска)
-     *         "dev"       — в разработке (dev-снапшоты для разработчиков)
-     * access: минимальный уровень допуска для скачивания (0 — без входа)
+     *         "closed"    — закрытый тест (нужен вход)
+     *         "dev"       — в разработке (dev-снапшоты для ADMIN / CREATOR)
+     * access: кто может скачивать — "public" (без входа) | "user" | "admin" | "creator"
      * ================================================================ */
-    const CATEGORIES = { ue5: "UNREAL ENGINE 5", minecraft: "MINECRAFT", network: "PLATFORM" };
+    /* Базовые разделы каталога. Свои разделы CREATOR добавляет в nx_custom_categories. */
+    const BASE_CATEGORIES = { ue5: "UNREAL ENGINE 5", minecraft: "MINECRAFT", tools: "TOOLS / SOFT", other: "OTHER" };
+    const CATEGORIES = Object.assign({}, BASE_CATEGORIES);
     const STATUSES = {
         available: { label: "ДОСТУПНО ДЛЯ СКАЧИВАНИЯ", short: "ДОСТУПНО" },
         closed: { label: "ЗАКРЫТЫЙ ТЕСТ", short: "ЗАКРЫТЫЙ ТЕСТ" },
         dev: { label: "В РАЗРАБОТКЕ", short: "В РАЗРАБОТКЕ" }
     };
 
-    const PROJECTS = [
+    const BUILTIN_PROJECTS = [
         {
             id: "launcher",
             code: "NX-00",
             title: "NEXUS LAUNCHER",
-            category: "network",
+            category: "tools",
             status: "available",
-            access: 0,
+            access: "public",
             icon: "terminal",
+            tags: ["NEXUS ID", "Автообновление", "SHA-256"],
             summary: "Лаунчер экосистемы: вход через NEXUS ID, установка и автообновление всех сборок в один клик.",
             version: "1.4.2",
             size: "38 MiB",
@@ -1598,8 +1731,9 @@
             title: "FORTIFY MOD",
             category: "minecraft",
             status: "available",
-            access: 0,
+            access: "public",
             icon: "java",
+            tags: ["Fabric", "Java 21", "Окопы"],
             summary: "Мод для Minecraft: окопы, мешки с песком, колючая проволока и противотанковые ежи.",
             version: "0.9.2-beta",
             size: "4.1 MiB",
@@ -1619,8 +1753,9 @@
             title: "NEXUS CRAFT MODPACK",
             category: "minecraft",
             status: "available",
-            access: 0,
+            access: "public",
             icon: "minecraft",
+            tags: ["Fabric", "Modrinth", "Survival+"],
             summary: "Готовая сборка для серверов NEXUS CRAFT: моды, настройки и адрес сервера уже внутри.",
             version: "2026.4",
             size: "212 MiB",
@@ -1640,8 +1775,9 @@
             title: "BASTION: LINE ZERO",
             category: "ue5",
             status: "closed",
-            access: 3,
+            access: "user",
             icon: "unreal",
+            tags: ["UE5", "RTS", "Lumen", "Nanite"],
             summary: "Тактическая RTS на Unreal Engine 5 с инженерной обороной и упрощённым градостроительством.",
             version: "0.3.7-prealpha",
             size: "18.4 GiB",
@@ -1649,7 +1785,7 @@
             platform: "Windows · DX12",
             updated: "2026-11-02",
             file: "BASTION-0.3.7-prealpha-Win64.zip",
-            requirements: "Windows 10/11 64-bit, GTX 1070 / RX 5600 XT, 16 GiB RAM, SSD. Нужен уровень допуска PLAYTESTER.",
+            requirements: "Windows 10/11 64-bit, GTX 1070 / RX 5600 XT, 16 GiB RAM, SSD. Скачивание — после входа (роль USER и выше).",
             notes: [
                 { version: "0.3.7", date: "2026-11-02", items: ["Копание траншей перестраивает навигацию за < 40 мс", "Противотанковые ежи можно разбирать сапёрами", "Исправлено мерцание Lumen на краях рвов"] },
                 { version: "0.3.6", date: "2026-10-14", items: ["Рвы и противотанковые ежи", "ИИ техники учитывает препятствия"] }
@@ -1661,8 +1797,9 @@
             title: "TRENCHWORKS",
             category: "ue5",
             status: "dev",
-            access: 4,
+            access: "admin",
             icon: "cpp",
+            tags: ["UE5 Plugin", "C++", "World Partition"],
             summary: "Плагин UE5 для деформации ландшафта в реальном времени: окопы, рвы и перестройка навигации.",
             version: "0.6.1-alpha",
             size: "36 MiB",
@@ -1670,7 +1807,7 @@
             platform: "UE 5.4 · Win64 / Linux",
             updated: "2026-10-27",
             file: "Trenchworks-0.6.1-UE5.4.zip",
-            requirements: "Unreal Engine 5.4. Dev-снапшоты доступны с уровнем допуска DEVELOPER.",
+            requirements: "Unreal Engine 5.4. Dev-снапшоты доступны ролям ADMIN и CREATOR.",
             notes: [
                 { version: "0.6.1", date: "2026-10-27", items: ["Брустверы из вынутого грунта", "Сохранение изменений в ячейках World Partition"] }
             ]
@@ -1681,8 +1818,9 @@
             title: "NEXUS TECH",
             category: "minecraft",
             status: "dev",
-            access: 4,
+            access: "admin",
             icon: "gradle",
+            tags: ["NeoForge", "Sci-Fi", "Дроны"],
             summary: "Sci-Fi мод: энергосети, дроны-строители и щитовые генераторы для баз.",
             version: "0.2.0-dev",
             size: "9.8 MiB",
@@ -1690,12 +1828,223 @@
             platform: "NeoForge · Java 1.21.1",
             updated: "2026-10-12",
             file: "nexus-tech-0.2.0-dev+neoforge-1.21.1.jar",
-            requirements: "Minecraft Java 1.21.1, NeoForge 21.1. Dev-снапшоты доступны с уровнем допуска DEVELOPER.",
+            requirements: "Minecraft Java 1.21.1, NeoForge 21.1. Dev-снапшоты доступны ролям ADMIN и CREATOR.",
             notes: [
                 { version: "0.2.0-dev", date: "2026-10-12", items: ["Первые дроны-строители", "Энергосеть и кабели"] }
             ]
         }
     ];
+
+    BUILTIN_PROJECTS.forEach(p => Object.freeze(p));
+
+    /* Живой список проектов: официальные (с правками) + созданные через сайт.
+       Массив изменяется на месте, поэтому все ссылки на PROJECTS остаются актуальными. */
+    const PROJECTS = [];
+
+    const PROJECT_ICONS = ["terminal", "unreal", "minecraft", "java", "cpp", "gradle", "code", "blender", "steam", "docker",
+        "linux", "desktop", "database", "lightning", "satellite", "rom", "disk", "usb", "archive", "flag", "star", "heart",
+        "portfolio", "work", "shell", "json", "book", "activity"];
+
+    const Catalog = {
+        KEY: "nx_custom_projects",
+        HIDDEN_KEY: "nx_hidden_projects",
+        CAT_KEY: "nx_custom_categories",
+        MAX_TITLE: 48,
+
+        builtin(id) {
+            return BUILTIN_PROJECTS.find(p => p.id === id) || null;
+        },
+        /* Сырые записи из localStorage: созданные проекты и правки официальных (builtin: true) */
+        readCustom() {
+            const list = storage.getJSON(this.KEY, []);
+            return Array.isArray(list) ? list.filter(x => x && typeof x.id === "string" && typeof x.title === "string") : [];
+        },
+        readHidden() {
+            const list = storage.getJSON(this.HIDDEN_KEY, []);
+            return Array.isArray(list) ? list.filter(x => typeof x === "string") : [];
+        },
+        readCategories() {
+            const list = storage.getJSON(this.CAT_KEY, []);
+            return Array.isArray(list) ? list.filter(x => x && typeof x.id === "string" && typeof x.label === "string") : [];
+        },
+        /* Приводит запись к полной структуре проекта (защита от битых данных) */
+        normalize(raw, base) {
+            const p = Object.assign({}, base || {}, raw);
+            p.title = String(p.title || "UNTITLED").slice(0, this.MAX_TITLE);
+            p.code = String(p.code || "NX-??").slice(0, 12);
+            if (!STATUSES[p.status]) p.status = "available";
+            if (!ACCESS[p.access]) p.access = p.status === "dev" ? "admin" : (p.status === "closed" ? "user" : "public");
+            if (!CATEGORIES[p.category]) p.category = "other";
+            if (PROJECT_ICONS.indexOf(p.icon) === -1 && !(base && base.icon === p.icon)) p.icon = "archive";
+            p.summary = String(p.summary || "");
+            p.version = String(p.version || "0.1.0");
+            p.sizeMB = Math.max(0.1, Number(p.sizeMB) || 50);
+            p.size = formatMiB(p.sizeMB);
+            p.platform = String(p.platform || "—");
+            p.updated = String(p.updated || dateISO(new Date()));
+            p.file = String(p.file || "build.zip");
+            p.url = /^https?:\/\//i.test(p.url || "") ? String(p.url) : "";
+            p.requirements = String(p.requirements || "");
+            p.tags = Array.isArray(p.tags) ? p.tags.map(t => String(t).trim()).filter(Boolean).slice(0, 12) : [];
+            p.notes = Array.isArray(p.notes) ? p.notes.filter(n => n && Array.isArray(n.items)) : [];
+            p.cover = typeof p.cover === "string" && p.cover.indexOf("data:image/") === 0 ? p.cover : "";
+            p.custom = !base;
+            p.edited = !!base;
+            return p;
+        },
+        /* Пересобрать PROJECTS и CATEGORIES из встроенных данных и localStorage */
+        load() {
+            Object.keys(CATEGORIES).forEach(k => { if (!BASE_CATEGORIES[k]) delete CATEGORIES[k]; });
+            this.readCategories().forEach(c => { if (!BASE_CATEGORIES[c.id]) CATEGORIES[c.id] = c.label; });
+            const custom = this.readCustom();
+            const hidden = this.readHidden();
+            const list = [];
+            BUILTIN_PROJECTS.forEach(b => {
+                if (hidden.indexOf(b.id) !== -1) return;
+                const over = custom.find(x => x.id === b.id && x.builtin);
+                list.push(over ? this.normalize(over, b) : Object.assign({}, b, { custom: false, edited: false, tags: b.tags || [], cover: "", url: "" }));
+            });
+            custom.forEach(x => {
+                if (x.builtin || this.builtin(x.id)) return;
+                list.push(this.normalize(x));
+            });
+            PROJECTS.length = 0;
+            list.forEach(p => PROJECTS.push(p));
+            return PROJECTS;
+        },
+        emit(action, id) {
+            document.dispatchEvent(new CustomEvent("nexus:catalog", { detail: { action, id } }));
+        },
+        writeCustom(list) {
+            return storage.setJSON(this.KEY, list);
+        },
+        slug(title) {
+            const map = { а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z", и: "i", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f", х: "h", ц: "c", ч: "ch", ш: "sh", щ: "sch", ы: "y", э: "e", ю: "yu", я: "ya" };
+            let base = String(title).toLowerCase().split("").map(c => map[c] !== undefined ? map[c] : c).join("")
+                .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 28) || "project";
+            if (/^(filter|dossier)-/.test(base)) base = "p-" + base;
+            let id = base, i = 2;
+            const taken = x => PROJECTS.some(p => p.id === x) || BUILTIN_PROJECTS.some(p => p.id === x) || this.readCustom().some(p => p.id === x);
+            while (taken(id)) id = `${base}-${i++}`;
+            return id;
+        },
+        nextCode() {
+            const nums = PROJECTS.concat(BUILTIN_PROJECTS).map(p => parseInt(String(p.code).replace(/\D/g, ""), 10)).filter(n => !isNaN(n));
+            const n = Math.max(20, nums.length ? Math.max.apply(null, nums) : 0) + 1;
+            return "NX-" + String(n).padStart(2, "0");
+        },
+        /* Создать проект. Возвращает { ok, project } или { ok: false, error } */
+        create(data) {
+            if (!Auth.can("create")) return { ok: false, error: "denied" };
+            const s = Auth.get();
+            const rec = Object.assign({}, data, {
+                id: this.slug(data.title),
+                code: this.nextCode(),
+                author: s ? s.callsign : "guest",
+                created: Date.now(),
+                updated: dateISO(new Date())
+            });
+            delete rec.builtin;
+            const list = this.readCustom();
+            list.push(rec);
+            if (!this.writeCustom(list)) return { ok: false, error: "quota" };
+            this.load();
+            this.emit("create", rec.id);
+            return { ok: true, project: PROJECTS.find(p => p.id === rec.id) };
+        },
+        update(id, data) {
+            if (!Auth.can("edit")) return { ok: false, error: "denied" };
+            const list = this.readCustom();
+            const b = this.builtin(id);
+            const idx = list.findIndex(x => x.id === id);
+            const prev = idx !== -1 ? list[idx] : (b ? {} : null);
+            if (!prev) return { ok: false, error: "missing" };
+            const rec = Object.assign({}, prev, data, { id, updated: dateISO(new Date()) });
+            if (b) { rec.builtin = true; rec.code = b.code; }
+            if (idx !== -1) list[idx] = rec; else list.push(rec);
+            if (!this.writeCustom(list)) return { ok: false, error: "quota" };
+            this.load();
+            this.emit("update", id);
+            return { ok: true, project: PROJECTS.find(p => p.id === id) };
+        },
+        remove(id) {
+            const p = PROJECTS.find(x => x.id === id);
+            if (!p) return { ok: false, error: "missing" };
+            if (!Auth.can("delete", p)) return { ok: false, error: "denied" };
+            const list = this.readCustom().filter(x => x.id !== id);
+            this.writeCustom(list);
+            if (this.builtin(id)) {
+                const hidden = this.readHidden();
+                if (hidden.indexOf(id) === -1) hidden.push(id);
+                storage.setJSON(this.HIDDEN_KEY, hidden);
+            }
+            this.load();
+            this.emit("delete", id);
+            return { ok: true, project: p };
+        },
+        /* Вернуть официальные проекты в исходное состояние (созданные через сайт остаются) */
+        restore() {
+            if (!Auth.can("sections")) return { ok: false, error: "denied" };
+            this.writeCustom(this.readCustom().filter(x => !x.builtin && !this.builtin(x.id)));
+            storage.remove(this.HIDDEN_KEY);
+            this.load();
+            this.emit("restore");
+            return { ok: true };
+        },
+        /* ----- Разделы (категории) ----- */
+        addCategory(label) {
+            if (!Auth.can("sections")) return { ok: false, error: "denied" };
+            label = String(label || "").trim().toUpperCase().slice(0, 24);
+            if (label.length < 2) return { ok: false, error: "short" };
+            if (Object.keys(CATEGORIES).some(k => CATEGORIES[k] === label)) return { ok: false, error: "exists" };
+            const list = this.readCategories();
+            let id = "c-" + (this.slugLatin(label) || "section"), i = 2;
+            while (CATEGORIES[id] || list.some(c => c.id === id)) id = `${id.replace(/-\d+$/, "")}-${i++}`;
+            list.push({ id, label });
+            storage.setJSON(this.CAT_KEY, list);
+            this.load();
+            this.emit("categories");
+            return { ok: true, id };
+        },
+        renameCategory(id, label) {
+            if (!Auth.can("sections")) return { ok: false, error: "denied" };
+            label = String(label || "").trim().toUpperCase().slice(0, 24);
+            if (label.length < 2) return { ok: false, error: "short" };
+            const list = this.readCategories();
+            const c = list.find(x => x.id === id);
+            if (!c) return { ok: false, error: "missing" };
+            c.label = label;
+            storage.setJSON(this.CAT_KEY, list);
+            this.load();
+            this.emit("categories");
+            return { ok: true };
+        },
+        /* Удаление раздела: его проекты переезжают в OTHER */
+        removeCategory(id) {
+            if (!Auth.can("sections") || BASE_CATEGORIES[id]) return { ok: false, error: "denied" };
+            storage.setJSON(this.CAT_KEY, this.readCategories().filter(x => x.id !== id));
+            const list = this.readCustom();
+            let moved = 0;
+            list.forEach(x => { if (x.category === id) { x.category = "other"; moved++; } });
+            this.writeCustom(list);
+            this.load();
+            this.emit("categories");
+            return { ok: true, moved };
+        },
+        slugLatin(text) {
+            return this.slug(text).replace(/-\d+$/, "");
+        }
+    };
+
+    function formatMiB(mb) {
+        if (mb >= 1024) return (mb / 1024).toFixed(1) + " GiB";
+        return (mb < 10 ? mb.toFixed(1) : String(Math.round(mb))) + " MiB";
+    }
+    function dateISO(d) {
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    }
+
+    Catalog.load();
 
     /* ================================================================
      * Модальные окна (modal.class.js) — перетаскиваются за заголовок
@@ -1765,7 +2114,7 @@
             const onKey = e => {
                 if (e.key === "Escape") this.close();
                 if (e.key === "Tab") {
-                    const f = $$("a[href], button:not([disabled]), input, [tabindex]:not([tabindex='-1'])", modal);
+                    const f = $$("a[href], button:not([disabled]):not([hidden]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex='-1'])", modal).filter(el => el.offsetParent !== null);
                     if (!f.length) return;
                     const first = f[0], last = f[f.length - 1];
                     if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
@@ -1844,9 +2193,11 @@
                 <h5>Что такое NEXUS//DEV?</h5>
                 <p>Некоммерческая экосистема инди-проектов: единый аккаунт, центр загрузок сборок и модов, серверы и закрытые тесты. Всё бесплатно и без рекламы.</p>
                 <h5>Нужна ли регистрация, чтобы скачать сборку?</h5>
-                <p>Нет — публичные релизы («Доступно для скачивания») качаются без входа. Аккаунт нужен для закрытых тестов, dev-снапшотов, истории загрузок и управления серверами.</p>
+                <p>Нет — публичные релизы («Доступно для скачивания») качаются без входа. Аккаунт нужен для закрытых тестов и истории загрузок.</p>
+                <h5>Какие бывают роли?</h5>
+                <p><b>USER</b> — просмотр каталога и скачивание. <b>ADMIN</b> — ещё и dev-сборки, создание и редактирование проектов. <b>CREATOR</b> — владелец: все права, включая официальные проекты и разделы каталога. В демо роль меняется в кабинете или командой <kbd>role</kbd> в терминале.</p>
                 <h5>Как попасть на закрытый тест?</h5>
-                <p>Зарегистрируйтесь и введите код доступа от команды. Для демонстрации используйте кнопку DEMO ACCESS на странице входа.</p>
+                <p>Зарегистрируйтесь или нажмите DEMO ACCESS на странице входа — закрытые тесты доступны любой роли после входа.</p>
                 <h5>Почему сайт выглядит как терминал?</h5>
                 <p>Дизайн перенесён из открытого проекта eDEX-UI (тема «blade») с соблюдением лицензии GPL-3.0. Кстати, попробуйте нажать <kbd>~</kbd>.</p>`
         },
@@ -2053,6 +2404,13 @@
                 const v = this.input.value.trim().toLowerCase();
                 e.preventDefault();
                 if (!v) return;
+                const rm = /^role\s+(\S*)$/.exec(v);
+                if (rm) {
+                    const opts = ROLE_IDS.filter(id => id.indexOf(rm[1]) === 0);
+                    if (opts.length === 1) this.input.value = "role " + opts[0];
+                    else if (opts.length > 1) this.print(opts.join("  "));
+                    return;
+                }
                 // Автодополнение названия темы: «theme na» → «theme navy»
                 const tm = /^theme\s+(\S*)$/.exec(v);
                 if (tm) {
@@ -2113,6 +2471,8 @@
                         "  servers         — список игровых серверов",
                         "  syslog          — последние системные события",
                         "  login | register | logout — вход, регистрация, выход",
+                        "  role [user|admin|creator] — текущая роль / сменить роль (тест)",
+                        "  create          — создать проект (ADMIN, CREATOR)",
                         "  dashboard       — личный кабинет",
                         "  home            — главная страница",
                         "  whoami          — текущий пользователь",
@@ -2156,7 +2516,7 @@
                 },
                 login() {
                     const s = Auth.get();
-                    if (s) { this.print(`Вы уже вошли как ${s.callsign} (LEVEL ${s.level}). Команда «dashboard» откроет кабинет.`); return; }
+                    if (s) { this.print(`Вы уже вошли как ${s.callsign} (${ROLES[s.role].label}). Команда «dashboard» откроет кабинет.`); return; }
                     go("auth.html", "Открываю защищённый терминал авторизации…");
                 },
                 register() { go("auth.html#register", "Открываю форму регистрации…"); },
@@ -2168,10 +2528,48 @@
                     Sound.play("denied");
                 },
                 dashboard() { go("dashboard.html", "Открываю личный кабинет…"); },
+                role(args) {
+                    const arg = (args[0] || "").toLowerCase();
+                    const s = Auth.get();
+                    if (!arg || arg === "list" || arg === "ls") {
+                        const cur = s ? s.role : null;
+                        this.printHtml(`Текущая роль: <span class="hl">${cur ? ROLES[cur].label : "GUEST"}</span>${cur ? " // " + escapeHtml(ROLES[cur].name) : " (не авторизован)"}`);
+                        ROLE_IDS.forEach(id => {
+                            this.print(`${id === cur ? "*" : " "} ${ROLES[id].label.padEnd(8)} ${ROLES[id].desc}`);
+                        });
+                        const allowed = PERMISSIONS.filter(x => Auth.can(x.id)).map(x => x.label.toLowerCase());
+                        this.print(`Права сейчас: ${allowed.length ? allowed.join("; ") : "просмотр каталога и скачивание публичных релизов"}`);
+                        this.printHtml('Сменить: <span class="hl">role user</span> · <span class="hl">role admin</span> · <span class="hl">role creator</span>');
+                        return;
+                    }
+                    const res = switchRole(arg, { quiet: false });
+                    if (!res.ok) {
+                        this.print(`role: роль «${args[0]}» не существует. Доступны: user, admin, creator.`, "err");
+                        Sound.play("denied");
+                        return;
+                    }
+                    if (res.same) { this.print(`role: ${ROLES[res.role].label} уже активна.`); return; }
+                    if (res.created) this.print("role: вы были гостем — создана демо-сессия demo_operator.");
+                    this.print(`role: роль переключена на ${ROLES[res.role].label} // ${ROLES[res.role].name}. Интерфейс обновлён.`);
+                },
+                create() {
+                    if (!Auth.can("create")) {
+                        this.print("create: нужна роль ADMIN или CREATOR. Подсказка: role admin", "err");
+                        Sound.play("denied");
+                        return;
+                    }
+                    if (PAGE === "projects" && window.NEXUS.Pages && window.NEXUS.Pages.openEditor) {
+                        this.print("Открываю конструктор проекта…");
+                        this.close();
+                        window.NEXUS.Pages.openEditor();
+                        return;
+                    }
+                    go("projects.html#new", "Открываю конструктор проекта в центре загрузок…");
+                },
                 home() { go("index.html", "Возвращаюсь на главную…"); },
                 whoami() {
                     const s = Auth.get();
-                    this.print(s ? `${s.callsign} · ${s.id} · LEVEL ${s.level} // ${Auth.levelName(s.level)}` : "guest (не авторизован)");
+                    this.print(s ? `${s.callsign} · ${s.id} · ${ROLES[s.role].label} // ${ROLES[s.role].name}` : "guest (не авторизован)");
                 },
                 neofetch() {
                     const os = detectOS();
@@ -2191,7 +2589,7 @@
                         `Uptime: ${formatUptime(Date.now() - startTime)}`,
                         `Resolution: ${window.screen.width}x${window.screen.height}`,
                         `CPU threads: ${navigator.hardwareConcurrency || "N/A"}`,
-                        `Clearance: ${s ? "LEVEL " + s.level : "NONE"}`,
+                        `Role: ${s ? ROLES[s.role].label : "GUEST"}`,
                         `Theme: ${Theme.current()} (eDEX-UI)`,
                         "Font: United Sans / Fira Mono"
                     ];
@@ -2238,7 +2636,11 @@
                     this.printHtml('UI inspired by &amp; adapted from <a href="https://github.com/GitSquared/edex-ui" target="_blank" rel="noopener noreferrer">eDEX-UI</a> (GPL-3.0) by Gabriel “Squared” Saillard.');
                     this.printHtml('Рамки: augmented-ui 1.1.2 (BSD-2-Clause). Лицензия сайта: <a href="LICENSE">GPL-3.0</a>.');
                 },
-                sudo() { this.print("guest is not in the sudoers file. This incident will be reported.", "err"); Sound.play("denied"); },
+                sudo() {
+                    if (Auth.role() === "creator") { this.print("sudo: вы и так CREATOR — у вас все права."); return; }
+                    this.print(`${Auth.get() ? Auth.get().callsign : "guest"} is not in the sudoers file. This incident will be reported.`, "err");
+                    Sound.play("denied");
+                },
                 reboot() {
                     this.print("Broadcast message: the system is going down for reboot NOW!");
                     setTimeout(() => {
@@ -2350,8 +2752,17 @@
     /* ================================================================
      * Старт
      * ================================================================ */
+    function initRoleSwitches() {
+        document.addEventListener("click", e => {
+            const b = e.target.closest("[data-set-role]");
+            if (!b) return;
+            switchRole(b.getAttribute("data-set-role"));
+        });
+    }
+
     function init() {
         Settings.apply();
+        initRoleSwitches();
         initSoundToggle();
         updateUserUI();
         initClock();
@@ -2378,6 +2789,11 @@
         window.addEventListener("storage", e => {
             if (e.key === Auth.KEY) updateUserUI();
             if (e.key === Settings.KEY) { Settings.load(); Settings.apply(); Sound.syncUI(); }
+            if (e.key === Catalog.KEY || e.key === Catalog.HIDDEN_KEY || e.key === Catalog.CAT_KEY) {
+                Catalog.load();
+                applyPermissions();
+                Catalog.emit("sync");
+            }
         });
 
         if (shouldBoot()) {
@@ -2391,7 +2807,8 @@
     /* Публичное API для js/pages.js */
     window.NEXUS = {
         PAGE, $, $$, clamp, rand, randInt, pick, pad, delay, escapeHtml, timeStr, dateStr, hashString, rgba,
-        storage, Settings, Sound, Auth, LEVELS, ACCESS_CODES, toast, showBanner, Modal, Tabs, Syslog, Terminal,
+        storage, Settings, Sound, Auth, ROLES, ROLE_IDS, PERMISSIONS, ACCESS, ACCESS_CODES, switchRole, applyPermissions,
+        Catalog, BUILTIN_PROJECTS, BASE_CATEGORIES, PROJECT_ICONS, formatMiB, dateISO, toast, showBanner, Modal, Tabs, Syslog, Terminal,
         SERVERS, Telemetry, statusBadge, formatPlayers, PROJECTS, CATEGORIES, STATUSES, Docs,
         observeReveal, reducedMotion, copyText, updateUserUI, NICKS, THEMES, Theme
     };
