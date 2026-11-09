@@ -3,8 +3,8 @@
  * ------------------------------------------------------------------
  * Подключается на всех страницах после js/ui-effects.js и использует
  * его API (window.NEXUS). Страница определяется по <body data-page>:
- *   home      — index.html      (флагман, Minecraft, прогресс-бары)
- *   projects  — projects.html   (фильтр, карточки, досье)
+ *   home      — index.html      (ядро экосистемы — логика в ui-effects.js)
+ *   projects  — projects.html   (фильтр по статусу, карточки, загрузки, patch notes)
  *   dashboard — dashboard.html  (профиль, серверы, настройки HUD)
  *   auth      — auth.html       (вход, регистрация, DEMO ACCESS)
  *
@@ -20,7 +20,7 @@
 
     const { $, $$, clamp, rand, randInt, pick, delay, escapeHtml, timeStr, dateStr, hashString,
         Settings, Sound, Auth, ACCESS_CODES, toast, showBanner, Modal, Tabs, SERVERS, Telemetry,
-        statusBadge, formatPlayers, PROJECTS, CATEGORIES, observeReveal, reducedMotion, NICKS } = NX;
+        statusBadge, formatPlayers, PROJECTS, CATEGORIES, STATUSES, observeReveal, reducedMotion, NICKS } = NX;
 
     const PAGE = NX.PAGE;
 
@@ -28,39 +28,9 @@
      * Общее для всех страниц
      * ================================================================ */
 
-    /* Прогресс-бары заполняются, когда попадают в зону видимости */
-    function initProgressBars(root) {
-        const bars = $$(".progress-fill[data-progress]:not(.is-set)", root);
-        const fill = el => {
-            el.classList.add("is-set");
-            el.style.width = clamp(parseFloat(el.getAttribute("data-progress")) || 0, 0, 100) + "%";
-        };
-        if (!("IntersectionObserver" in window) || reducedMotion()) {
-            bars.forEach(fill);
-            return;
-        }
-        const io = new IntersectionObserver(entries => {
-            entries.forEach(en => {
-                if (en.isIntersecting) { fill(en.target); io.unobserve(en.target); }
-            });
-        }, { threshold: 0.3 });
-        bars.forEach(b => io.observe(b));
-    }
-
-    function progressHtml(value, label, large) {
-        return `<div class="progress${large ? " progress-lg" : ""}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${value}" aria-label="${escapeHtml(label || "Готовность")}">
-            <span>${escapeHtml(label || "READY")}</span>
-            <span class="progress-track"><span class="progress-fill" data-progress="${value}"></span></span>
-            <span class="progress-val">${value}%</span>
-        </div>`;
-    }
-
-    /* Счётчик серверов в шапке + живые данные серверов в карточках главной */
+    /* Живые данные серверов: [data-srv="id"][data-field="status|players|ping"] */
     function initServerBindings() {
-        const head = $("#header-servers");
         const render = () => {
-            const s = Telemetry.summary();
-            if (head) head.textContent = `${s.online}/${s.total}`;
             $$("[data-srv]").forEach(el => {
                 const n = Telemetry.find(el.getAttribute("data-srv"));
                 if (!n) return;
@@ -82,6 +52,7 @@
     /* Идентикон-аватар: симметричная пиксельная маска 7×7 из хэша позывного */
     function drawAvatar(canvas, seedText) {
         if (!canvas || !canvas.getContext) return;
+        canvas.setAttribute("data-avatar-seed", seedText || "guest");
         const ctx = canvas.getContext("2d");
         const size = 7;
         const px = 18;
@@ -94,7 +65,9 @@
             h ^= h << 5; h >>>= 0;
             return h / 4294967296;
         };
-        ctx.fillStyle = "#090B0A";
+        // Фон — light_black текущей цветовой схемы
+        const bg = getComputedStyle(document.documentElement).getPropertyValue("--color_light_black").trim();
+        ctx.fillStyle = bg || "#090B0A";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         for (let y = 0; y < size; y++) {
             for (let x = 0; x < Math.ceil(size / 2); x++) {
@@ -126,163 +99,322 @@
     }
 
     /* ================================================================
-     * Главная
+     * Центр загрузок: доступ, симуляция загрузки, HUD-графика
      * ================================================================ */
-    function initHome() {
-        // Быстрая «постройка» по клавишам F1–F6 на клавиатуре
-        const caps = $$("#key-row .keycap");
-        if (caps.length) {
-            document.addEventListener("keydown", e => {
-                if (e.target.closest("input, textarea, select") || Modal.current) return;
-                const m = /^F([1-6])$/.exec(e.key);
-                if (!m) return;
-                const cap = caps[parseInt(m[1], 10) - 1];
-                const row = $("#key-row");
-                if (!cap || !row) return;
-                const r = row.getBoundingClientRect();
-                if (r.bottom < 0 || r.top > window.innerHeight) return;
-                e.preventDefault();
-                cap.click();
-            });
-        }
+    const ICON_DOWNLOAD = '<img src="assets/icons/download.svg" alt="" width="18" height="18">';
+    const ICON_LOCK = '<img src="assets/icons/lock.svg" alt="" width="18" height="18">';
+
+    function canDownload(p, s) {
+        if (!p.access) return true;
+        return !!s && s.level >= p.access;
     }
+
+    function accessText(p) {
+        return p.access ? `L${p.access} · ${Auth.levelName(p.access)}` : "без входа";
+    }
+
+    function formatSize(mb) {
+        if (mb >= 1024) return (mb / 1024).toFixed(2) + " GiB";
+        return mb.toFixed(mb < 10 ? 1 : 0) + " MiB";
+    }
+
+    function formatEta(sec) {
+        sec = Math.max(0, Math.round(sec));
+        return sec >= 60 ? `${Math.floor(sec / 60)}м ${NX.pad(sec % 60)}с` : `${sec}с`;
+    }
+
+    /* Генератор псевдослучайных чисел со стабильным зерном (одинаковая графика при каждой загрузке) */
+    function seeded(seedText) {
+        let h = hashString(seedText) || 1;
+        return () => {
+            h ^= h << 13; h >>>= 0;
+            h ^= h >>> 17;
+            h ^= h << 5; h >>>= 0;
+            return h / 4294967296;
+        };
+    }
+
+    /* Векторная HUD-графика проекта: топография (UE5), воксели (Minecraft), граф узлов (платформа) */
+    function projectArt(p) {
+        const r = seeded(p.id);
+        const W = 320, H = 140;
+        let g = "";
+        if (p.category === "ue5") {
+            const cx = 110 + r() * 110, cy = 62 + r() * 30;
+            for (let k = 1; k <= 9; k++) {
+                const pts = [];
+                const base = k * 15;
+                for (let i = 0; i < 28; i++) {
+                    const a = i / 28 * Math.PI * 2;
+                    const rr = base * (0.82 + r() * 0.3);
+                    pts.push(`${(cx + Math.cos(a) * rr * 1.6).toFixed(1)},${(cy + Math.sin(a) * rr).toFixed(1)}`);
+                }
+                g += `<polygon points="${pts.join(" ")}" class="a-line${k % 3 === 0 ? " a-strong" : ""}"/>`;
+            }
+            g += `<path d="M0 ${H - 26} L${W * 0.35} ${H - 40} L${W * 0.6} ${H - 22} L${W} ${H - 36}" class="a-dash"/>`;
+            g += `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="3" class="a-dot"/>`;
+            g += `<text x="${(cx + 8).toFixed(1)}" y="${(cy - 6).toFixed(1)}" class="a-txt">ELEV ${(120 + r() * 300).toFixed(0)}m</text>`;
+        } else if (p.category === "minecraft") {
+            const s = 14;
+            for (let y = 0; y < Math.ceil(H / s); y++) {
+                for (let x = 0; x < Math.ceil(W / s); x++) {
+                    const v = r();
+                    const hgt = Math.sin(x * 0.35 + y * 0.1) + Math.cos(y * 0.5) + (v - 0.5);
+                    if (hgt > 0.9) g += `<rect x="${x * s + 1}" y="${y * s + 1}" width="${s - 2}" height="${s - 2}" class="a-fill${hgt > 1.5 ? " a-strong" : ""}"/>`;
+                    else if (v > 0.86) g += `<rect x="${x * s + 3}" y="${y * s + 3}" width="${s - 6}" height="${s - 6}" class="a-line"/>`;
+                }
+            }
+            g += `<path d="M${W - 92} 20 l24 -12 l24 12 l-24 12 z M${W - 92} 20 v28 l24 12 v-28 M${W - 44} 20 v28 l-24 12" class="a-line a-strong"/>`;
+        } else {
+            const nodes = [];
+            for (let i = 0; i < 13; i++) nodes.push([20 + r() * (W - 40), 16 + r() * (H - 32)]);
+            nodes.forEach((n, i) => {
+                const near = nodes.map((m, j) => [j, Math.hypot(m[0] - n[0], m[1] - n[1])]).filter(x => x[0] !== i).sort((a, b) => a[1] - b[1]).slice(0, 2);
+                near.forEach(([j]) => { if (j > i) g += `<line x1="${n[0].toFixed(1)}" y1="${n[1].toFixed(1)}" x2="${nodes[j][0].toFixed(1)}" y2="${nodes[j][1].toFixed(1)}" class="a-line"/>`; });
+            });
+            nodes.forEach((n, i) => {
+                g += `<circle cx="${n[0].toFixed(1)}" cy="${n[1].toFixed(1)}" r="${i === 0 ? 5 : 2.5}" class="${i === 0 ? "a-ring" : "a-dot"}"/>`;
+            });
+            g += `<text x="${(nodes[0][0] + 9).toFixed(1)}" y="${(nodes[0][1] + 3).toFixed(1)}" class="a-txt">CORE</text>`;
+        }
+        // Рамка-прицел и сетка
+        g += `<path d="M8 22 V8 H22 M${W - 22} 8 H${W - 8} V22 M8 ${H - 22} V${H - 8} H22 M${W - 22} ${H - 8} H${W - 8} V${H - 22}" class="a-line a-strong"/>`;
+        return `<svg class="art-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false">${g}</svg>`;
+    }
+
+    function badgeHtml(p) {
+        return `<span class="pbadge pbadge-${p.status}"><i aria-hidden="true"></i>${escapeHtml(STATUSES[p.status].label)}</span>`;
+    }
+
+    function dlButtonInner(p, s) {
+        return canDownload(p, s) ? `${ICON_DOWNLOAD}<span>СКАЧАТЬ СБОРКУ</span>` : `${ICON_LOCK}<span>СКАЧАТЬ СБОРКУ</span>`;
+    }
+
+    function hudHtml() {
+        return `<div class="dl-hud" hidden aria-live="polite">
+            <div class="dl-row"><span class="dl-stage">CONNECTING</span><span class="dl-pct">0%</span></div>
+            <div class="dl-track"><span class="dl-fill"></span></div>
+            <div class="dl-row dl-stats"><span class="dl-speed">— MiB/s</span><span class="dl-done">0 / —</span><span class="dl-eta">ETA —</span></div>
+        </div>`;
+    }
+
+    /* Симуляция загрузки с HUD-прогрессом. Одна активная загрузка на проект. */
+    const Downloads = {
+        active: {},
+        /* Проверка доступа: true — можно качать; иначе показывает тост и уводит на вход / в кабинет */
+        guard(p) {
+            const s = Auth.get();
+            if (canDownload(p, s)) return true;
+            Sound.play("denied");
+            NX.storage.set("nx_pending_dl", p.id);
+            if (!s) {
+                toast(`${p.title}: нужен вход и допуск ${accessText(p)}. Перенаправляю на вход…`, "warn");
+                setTimeout(() => { window.location.href = "auth.html"; }, 1300);
+            } else {
+                toast(`${p.title}: требуется допуск ${accessText(p)} (у вас L${s.level}). Открываю кабинет…`, "warn");
+                setTimeout(() => { window.location.href = "dashboard.html#profile"; }, 1300);
+            }
+            return false;
+        },
+        cancel(id) {
+            const job = this.active[id];
+            if (job) job.cancelled = true;
+        },
+        /* btns — кнопки «Скачать» этого проекта, huds — блоки .dl-hud (карточка + модалка) */
+        async run(p, opts) {
+            opts = opts || {};
+            if (this.active[p.id]) { this.cancel(p.id); return; }
+            if (!this.guard(p)) return;
+            const job = { cancelled: false };
+            this.active[p.id] = job;
+            const huds = () => $$(`[data-hud="${p.id}"] .dl-hud`);
+            const btns = () => $$(`[data-dl="${p.id}"]`);
+            const setHud = (fn) => huds().forEach(fn);
+            const fast = reducedMotion();
+
+            btns().forEach(b => { b.classList.add("is-running"); b.innerHTML = `<img src="assets/icons/close.svg" alt="" width="16" height="16"><span>ОТМЕНИТЬ</span>`; });
+            setHud(h => { h.hidden = false; h.classList.remove("is-done", "is-cancel"); h.querySelector(".dl-fill").style.width = "0%"; });
+            const stage = (t) => setHud(h => { h.querySelector(".dl-stage").textContent = t; });
+            Sound.play("expand");
+            toast(`Загрузка начата: ${p.title} ${p.version}`);
+
+            stage("CONNECTING · cdn.nexus.dev");
+            await delay(fast ? 80 : randInt(500, 800));
+
+            // Скорость «канала»: маленькие файлы идут не быстрее ~2.5 с (чтобы прогресс был виден),
+            // большие сборки ускоряются (демо ×N), чтобы симуляция укладывалась в ~6 с
+            const minT = fast ? 0.4 : 2.5, maxT = fast ? 1.2 : 6;
+            const speedBase = Math.min(rand(42, 96), p.sizeMB / minT);
+            const accel = Math.max(1, p.sizeMB / (speedBase * maxT));
+            let done = 0, last = performance.now(), lastSound = 0;
+            stage(accel > 1.5 ? `DOWNLOADING · DEMO ×${Math.round(accel)}` : "DOWNLOADING");
+            while (done < p.sizeMB && !job.cancelled) {
+                await delay(120);
+                const now = performance.now();
+                const dt = (now - last) / 1000;
+                last = now;
+                const speed = speedBase * rand(0.75, 1.2);
+                done = Math.min(p.sizeMB, done + speed * dt * accel);
+                const pct = done / p.sizeMB * 100;
+                const eta = (p.sizeMB - done) / (speed * accel);
+                setHud(h => {
+                    h.querySelector(".dl-fill").style.width = pct.toFixed(1) + "%";
+                    h.querySelector(".dl-pct").textContent = Math.floor(pct) + "%";
+                    h.querySelector(".dl-speed").textContent = speed.toFixed(1) + " MiB/s";
+                    h.querySelector(".dl-done").textContent = `${formatSize(done)} / ${p.size}`;
+                    h.querySelector(".dl-eta").textContent = "ETA " + formatEta(eta);
+                });
+                if (now - lastSound > 450) { Sound.play("stdout"); lastSound = now; }
+            }
+
+            if (!job.cancelled) {
+                stage("VERIFYING SHA-256");
+                setHud(h => { h.querySelector(".dl-eta").textContent = "ETA 0с"; });
+                await delay(fast ? 80 : randInt(600, 900));
+            }
+
+            delete this.active[p.id];
+            btns().forEach(b => { b.classList.remove("is-running"); b.innerHTML = dlButtonInner(p, Auth.get()); });
+            document.dispatchEvent(new CustomEvent("nexus:dl-idle", { detail: { id: p.id } }));
+
+            if (job.cancelled) {
+                stage("CANCELLED");
+                setHud(h => h.classList.add("is-cancel"));
+                Sound.play("denied");
+                toast(`Загрузка отменена: ${p.title}`, "warn");
+                setTimeout(() => setHud(h => { if (h.classList.contains("is-cancel")) h.hidden = true; }), 2200);
+                return;
+            }
+
+            const sha = hashString(p.file + Date.now()).toString(16).padStart(8, "0");
+            stage(`COMPLETE · SHA ${sha}`);
+            setHud(h => {
+                h.classList.add("is-done");
+                h.querySelector(".dl-pct").textContent = "100%";
+                h.querySelector(".dl-done").textContent = p.file;
+            });
+            Sound.play("granted");
+            const s = Auth.get();
+            if (s) {
+                Auth.addDownload({ build: p.title, version: p.version, date: Date.now(), size: p.size, sha, status: "VERIFIED" });
+                NX.Syslog.add(`downloads: ${s.callsign} fetched ${p.title} ${p.version}`);
+            }
+            toast(`${p.title} ${p.version} загружена и проверена (демо). ${s ? "Запись добавлена в кабинет." : "Войдите, чтобы вести историю загрузок."}`, "ok", { ttl: 5000 });
+            if (typeof opts.onDone === "function") opts.onDone(sha);
+        }
+    };
 
     /* ================================================================
-     * Проекты
+     * Проекты — витрина загрузок
      * ================================================================ */
-    function canDownload(p, s) {
-        if (!s) return false;
-        const need = p.category === "ue5" ? 3 : 2;
-        return s.level >= need;
-    }
-
     function projectCard(p) {
+        const s = Auth.get();
         const wrap = document.createElement("div");
-        wrap.className = "card-wrap glow on-scroll";
-        wrap.setAttribute("data-category", p.category);
+        wrap.className = "pcard-wrap glow on-scroll";
+        wrap.setAttribute("data-status", p.status);
+        wrap.setAttribute("data-hud", p.id);
         wrap.id = "project-" + p.id;
-        const statusClass = p.status === "LIVE" ? " is-live" : (/PRE|DEV|PROGRESS/.test(p.status) ? " is-pre" : "");
         wrap.innerHTML = `
-            <article class="card aug-card project-card${p.flagship ? " is-flagship" : ""}" augmented-ui="tl-clip br-clip exe" aria-labelledby="ptitle-${p.id}">
-                <header class="card-head">
-                    <img src="assets/icons/${p.icon}.svg" alt="" width="34" height="34">
-                    <span class="card-id">${escapeHtml(p.code)}</span>
-                </header>
-                <div class="card-cat">
-                    <span>${escapeHtml(CATEGORIES[p.category])}</span>
-                    <span class="status-chip${statusClass}">${escapeHtml(p.status)}</span>
-                    ${p.flagship ? '<span class="flagship-ribbon">FLAGSHIP</span>' : ""}
+            <article class="pcard aug-card" augmented-ui="tl-clip br-clip exe" aria-labelledby="ptitle-${p.id}">
+                <div class="pcard-art art-${p.category}">
+                    ${projectArt(p)}
+                    <span class="art-icon"><img src="assets/icons/${p.icon}.svg" alt="" width="34" height="34"></span>
+                    <span class="art-code">${escapeHtml(p.code)}</span>
+                    <span class="art-cat">${escapeHtml(CATEGORIES[p.category])}</span>
                 </div>
-                <h3 id="ptitle-${p.id}">${escapeHtml(p.title)}</h3>
-                <p class="summary">${escapeHtml(p.summary)}</p>
-                ${progressHtml(p.progress, "READY")}
-                <div>
-                    <p class="sub-label">Tech stack</p>
-                    <ul class="chips">${p.stack.map(s => `<li>${escapeHtml(s)}</li>`).join("")}</ul>
+                <div class="pcard-body">
+                    ${badgeHtml(p)}
+                    <h3 id="ptitle-${p.id}">${escapeHtml(p.title)}</h3>
+                    <p class="summary">${escapeHtml(p.summary)}</p>
+                    <dl class="pmeta">
+                        <div><dt>Версия</dt><dd>${escapeHtml(p.version)}</dd></div>
+                        <div><dt>Размер</dt><dd>${escapeHtml(p.size)}</dd></div>
+                        <div><dt>Платформа</dt><dd>${escapeHtml(p.platform)}</dd></div>
+                    </dl>
+                    ${hudHtml()}
+                    <div class="pcard-actions">
+                        <button class="btn btn-primary btn-dl" type="button" data-dl="${p.id}">${dlButtonInner(p, s)}</button>
+                        <button class="btn btn-ghost" type="button" data-details="${p.id}"><img src="assets/icons/info.svg" alt="" width="16" height="16"><span>Подробнее</span></button>
+                    </div>
+                    <p class="pcard-access${canDownload(p, s) ? " is-ok" : ""}" data-access="${p.id}">${accessLine(p, s)}</p>
                 </div>
-                <div>
-                    <p class="sub-label">Ключевые механики</p>
-                    <ul class="mech-list">${p.mechanics.slice(0, 4).map(m => `<li>${escapeHtml(m)}</li>`).join("")}</ul>
-                </div>
-                <footer class="card-actions">
-                    <a class="btn" href="#dossier-${p.id}" data-dossier="${p.id}">
-                        <img src="assets/icons/archive.svg" alt="" width="18" height="18">
-                        ОТКРЫТЬ ДОСЬЕ
-                    </a>
-                </footer>
             </article>`;
         return wrap;
     }
 
-    function openDossier(id, fromHash) {
+    function accessLine(p, s) {
+        if (!p.access) return "Публичный релиз · вход не требуется";
+        if (canDownload(p, s)) return `Допуск подтверждён · ${accessText(p)}`;
+        return s ? `Нужен допуск ${accessText(p)} · у вас L${s.level}` : `Нужен вход · допуск ${accessText(p)}`;
+    }
+
+    function openDetails(id, fromHash) {
         const p = PROJECTS.find(x => x.id === id);
         if (!p) return false;
         const s = Auth.get();
-        const allowed = canDownload(p, s);
-        const b = p.build;
-        const statusClass = p.status === "LIVE" ? " is-live" : (/PRE|DEV|PROGRESS/.test(p.status) ? " is-pre" : "");
         const html = `
-            <div class="dossier-head">
-                <div>
-                    <p class="sub-label">${escapeHtml(p.code)} · ${escapeHtml(CATEGORIES[p.category])}</p>
-                    <p class="flagship-sub" style="margin:0">${escapeHtml(p.summary)}</p>
+            <div class="pd" data-hud="${p.id}">
+                <div class="pd-art pcard-art art-${p.category}">
+                    ${projectArt(p)}
+                    <span class="art-icon"><img src="assets/icons/${p.icon}.svg" alt="" width="40" height="40"></span>
+                    <span class="art-code">${escapeHtml(p.code)}</span>
+                    <span class="art-cat">${escapeHtml(CATEGORIES[p.category])}</span>
                 </div>
-                <span class="dossier-stamp${statusClass}">${escapeHtml(p.status)}</span>
-                ${progressHtml(p.progress, "READY", true)}
-            </div>
-            <div class="dossier-grid">
-                <div>
-                    <h5>Текущая сборка</h5>
-                    <table class="edex-table">
-                        <tbody>
-                            <tr><td>Версия</td><td>${escapeHtml(b.version)}</td></tr>
-                            <tr><td>Движок</td><td>${escapeHtml(b.engine)}</td></tr>
-                            <tr><td>Платформа</td><td>${escapeHtml(b.platform)}</td></tr>
-                            <tr><td>Дата сборки</td><td>${escapeHtml(b.date)}</td></tr>
-                            <tr><td>Размер</td><td>${escapeHtml(b.size)}</td></tr>
-                            <tr><td>Ветка</td><td>${escapeHtml(b.branch)}</td></tr>
-                        </tbody>
-                    </table>
+                <div class="pd-head">
+                    ${badgeHtml(p)}
+                    <p>${escapeHtml(p.summary)}</p>
                 </div>
-                <div>
-                    <h5>Ключевые механики</h5>
-                    <ul class="mech-list">${p.mechanics.map(m => `<li>${escapeHtml(m)}</li>`).join("")}</ul>
-                    <h5>Tech stack</h5>
-                    <ul class="chips">${p.stack.map(x => `<li>${escapeHtml(x)}</li>`).join("")}</ul>
+                <div class="pd-grid">
+                    <div>
+                        <h5>Сборка</h5>
+                        <table class="edex-table pd-table"><tbody>
+                            <tr><td>Версия</td><td>${escapeHtml(p.version)}</td></tr>
+                            <tr><td>Обновлено</td><td>${escapeHtml(p.updated)}</td></tr>
+                            <tr><td>Размер</td><td>${escapeHtml(p.size)}</td></tr>
+                            <tr><td>Платформа</td><td>${escapeHtml(p.platform)}</td></tr>
+                            <tr><td>Файл</td><td class="pd-file">${escapeHtml(p.file)}</td></tr>
+                            <tr><td>Допуск</td><td>${escapeHtml(accessText(p))}</td></tr>
+                        </tbody></table>
+                        <h5>Требования</h5>
+                        <p>${escapeHtml(p.requirements)}</p>
+                    </div>
+                    <div>
+                        <h5>Patch notes</h5>
+                        ${p.notes.map(n => `
+                            <div class="pd-note">
+                                <p class="pd-note-head"><b>v${escapeHtml(n.version)}</b><span>${escapeHtml(n.date)}</span></p>
+                                <ul class="log">${n.items.map(i => `<li>${escapeHtml(i)}</li>`).join("")}</ul>
+                            </div>`).join("")}
+                    </div>
                 </div>
-                <div class="full">
-                    <h5>Описание сборки</h5>
-                    <p>${escapeHtml(p.description)}</p>
-                    ${p.faction ? `<p><b>Фракция:</b> ${escapeHtml(p.faction)}</p>` : ""}
-                </div>
-                <div>
-                    <h5>Changelog</h5>
-                    <ul class="log">${p.changelog.map(c => `<li>${escapeHtml(c)}</li>`).join("")}</ul>
-                </div>
-                <div>
-                    <h5>Известные проблемы</h5>
-                    <ul class="log">${p.issues.map(c => `<li>${escapeHtml(c)}</li>`).join("")}</ul>
-                </div>
-                <div class="full">
-                    <p class="dossier-lock">${allowed
-                        ? `Допуск подтверждён: LEVEL ${s.level} // ${escapeHtml(Auth.levelName(s.level))}. Сборка доступна в кабинете.`
-                        : (s ? `Для загрузки нужен уровень допуска ${p.category === "ue5" ? "3 (PLAYTESTER)" : "2 (MEMBER)"}. Ваш уровень: ${s.level}.`
-                            : "Загрузка сборок доступна после входа. Демо-доступ: страница входа → DEMO ACCESS.")}</p>
+                ${hudHtml()}
+                <p class="pcard-access${canDownload(p, s) ? " is-ok" : ""}">${accessLine(p, s)}</p>
+                <div class="pd-actions">
+                    <button class="btn btn-primary btn-dl" type="button" data-dl="${p.id}">${dlButtonInner(p, s)}</button>
                 </div>
             </div>`;
-        const buttons = [];
-        if (allowed) {
-            buttons.push({
-                label: "Скачать сборку", primary: true, action: () => {
-                    queueDownload(p);
-                    window.location.href = "dashboard.html#profile";
-                }
-            });
-        } else {
-            buttons.push({ label: s ? "Открыть кабинет" : "Войти для загрузки", primary: true, href: s ? "dashboard.html" : "auth.html" });
-        }
-        Modal.open({
+        const modal = Modal.open({
             title: escapeHtml(p.title),
-            subtitle: "ДОСЬЕ // " + escapeHtml(p.code),
+            subtitle: escapeHtml(p.code) + " · v" + escapeHtml(p.version),
             html,
-            className: "dossier",
-            buttons,
+            className: "pd-modal",
             onClose: () => {
-                if (window.location.hash === "#dossier-" + p.id && window.history.replaceState) {
+                const h = window.location.hash;
+                if ((h === "#" + p.id || h === "#dossier-" + p.id) && window.history.replaceState) {
                     window.history.replaceState(null, "", window.location.pathname + window.location.search);
                 }
             }
         });
-        initProgressBars($(".modal_popup.dossier"));
-        if (!fromHash && window.history.replaceState) {
-            window.history.replaceState(null, "", "#dossier-" + p.id);
+        // Если загрузка уже идёт — показать её состояние в модалке
+        if (Downloads.active[p.id]) {
+            const b = $(`[data-dl="${p.id}"]`, modal);
+            if (b) { b.classList.add("is-running"); b.innerHTML = `<img src="assets/icons/close.svg" alt="" width="16" height="16"><span>ОТМЕНИТЬ</span>`; }
+            const cardHud = $(`#project-${p.id} .dl-hud`);
+            const hud = $(".dl-hud", modal);
+            if (cardHud && hud) { hud.outerHTML = cardHud.outerHTML; }
         }
+        if (!fromHash && window.history.replaceState) window.history.replaceState(null, "", "#" + p.id);
         return true;
-    }
-
-    /* Загрузка, поставленная в очередь из досье, — выполнится в кабинете */
-    function queueDownload(p) {
-        NX.storage.set("nx_pending_dl", p.id);
     }
 
     function initProjects() {
@@ -291,76 +423,102 @@
         const info = $("#filter-info");
         if (!grid) return;
 
-        grid.innerHTML = "";
-        PROJECTS.forEach(p => grid.appendChild(projectCard(p)));
-        observeReveal(grid);
-        initProgressBars(grid);
+        const render = () => {
+            grid.innerHTML = "";
+            PROJECTS.forEach(p => grid.appendChild(projectCard(p)));
+            observeReveal(grid);
+        };
+        render();
 
         const counts = { all: PROJECTS.length };
-        PROJECTS.forEach(p => { counts[p.category] = (counts[p.category] || 0) + 1; });
+        PROJECTS.forEach(p => { counts[p.status] = (counts[p.status] || 0) + 1; });
         tabs.forEach(t => {
             const c = t.querySelector(".count");
             if (c) c.textContent = String(counts[t.getAttribute("data-filter")] || 0);
         });
 
+        let current = "all";
         const apply = (filter, silent) => {
+            current = filter;
             let shown = 0;
             tabs.forEach(t => {
                 const on = t.getAttribute("data-filter") === filter;
                 t.setAttribute("aria-pressed", String(on));
                 t.parentElement.classList.toggle("active", on);
             });
-            $$(".card-wrap", grid).forEach(card => {
-                const match = filter === "all" || card.getAttribute("data-category") === filter;
+            $$(".pcard-wrap", grid).forEach(card => {
+                const match = filter === "all" || card.getAttribute("data-status") === filter;
                 if (match) {
                     const wasHidden = card.hidden;
                     card.hidden = false;
                     shown++;
+                    card.classList.add("is-visible");
                     if (wasHidden && !reducedMotion()) {
                         card.classList.remove("is-entering");
                         void card.offsetWidth;
                         card.classList.add("is-entering");
                     }
-                    card.classList.add("is-visible");
                 } else {
                     card.hidden = true;
                 }
             });
-            if (info) {
-                info.textContent = `> ls /projects${filter === "all" ? "" : "/" + filter} — ${shown} записей`;
-            }
-            initProgressBars(grid);
+            if (info) info.textContent = `${shown} ${shown === 1 ? "сборка" : shown < 5 && shown > 0 ? "сборки" : "сборок"}`;
             if (!silent) Sound.play("folder");
-            NX.storage.set("nx_filter", filter);
+            NX.storage.set("nx_filter2", filter);
         };
 
-        tabs.forEach(t => t.addEventListener("click", () => apply(t.getAttribute("data-filter"))));
+        tabs.forEach(t => t.addEventListener("click", () => {
+            if (t.getAttribute("data-filter") === current) return;
+            grid.classList.add("is-filtering");
+            setTimeout(() => { apply(t.getAttribute("data-filter")); grid.classList.remove("is-filtering"); }, reducedMotion() ? 0 : 140);
+        }));
 
-        grid.addEventListener("click", e => {
-            const btn = e.target.closest("[data-dossier]");
-            if (!btn) return;
-            e.preventDefault();
-            openDossier(btn.getAttribute("data-dossier"));
+        // Кнопки «Скачать» и «Подробнее» — и в карточках, и в модалке
+        document.addEventListener("click", e => {
+            const dl = e.target.closest("[data-dl]");
+            if (dl) {
+                const p = PROJECTS.find(x => x.id === dl.getAttribute("data-dl"));
+                if (p) Downloads.run(p);
+                return;
+            }
+            const det = e.target.closest("[data-details]");
+            if (det) openDetails(det.getAttribute("data-details"));
         });
 
+        // Вход / выход в другой вкладке — перерисовать допуск
+        // Если в момент входа/выхода идёт загрузка — перерисуем, когда она закончится
+        let stale = false;
+        const refresh = () => {
+            if (Object.keys(Downloads.active).length) { stale = true; return; }
+            stale = false;
+            render();
+            apply(current, true);
+        };
+        document.addEventListener("nexus:auth", refresh);
+        document.addEventListener("nexus:dl-idle", () => { if (stale) setTimeout(refresh, 2500); });
+
         const fromHash = () => {
-            const h = window.location.hash.replace("#", "");
-            if (h.indexOf("dossier-") === 0) {
-                const id = h.slice(8);
-                const p = PROJECTS.find(x => x.id === id);
-                if (p) {
-                    const card = document.getElementById("project-" + id);
-                    if (card) card.scrollIntoView({ block: "center" });
-                    openDossier(id, true);
-                }
-            } else if (h.indexOf("filter-") === 0) {
+            let h = decodeURIComponent(window.location.hash.replace("#", ""));
+            if (h.indexOf("dossier-") === 0) h = h.slice(8);
+            if (h === "nexuscraft") h = "modpack";
+            if (h.indexOf("filter-") === 0) {
                 const f = h.slice(7);
-                if (f === "all" || CATEGORIES[f]) apply(f, true);
+                if (f === "all" || STATUSES[f]) apply(f, true);
+                return;
+            }
+            const p = PROJECTS.find(x => x.id === h);
+            if (p) {
+                const card = document.getElementById("project-" + p.id);
+                if (card) {
+                    if (card.hidden) apply("all", true);
+                    card.scrollIntoView({ block: "center" });
+                }
+                openDetails(p.id, true);
             }
         };
 
-        const saved = NX.storage.get("nx_filter", "all");
-        apply(saved === "all" || CATEGORIES[saved] ? saved : "all", true);
+        const saved = NX.storage.get("nx_filter2", "all");
+        apply(saved === "all" || STATUSES[saved] ? saved : "all", true);
         window.addEventListener("hashchange", fromHash);
         setTimeout(fromHash, 60);
     }
@@ -377,13 +535,8 @@
         { name: "Dev-сборки и плагин TRENCHWORKS", level: 4 }
     ];
 
-    const BUILDS = [
-        { id: "fortify", name: "FORTIFY MOD", level: 2 },
-        { id: "nexuscraft", name: "NEXUS CRAFT modpack", level: 2 },
-        { id: "nexustech", name: "NEXUS TECH (dev)", level: 2 },
-        { id: "bastion", name: "BASTION: LINE ZERO", level: 3 },
-        { id: "trenchworks", name: "TRENCHWORKS plugin", level: 4 }
-    ];
+    /* Сборки в кабинете — те же проекты, что и в центре загрузок */
+    const BUILDS = PROJECTS;
 
     function initDashboard() {
         const lock = $("#dash-lock");
@@ -403,6 +556,7 @@
                 await showBanner("ACCESS GRANTED", { sub: "DEMO ACCESS · LEVEL 3 // PLAYTESTER" });
                 demoBtn.classList.remove("is-busy");
                 start();
+                toast("Демо-доступ активирован: LEVEL 3 // PLAYTESTER", "ok");
             });
         }
 
@@ -412,6 +566,10 @@
             if (!s) { showLocked(); return; }
             lock.hidden = true;
             app.hidden = false;
+            if (NX.storage.sessionGet("nx_welcome")) {
+                try { window.sessionStorage.removeItem("nx_welcome"); } catch (e) { /* ignore */ }
+                setTimeout(() => toast(`Добро пожаловать, ${s.callsign}! Допуск: LEVEL ${s.level} // ${Auth.levelName(s.level)}`, "ok", { ttl: 4500 }), 350);
+            }
             if (started) { renderProfile(); return; }
             started = true;
             renderProfile();
@@ -433,9 +591,18 @@
             const pending = NX.storage.get("nx_pending_dl", null);
             if (pending) {
                 NX.storage.remove("nx_pending_dl");
-                const b = BUILDS.find(x => x.id === pending);
-                const btn = b && $(`[data-build="${b.id}"]`);
-                if (btn) setTimeout(() => btn.click(), 500);
+                const p = BUILDS.find(x => x.id === pending);
+                if (p && canDownload(p, Auth.get())) {
+                    Tabs.byId("dtab-profile");
+                    setTimeout(() => {
+                        const row = $(`#build-list [data-hud="${p.id}"]`);
+                        if (row) row.scrollIntoView({ block: "center" });
+                        toast(`Допуск подтверждён — запускаю загрузку ${p.title}`, "ok");
+                        Downloads.run(p, { onDone: () => renderDownloads(true) });
+                    }, 600);
+                } else if (p) {
+                    toast(`${p.title}: требуется допуск ${accessText(p)}. Получите код доступа у команды проекта.`, "warn", { ttl: 5000 });
+                }
             }
         };
 
@@ -507,47 +674,34 @@
         const render = () => {
             const s = Auth.get();
             if (!s) return;
-            wrap.innerHTML = BUILDS.map(b => {
-                const p = PROJECTS.find(x => x.id === b.id);
-                const ok = s.level >= b.level;
-                return `<tr>
-                    <td data-label="Сборка"><b>${escapeHtml(b.name)}</b><br><span class="muted">${escapeHtml(p.build.version)}</span></td>
-                    <td data-label="Размер">${escapeHtml(p.build.size)}</td>
-                    <td data-label="Допуск">L${b.level}</td>
+            wrap.innerHTML = BUILDS.map(p => {
+                const ok = canDownload(p, s);
+                return `<tr data-hud="${p.id}">
+                    <td data-label="Сборка" class="build-cell"><span class="build-name"><b>${escapeHtml(p.title)}</b><br><span class="muted">${escapeHtml(p.version)} · ${escapeHtml(STATUSES[p.status].short)}</span></span>${hudHtml()}</td>
+                    <td data-label="Размер">${escapeHtml(p.size)}</td>
+                    <td data-label="Допуск">${p.access ? "L" + p.access : "—"}</td>
                     <td data-label="Действие">${ok
-                        ? `<button class="btn btn-sm" type="button" data-build="${b.id}"><img src="assets/icons/upload.svg" alt="" width="14" height="14" style="transform:rotate(180deg)">Скачать</button>`
+                        ? `<button class="btn btn-sm btn-dl" type="button" data-dl="${p.id}">${ICON_DOWNLOAD}<span>Скачать</span></button>`
                         : `<span class="access-no">LOCKED</span>`}</td>
                 </tr>`;
             }).join("");
         };
         render();
+        let stale = false;
+        const refresh = () => {
+            if (Object.keys(Downloads.active).length) { stale = true; return; }
+            stale = false;
+            render();
+        };
+        document.addEventListener("nexus:auth", refresh);
+        document.addEventListener("nexus:dl-idle", () => { if (stale) setTimeout(refresh, 2500); });
 
-        wrap.addEventListener("click", async e => {
-            const btn = e.target.closest("[data-build]");
-            if (!btn || btn.classList.contains("is-busy")) return;
-            const b = BUILDS.find(x => x.id === btn.getAttribute("data-build"));
-            const p = PROJECTS.find(x => x.id === b.id);
-            const s = Auth.get();
-            if (!s || s.level < b.level) { Sound.play("denied"); toast("ACCESS DENIED: недостаточный уровень допуска", "warn"); return; }
-            btn.classList.add("is-busy");
-            Sound.play("expand");
-            const label = btn.lastChild;
-            for (let pct = 0; pct <= 100; pct += randInt(9, 22)) {
-                label.textContent = ` ${Math.min(99, pct)}%`;
-                Sound.play("stdout");
-                await delay(reducedMotion() ? 30 : randInt(120, 260));
-            }
-            label.textContent = " Проверка SHA…";
-            await delay(reducedMotion() ? 50 : 500);
-            const sha = (hashString(p.build.version + Date.now()) >>> 0).toString(16).padStart(8, "0");
-            Auth.addDownload({ build: p.title, version: p.build.version, date: Date.now(), size: p.build.size, sha, status: "VERIFIED" });
-            renderDownloads(true);
-            btn.classList.remove("is-busy");
-            label.textContent = " Готово";
-            Sound.play("granted");
-            toast(`${p.title} ${p.build.version}: загрузка завершена (демо), SHA ${sha}`, "ok");
-            NX.Syslog.add(`downloads: ${Auth.get().callsign} fetched ${p.title} ${p.build.version}`);
-            setTimeout(() => { label.textContent = "Скачать"; }, 2200);
+        wrap.addEventListener("click", e => {
+            const btn = e.target.closest("[data-dl]");
+            if (!btn) return;
+            const p = BUILDS.find(x => x.id === btn.getAttribute("data-dl"));
+            if (!p) return;
+            Downloads.run(p, { onDone: () => renderDownloads(true) });
         });
     }
 
@@ -805,6 +959,83 @@
         actionLog.add(`${Auth.get() ? Auth.get().callsign : "guest"}: tail logs ${n.id}`);
     }
 
+    /* ----- Цветовые схемы eDEX-UI (вкладка «Настройки HUD») ----- */
+    function initThemePicker() {
+        const grid = $("#theme-grid");
+        const Theme = NX.Theme, THEMES = NX.THEMES;
+        if (!grid || !Theme || !THEMES) return;
+        const label = $("#theme-current");
+
+        const palette = t => {
+            const list = [`rgb(${t.r}, ${t.g}, ${t.b})`, t.light_black, t.grey, t.black, t.term.fg, t.term.cursor];
+            if (t.ansi) Object.keys(t.ansi).forEach(k => list.push(t.ansi[k]));
+            const seen = new Set();
+            return list.filter(c => {
+                const key = String(c).toLowerCase().replace(/\s+/g, "");
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            }).slice(0, 9);
+        };
+
+        grid.innerHTML = Theme.list().map(id => {
+            const t = THEMES[id];
+            const accent = `rgb(${t.r}, ${t.g}, ${t.b})`;
+            const style = `--t-accent:${accent};--t-bg:${t.light_black};--t-grey:${t.grey};--t-fg:${t.term.fg}`;
+            const sw = palette(t).map(c => `<i style="background:${c}"></i>`).join("");
+            return `<button type="button" class="theme-card${t.variant ? " is-variant" : ""}" role="radio" aria-checked="false"
+                        data-theme-id="${id}" style="${style}" title="theme ${id}">
+                    <span class="theme-prev" aria-hidden="true">
+                        <span class="tp-head"><b></b><b></b><b></b></span>
+                        <span class="tp-title">${escapeHtml(t.label.split(" · ")[0])}</span>
+                        <span class="tp-line"></span><span class="tp-line tp-short"></span>
+                        <span class="tp-btn"></span>
+                    </span>
+                    <span class="theme-swatches" aria-hidden="true">${sw}</span>
+                    <span class="theme-name">${escapeHtml(t.label)}</span>
+                    <span class="theme-desc">${escapeHtml(t.variant ? "вариант: " + t.variant : t.desc)}</span>
+                    <span class="theme-badge">АКТИВНА</span>
+                </button>`;
+        }).join("");
+
+        const sync = () => {
+            const cur = Theme.current();
+            $$(".theme-card", grid).forEach(card => {
+                const on = card.getAttribute("data-theme-id") === cur;
+                card.classList.toggle("is-active", on);
+                card.setAttribute("aria-checked", on ? "true" : "false");
+                card.tabIndex = on ? 0 : -1;
+            });
+            if (label) label.textContent = THEMES[cur].label;
+        };
+        sync();
+
+        grid.addEventListener("click", e => {
+            const card = e.target.closest(".theme-card");
+            if (!card) return;
+            const id = card.getAttribute("data-theme-id");
+            if (id === Theme.current()) { Sound.play("folder"); return; }
+            Theme.set(id);
+            card.classList.remove("is-picked");
+            void card.offsetWidth;
+            card.classList.add("is-picked");
+            toast(`Тема интерфейса: ${THEMES[id].label}`, "ok");
+        });
+        // Клавиатура: стрелки внутри radiogroup
+        grid.addEventListener("keydown", e => {
+            const keys = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+            if (!(e.key in keys)) return;
+            const cards = $$(".theme-card", grid);
+            const i = cards.indexOf(document.activeElement);
+            if (i < 0) return;
+            e.preventDefault();
+            const next = cards[(i + keys[e.key] + cards.length) % cards.length];
+            next.focus();
+            next.click();
+        });
+        document.addEventListener("nexus:theme", sync);
+    }
+
     /* ----- Настройки HUD ----- */
     function initSettingsPanel() {
         const map = {
@@ -829,24 +1060,25 @@
             const el = document.getElementById(id);
             if (!el) return;
             el.addEventListener("change", () => {
-                if (map[id] === "sfx") Sound.set(el.checked);
-                else Settings.set(map[id], el.checked);
+                if (map[id] === "sfx") { Sound.set(el.checked); return; }
+                Settings.set(map[id], el.checked);
                 Sound.play("folder");
-                toast(`HUD: ${el.getAttribute("data-name")} — ${el.checked ? "ON" : "OFF"}`);
+                toast(`HUD: ${el.getAttribute("data-name")} — ${el.checked ? "ON" : "OFF"}`, "ok");
             });
         });
         const scale = document.getElementById("set-scale");
         if (scale) scale.addEventListener("change", () => {
             Settings.set("scale", scale.value);
             Sound.play("folder");
-            toast(`HUD: масштаб — ${scale.options[scale.selectedIndex].text}`);
+            toast(`HUD: масштаб — ${scale.options[scale.selectedIndex].text}`, "ok");
         });
         const reset = document.getElementById("set-reset");
         if (reset) reset.addEventListener("click", () => {
             Settings.reset();
             Sound.syncUI();
             sync();
-            toast("Настройки HUD сброшены");
+            Sound.play("panels");
+            toast("Настройки HUD сброшены к значениям по умолчанию", "ok");
         });
         const replay = document.getElementById("set-replay");
         if (replay) replay.addEventListener("click", () => {
@@ -855,6 +1087,7 @@
             window.location.href = "index.html";
         });
         document.addEventListener("nexus:settings", sync);
+        initThemePicker();
 
         const avatarBtn = $("#avatar-regen");
         if (avatarBtn) avatarBtn.addEventListener("click", () => {
@@ -863,6 +1096,7 @@
             Auth.update({ avatarSeed: (s.avatarSeed || 0) + 1 });
             renderProfile();
             Sound.play("granted");
+            toast("Аватар перегенерирован", "ok");
         });
     }
 
@@ -1021,6 +1255,7 @@
             await step(`clearance LEVEL ${opts.level} // ${Auth.levelName(opts.level)}`);
             vlog("session token issued (stored locally, demo mode)");
             Auth.login({ callsign: opts.callsign, email: opts.email, level: opts.level, remember: opts.remember, demo: opts.demo, registered: opts.register ? Date.now() : undefined });
+            NX.storage.sessionSet("nx_welcome", "1");
             await showBanner("ACCESS GRANTED", { keep: true, sub: `${opts.callsign.toUpperCase()} · LEVEL ${opts.level} — переход в кабинет…` });
             await delay(fast ? 150 : 650);
             window.location.href = "dashboard.html";
@@ -1120,11 +1355,14 @@
      * Старт
      * ================================================================ */
     initServerBindings();
-    initProgressBars();
-    if (PAGE === "home") initHome();
     if (PAGE === "projects") initProjects();
     if (PAGE === "dashboard") { initDashboard(); initSessionClock(); }
     if (PAGE === "auth") initAuth();
 
-    NX.Pages = { openDossier, drawAvatar };
+    // Смена цветовой схемы: перерисовать canvas-аватары (они рисуются один раз)
+    document.addEventListener("nexus:theme", () => {
+        $$("canvas[data-avatar-seed]").forEach(c => drawAvatar(c, c.getAttribute("data-avatar-seed")));
+    });
+
+    NX.Pages = { openDetails, drawAvatar, Downloads };
 })();

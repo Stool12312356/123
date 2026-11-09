@@ -61,6 +61,18 @@
     /* modal.css: error / warning */
     --color_red: red;
     --color_yellow: yellow;
+    /* Производные темы (выставляются Theme.paint() из js/ui-effects.js для любой схемы).
+       Здесь — значения blade для работы без JS. */
+    --bg_rgb: 9, 11, 10;            /* light_black тройкой — для полупрозрачных подложек */
+    --black_rgb: 0, 0, 0;           /* black тройкой — для затемнений внутри панелей */
+    --color_err: var(--color_err);           /* ошибки / отказ */
+    --term_fg: rgb(204, 94, 55);    /* terminal.foreground */
+    --term_bg: #090B0A;             /* terminal.background */
+    --term_cursor: rgb(204, 94, 55);/* terminal.cursor */
+    --term_font: "Fira Mono", monospace; /* terminal.fontFamily */
+    --term_filter: none;            /* terminal.colorFilter (tron-colorfilter) */
+    --icon_filter: brightness(1);   /* перекраска иконок assets/icons (#cc5e37) в цвет темы */
+    --icon_filter_bg: brightness(0);/* иконки на залитых цветом темы кнопках */
 
     /* cssvars + terminal.fontFamily */
     /* United Sans не содержит кириллицы — для неё задан близкий по духу
@@ -81,7 +93,7 @@
     --c-30: rgba(var(--color_r), var(--color_g), var(--color_b), 0.3);
     --c-20: rgba(var(--color_r), var(--color_g), var(--color_b), 0.2);
     --c-10: rgba(var(--color_r), var(--color_g), var(--color_b), 0.1);
-    --selection: rgba(204, 94, 55, 0.3);
+    --selection: rgba(var(--color_r), var(--color_g), var(--color_b), 0.3);
 
     /* Базовая единица: 1vh оригинала при 1080p */
     --u: 10.8px;
@@ -141,6 +153,18 @@ body.solidBackground {
 }
 
 body.is-booting {
+    overflow: hidden;
+}
+/* Полная загрузка (Boot): страница под экраном загрузки скрыта целиком —
+   ни шапка, ни hero не должны просвечивать и ловить фокус/клики. */
+body.is-boot-full > :not(#boot_screen):not(.boot_skip):not(script),
+html.boot-pending body > * {
+    visibility: hidden;
+}
+/* boot-pending ставится инлайн-скриптом в <head> ещё до первой отрисовки:
+   до старта Boot страница не должна мелькать */
+html.boot-pending body {
+    background: var(--color_light_black);
     overflow: hidden;
 }
 
@@ -309,7 +333,7 @@ svg {
     --aug-border-bg: rgb(var(--color_r), var(--color_g), var(--color_b));
     --aug-border-opacity: 0.5;
     --aug-inset: 0px;
-    --aug-inset-bg: rgba(9, 11, 10, 0.92);
+    --aug-inset-bg: rgba(var(--bg_rgb), 0.92);
 }
 
 .aug-frame.is-solid {
@@ -321,7 +345,7 @@ svg {
     --aug-border-bg: rgb(var(--color_r), var(--color_g), var(--color_b));
     --aug-border-opacity: 0.55;
     --aug-inset: 0px;
-    --aug-inset-bg: rgba(9, 11, 10, 0.9);
+    --aug-inset-bg: rgba(var(--bg_rgb), 0.9);
     --aug-tl: 14px;
     --aug-br: 14px;
 }
@@ -435,8 +459,13 @@ svg {
     height: 1.1em;
     flex: none;
 }
+/* Иконки assets/icons нарисованы цветом blade (#cc5e37) — в других схемах
+   перекрашиваются CSS-фильтром, рассчитанным для каждой темы (THEMES.iconFilter) */
+img[src*="assets/icons/"] {
+    filter: var(--icon_filter);
+}
 .btn.btn-primary img {
-    filter: brightness(0);
+    filter: var(--icon_filter_bg);
 }
 
 /* ============ Экран загрузки (boot_screen.css) ============ */
@@ -459,12 +488,18 @@ svg {
     word-break: break-word;
     background: var(--color_light_black);
 }
-body:not(.solidBackground) #boot_screen.center {
-    background: transparent;
-}
 #boot_screen.center {
     align-items: center;
     justify-content: center;
+}
+/* В оригинале на этапе логотипа фон экрана то становится прозрачным, то снова
+   чёрным (окно Electron под ним пустое). На сайте под ним уже лежит страница,
+   и это выглядело как «чёрный экран пропал → появилась страница → вернулся».
+   Поэтому фон экрана загрузки всегда сплошной, до самого конца. */
+#boot_screen.is-leaving {
+    opacity: 0;
+    transition: opacity 0.28s linear;
+    pointer-events: none;
 }
 #boot_screen .boot_log {
     width: 100%;

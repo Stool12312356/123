@@ -3,19 +3,19 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Вход / Регистрация — NEXUS//DEV</title>
-    <meta name="description" content="Вход и регистрация NEXUS ID — единый аккаунт для портала NEXUS//DEV, серверов Minecraft и плейтестов BASTION.">
+    <title>Вход и регистрация — NEXUS//DEV</title>
+    <meta name="description" content="Вход и регистрация NEXUS ID — единый аккаунт экосистемы NEXUS//DEV.">
     <meta name="theme-color" content="#090B0A">
     <link rel="icon" type="image/svg+xml" href="assets/icons/terminal.svg">
 
     <!-- Зависимость оригинального eDEX-UI: augmented-ui 1.1.2 (BSD-2-Clause) — скошенные рамки -->
     <link rel="stylesheet" href="assets/vendor/augmented-ui/augmented.css">
     <!-- Тема blade, перенесённая из eDEX-UI -->
-    <link rel="stylesheet" href="css/blade-theme.css">
-    <!-- Адаптивная сетка сайта -->
-    <link rel="stylesheet" href="css/layout.css">
-    <!-- Компоненты страниц NEXUS//DEV (формы, карточки проектов, кабинет) -->
-    <link rel="stylesheet" href="css/pages.css">
+    <link rel="stylesheet" href="css/blade-theme.css?v=20261109-7">
+    <!-- Адаптивная сетка: шапка, подвал, модули, терминал -->
+    <link rel="stylesheet" href="css/layout.css?v=20261109-7">
+    <!-- Компоненты страниц: главная, каталог, формы, кабинет, тосты -->
+    <link rel="stylesheet" href="css/pages.css?v=20261109-7">
 
     <script>
         /* Ранняя инициализация: класс js и сохранённые настройки HUD (без мигания) */
@@ -29,6 +29,15 @@
                 if (s.glow === false) d.classList.add("hud-no-glow");
                 if (s.motion === false) d.classList.add("hud-reduced");
                 if (s.scale && s.scale !== "normal") d.setAttribute("data-hud-scale", s.scale);
+                /* Цветовая схема (nx_settings.theme): кэш CSS-переменных темы из ui-effects.js */
+                if (s.theme && s.theme !== "blade" && s.themeVars && typeof s.themeVars === "object") {
+                    for (var k in s.themeVars) {
+                        if (k.indexOf("--") === 0) d.style.setProperty(k, s.themeVars[k]);
+                    }
+                    d.style.colorScheme = s.themeVars["color-scheme"] || "dark";
+                    if (s.themeVars["color-scheme"] === "light") d.classList.add("theme-light");
+                    d.setAttribute("data-theme", s.theme);
+                }
             } catch (e) { /* localStorage недоступен */ }
         })();
     </script>
@@ -36,7 +45,7 @@
 <body data-page="auth">
     <a class="skip-link" href="#main">Перейти к содержимому</a>
 
-    <!-- ===================== ШАПКА ===================== -->
+    <!-- ===================== ШАПКА (общая для всех страниц) ===================== -->
     <header class="site-header" id="top">
         <div class="container header-inner">
             <a class="brand" href="index.html" aria-label="NEXUS//DEV — на главную">
@@ -46,18 +55,21 @@
 
             <nav class="site-nav" id="site-nav" aria-label="Основная навигация">
                 <ul class="skew-tabs nav-tabs">
-                    <li><a href="index.html" data-nav="home">Главная</a></li>
-                    <li><a href="projects.html" data-nav="projects">Проекты</a></li>
-                    <li><a href="dashboard.html" data-nav="dashboard">Кабинет</a></li>
-                    <li class="active"><a href="auth.html" data-nav="auth" aria-current="page">Вход / Регистрация</a></li>
+                    <li><a href="index.html" data-nav="home"><img src="assets/icons/home.svg" alt="" width="16" height="16">Главная</a></li>
+                    <li><a href="projects.html" data-nav="projects"><img src="assets/icons/portfolio.svg" alt="" width="16" height="16">Проекты</a></li>
+                    <li><a href="dashboard.html" data-nav="dashboard"><img src="assets/icons/user.svg" alt="" width="16" height="16">Кабинет</a></li>
+                    <li class="active"><a href="auth.html" data-nav="auth" aria-current="page"><img src="assets/icons/sign-in.svg" alt="" width="16" height="16">Вход</a></li>
                 </ul>
             </nav>
 
             <div class="header-tools">
-                <button class="tool-btn" id="sound-toggle" type="button" aria-pressed="false" title="Звуковые эффекты eDEX-UI">
+                <button class="tool-btn term-btn" type="button" data-terminal aria-expanded="false" aria-label="Терминал (клавиша ~)" title="Терминал [~]">
+                    <img src="assets/icons/shell.svg" alt="" width="18" height="18">
+                </button>
+                <button class="tool-btn" id="sound-toggle" type="button" aria-pressed="true" title="Звуковые эффекты eDEX-UI">
                     <img class="icon-off" src="assets/icons/mute.svg" alt="" width="18" height="18">
                     <img class="icon-on" src="assets/icons/volume.svg" alt="" width="18" height="18">
-                    <span class="tool-label">SFX <b id="sound-state">OFF</b></span>
+                    <span class="tool-label">SFX <b id="sound-state">ON</b></span>
                 </button>
                 <button class="tool-btn menu-toggle" id="menu-toggle" type="button" aria-controls="site-nav" aria-expanded="false" aria-label="Открыть меню">
                     <img class="icon-menu" src="assets/icons/menu.svg" alt="" width="20" height="20">
@@ -67,10 +79,11 @@
         </div>
 
         <div class="container header-status">
-            <p><span class="dot" id="uplink-dot" aria-hidden="true"></span>UPLINK: <b id="uplink-state">ONLINE</b></p>
-            <p class="hide-sm">SERVERS: <b id="header-servers">-/-</b></p>
-            <p>USER: <b id="header-user">GUEST</b></p>
-            <p><b id="header-clock">--:--:--</b> <span class="hide-sm">UTC<span id="header-tz">+0</span></span></p>
+            <p data-sum-state><span class="dot" id="uplink-dot" aria-hidden="true"></span><b data-sum="state">SYSTEM ONLINE</b></p>
+            <p class="hide-sm">SERVERS <b id="header-servers">-/-</b></p>
+            <p class="hide-sm">RELEASES <b data-sum="releases">3</b></p>
+            <p>USER <b id="header-user">GUEST</b></p>
+            <p class="hide-xs"><b id="header-clock">--:--:--</b></p>
         </div>
     </header>
 
@@ -245,7 +258,7 @@
         </section>
     </main>
 
-    <!-- ===================== ПОДВАЛ ===================== -->
+    <!-- ===================== ПОДВАЛ (общий для всех страниц) ===================== -->
     <footer class="site-footer">
         <div class="container">
             <h2 class="panel-title"><span>NEXUS//DEV</span><span>EOF</span></h2>
@@ -255,7 +268,7 @@
                         <img src="assets/icons/terminal.svg" alt="" width="22" height="22">
                         <span class="brand-name">NEXUS<em>//</em>DEV</span>
                     </p>
-                    <p>Некоммерческий портал инди-разработки: тактическая RTS BASTION: LINE ZERO на Unreal Engine 5, серверы Minecraft NEXUS CRAFT и собственные моды.</p>
+                    <p>Ядро некоммерческой экосистемы инди-проектов: один аккаунт, центр загрузок, доступ к тестам и серверам.</p>
                 </div>
                 <nav class="footer-col" aria-label="Навигация в подвале">
                     <h3>Навигация</h3>
@@ -263,16 +276,16 @@
                         <li><a href="index.html">Главная</a></li>
                         <li><a href="projects.html">Проекты</a></li>
                         <li><a href="dashboard.html">Кабинет</a></li>
-                        <li><a href="auth.html">Вход / Регистрация</a></li>
+                        <li><a href="auth.html">Вход</a></li>
                     </ul>
                 </nav>
                 <div class="footer-col">
-                    <h3>Проект</h3>
+                    <h3>Информация</h3>
                     <ul>
-                        <li><a href="projects.html#dossier-bastion">Досье BASTION</a></li>
+                        <li><button class="link-btn" type="button" data-doc="faq">FAQ</button></li>
+                        <li><button class="link-btn" type="button" data-doc="rules">Правила</button></li>
+                        <li><button class="link-btn" type="button" data-doc="license">Лицензия GPL-3.0</button></li>
                         <li><a href="https://github.com/Stool12312356/123" target="_blank" rel="noopener noreferrer">Исходный код сайта</a></li>
-                        <li><a href="LICENSE">Лицензия GPL-3.0</a></li>
-                        <li><button class="link-btn" type="button" data-doc="faq">Частые вопросы</button></li>
                     </ul>
                 </div>
             </div>
@@ -280,6 +293,9 @@
             <div class="footer-bottom">
                 <p>&copy; <span class="js-year">2026</span> NEXUS//DEV. Некоммерческий проект. Код сайта распространяется под лицензией <a href="LICENSE">GPL-3.0</a>.</p>
                 <p class="credit">
+                    <button class="term-secret" type="button" data-terminal aria-expanded="false" aria-label="Терминал" title="&gt;_">
+                        <img src="assets/icons/terminal.svg" alt="" width="16" height="16">
+                    </button>
                     <img src="assets/img/edex-logo.svg" alt="" width="18" height="18">
                     <span>UI inspired by &amp; adapted from <a href="https://github.com/GitSquared/edex-ui" target="_blank" rel="noopener noreferrer">eDEX-UI</a> (GPL-3.0)</span>
                 </p>
@@ -287,7 +303,7 @@
         </div>
     </footer>
 
-    <script src="js/ui-effects.js" defer></script>
-    <script src="js/pages.js" defer></script>
+    <script src="js/ui-effects.js?v=20261109-7" defer></script>
+    <script src="js/pages.js?v=20261109-7" defer></script>
 </body>
 </html>
