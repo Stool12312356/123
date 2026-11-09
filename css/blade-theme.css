@@ -143,6 +143,11 @@ body.solidBackground {
 body.is-booting {
     overflow: hidden;
 }
+/* Полная загрузка (Boot): страница под экраном загрузки скрыта целиком —
+   ни шапка, ни hero не должны просвечивать и ловить фокус/клики. */
+body.is-boot-full > :not(#boot_screen):not(.boot_skip):not(script) {
+    visibility: hidden;
+}
 
 ::selection {
     background: var(--selection);
@@ -459,8 +464,16 @@ svg {
     word-break: break-word;
     background: var(--color_light_black);
 }
+/* В оригинале фон экрана заголовка прозрачный — там под ним пустое окно Electron.
+   На сайте под ним уже свёрстана страница, поэтому вместо прозрачности
+   показываем ту же сетку, что и у body: эффект «мигания» фона сохраняется,
+   а контент страницы не просвечивает сквозь логотип. */
 body:not(.solidBackground) #boot_screen.center {
-    background: transparent;
+    background:
+        linear-gradient(90deg, var(--color_light_black) calc(1.85 * var(--u)), transparent 1%) center,
+        linear-gradient(var(--color_light_black) calc(1.85 * var(--u)), transparent 1%) center,
+        var(--color_grey);
+    background-size: calc(2.04 * var(--u)) calc(2.04 * var(--u));
 }
 #boot_screen.center {
     align-items: center;

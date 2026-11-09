@@ -529,7 +529,10 @@
             this.skipped = false;
 
             const body = document.body;
-            body.classList.add("is-booting", "solidBackground");
+            // При reboot из терминала интерфейс уже раскрыт (ui-ready) —
+            // сворачиваем его, чтобы после загрузки анимация появления сыграла заново
+            body.classList.remove("ui-ready", "term-open");
+            body.classList.add("is-booting", "is-boot-full", "solidBackground");
 
             const screen = document.createElement("section");
             screen.id = "boot_screen";
@@ -599,7 +602,7 @@
             document.removeEventListener("keydown", onKey);
             screen.remove();
             skipBtn.remove();
-            body.classList.remove("is-booting", "solidBackground");
+            body.classList.remove("is-booting", "is-boot-full", "solidBackground");
             storage.sessionSet("nx_booted", "1");
             this.running = false;
         }
@@ -1895,7 +1898,7 @@
         const els = $$(".hero-accent");
         if (!els.length) return;
         const loop = () => {
-            if (!reducedMotion()) {
+            if (!reducedMotion() && !document.body.classList.contains("is-booting") && !document.hidden) {
                 const el = pick(els);
                 el.classList.add("glitch");
                 setTimeout(() => el.classList.remove("glitch"), randInt(180, 420));

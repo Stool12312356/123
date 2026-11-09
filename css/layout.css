@@ -382,7 +382,9 @@
     color: var(--color_light_black);
     text-shadow: none;
 }
-/* Мини-глитч (derezzer) на акценте — те же ключевые кадры, что в boot_screen.css */
+/* Мини-глитч (derezzer) на акценте. Ключевые кадры boot_screen.css сдвигают копию
+   на целую строку (translateY ±100%) — для заголовка в одну строку это давало
+   «призраков» над и под словом, поэтому здесь свои кадры с малым смещением. */
 .hero-accent::before,
 .hero-accent::after {
     content: attr(data-text);
@@ -401,11 +403,24 @@
 }
 .hero-accent.glitch::before {
     opacity: 0.85;
-    animation: derezzer_top 50ms linear infinite alternate-reverse;
+    animation: accent_derez_top 50ms linear infinite alternate-reverse;
 }
 .hero-accent.glitch::after {
     opacity: 0.9;
-    animation: derezzer_bottom 50ms linear infinite alternate-reverse;
+    animation: accent_derez_bottom 50ms linear infinite alternate-reverse;
+}
+@keyframes accent_derez_top {
+    from { transform: translate(-1%, -0.04em); }
+    to   { transform: translate(-3%, -0.04em); }
+}
+@keyframes accent_derez_bottom {
+    from { transform: translate(1%, 0.04em); }
+    to   { transform: translate(2.5%, 0.04em); }
+}
+body.is-booting .hero-accent::before,
+body.is-booting .hero-accent::after {
+    animation: none;
+    opacity: 0;
 }
 .hero-lead {
     max-width: 62ch;
