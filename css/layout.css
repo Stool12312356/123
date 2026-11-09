@@ -73,7 +73,7 @@
     position: sticky;
     top: 0;
     z-index: 1000;
-    background: rgba(9, 11, 10, 0.94);
+    background: rgba(var(--bg_rgb), 0.94);
     border-bottom: 1px solid var(--c-30);
     -webkit-backdrop-filter: blur(4px);
     backdrop-filter: blur(4px);
@@ -439,8 +439,9 @@ body.is-booting .hero-accent::after {
     max-height: 340px;
     padding: 12px 14px;
     border-top: 1px solid var(--c-30);
-    background: rgba(0, 0, 0, 0.35);
-    font-family: var(--font_mono), monospace;
+    background: var(--term_bg);
+    color: var(--term_fg);
+    font-family: var(--term_font);
     font-size: 14px;
     line-height: 1.45;
     cursor: text;
@@ -452,9 +453,12 @@ body.is-booting .hero-accent::after {
     word-break: break-word;
     min-height: 0;
 }
+.term-output {
+    filter: var(--term_filter);
+}
 .term-output .line { min-height: 1.45em; }
 .term-output .cmd { opacity: 0.7; }
-.term-output .err { color: #ff6b4a; }
+.term-output .err { color: var(--color_err); }
 .term-output .hl { background: var(--c); color: var(--color_light_black); padding: 0 3px; }
 .term-output a { text-decoration: underline; }
 .term-line {
@@ -475,11 +479,15 @@ body.is-booting .hero-accent::after {
     border: 0;
     border-bottom: 2px solid var(--c);
     background: transparent;
-    color: var(--c);
-    caret-color: var(--c);
+    color: var(--term_fg);
+    caret-color: var(--term_cursor);
     font: inherit;
     outline: none;
 }
+/* terminal.cursorStyle темы (поддерживается браузерами с caret-shape) */
+[data-term-cursor="block"] .term-input { caret-shape: block; }
+[data-term-cursor="underline"] .term-input { caret-shape: underscore; }
+[data-term-cursor="bar"] .term-input { caret-shape: bar; }
 .term-input:focus {
     background: var(--c-10);
 }
@@ -599,7 +607,7 @@ body.is-booting .hero-accent::after {
 .site-footer {
     margin-top: clamp(20px, 4vw, 50px);
     padding-block: 30px 22px;
-    background: rgba(9, 11, 10, 0.92);
+    background: rgba(var(--bg_rgb), 0.92);
     border-top: 1px solid var(--c-30);
 }
 .footer-grid {
@@ -703,7 +711,7 @@ body.is-booting .hero-accent::after {
         top: 100%;
         max-width: none;
         padding: 0 clamp(12px, 2.4vw, 32px) 14px;
-        background: rgba(9, 11, 10, 0.98);
+        background: rgba(var(--bg_rgb), 0.98);
         border-bottom: 1px solid var(--c-50);
         visibility: hidden;
         opacity: 0;

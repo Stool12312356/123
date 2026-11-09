@@ -52,6 +52,7 @@
     /* Идентикон-аватар: симметричная пиксельная маска 7×7 из хэша позывного */
     function drawAvatar(canvas, seedText) {
         if (!canvas || !canvas.getContext) return;
+        canvas.setAttribute("data-avatar-seed", seedText || "guest");
         const ctx = canvas.getContext("2d");
         const size = 7;
         const px = 18;
@@ -64,7 +65,9 @@
             h ^= h << 5; h >>>= 0;
             return h / 4294967296;
         };
-        ctx.fillStyle = "#090B0A";
+        // Фон — light_black текущей цветовой схемы
+        const bg = getComputedStyle(document.documentElement).getPropertyValue("--color_light_black").trim();
+        ctx.fillStyle = bg || "#090B0A";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         for (let y = 0; y < size; y++) {
             for (let x = 0; x < Math.ceil(size / 2); x++) {
@@ -956,6 +959,83 @@
         actionLog.add(`${Auth.get() ? Auth.get().callsign : "guest"}: tail logs ${n.id}`);
     }
 
+    /* ----- Цветовые схемы eDEX-UI (вкладка «Настройки HUD») ----- */
+    function initThemePicker() {
+        const grid = $("#theme-grid");
+        const Theme = NX.Theme, THEMES = NX.THEMES;
+        if (!grid || !Theme || !THEMES) return;
+        const label = $("#theme-current");
+
+        const palette = t => {
+            const list = [`rgb(${t.r}, ${t.g}, ${t.b})`, t.light_black, t.grey, t.black, t.term.fg, t.term.cursor];
+            if (t.ansi) Object.keys(t.ansi).forEach(k => list.push(t.ansi[k]));
+            const seen = new Set();
+            return list.filter(c => {
+                const key = String(c).toLowerCase().replace(/\s+/g, "");
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            }).slice(0, 9);
+        };
+
+        grid.innerHTML = Theme.list().map(id => {
+            const t = THEMES[id];
+            const accent = `rgb(${t.r}, ${t.g}, ${t.b})`;
+            const style = `--t-accent:${accent};--t-bg:${t.light_black};--t-grey:${t.grey};--t-fg:${t.term.fg}`;
+            const sw = palette(t).map(c => `<i style="background:${c}"></i>`).join("");
+            return `<button type="button" class="theme-card${t.variant ? " is-variant" : ""}" role="radio" aria-checked="false"
+                        data-theme-id="${id}" style="${style}" title="theme ${id}">
+                    <span class="theme-prev" aria-hidden="true">
+                        <span class="tp-head"><b></b><b></b><b></b></span>
+                        <span class="tp-title">${escapeHtml(t.label.split(" · ")[0])}</span>
+                        <span class="tp-line"></span><span class="tp-line tp-short"></span>
+                        <span class="tp-btn"></span>
+                    </span>
+                    <span class="theme-swatches" aria-hidden="true">${sw}</span>
+                    <span class="theme-name">${escapeHtml(t.label)}</span>
+                    <span class="theme-desc">${escapeHtml(t.variant ? "вариант: " + t.variant : t.desc)}</span>
+                    <span class="theme-badge">АКТИВНА</span>
+                </button>`;
+        }).join("");
+
+        const sync = () => {
+            const cur = Theme.current();
+            $$(".theme-card", grid).forEach(card => {
+                const on = card.getAttribute("data-theme-id") === cur;
+                card.classList.toggle("is-active", on);
+                card.setAttribute("aria-checked", on ? "true" : "false");
+                card.tabIndex = on ? 0 : -1;
+            });
+            if (label) label.textContent = THEMES[cur].label;
+        };
+        sync();
+
+        grid.addEventListener("click", e => {
+            const card = e.target.closest(".theme-card");
+            if (!card) return;
+            const id = card.getAttribute("data-theme-id");
+            if (id === Theme.current()) { Sound.play("folder"); return; }
+            Theme.set(id);
+            card.classList.remove("is-picked");
+            void card.offsetWidth;
+            card.classList.add("is-picked");
+            toast(`Тема интерфейса: ${THEMES[id].label}`, "ok");
+        });
+        // Клавиатура: стрелки внутри radiogroup
+        grid.addEventListener("keydown", e => {
+            const keys = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+            if (!(e.key in keys)) return;
+            const cards = $$(".theme-card", grid);
+            const i = cards.indexOf(document.activeElement);
+            if (i < 0) return;
+            e.preventDefault();
+            const next = cards[(i + keys[e.key] + cards.length) % cards.length];
+            next.focus();
+            next.click();
+        });
+        document.addEventListener("nexus:theme", sync);
+    }
+
     /* ----- Настройки HUD ----- */
     function initSettingsPanel() {
         const map = {
@@ -1007,6 +1087,7 @@
             window.location.href = "index.html";
         });
         document.addEventListener("nexus:settings", sync);
+        initThemePicker();
 
         const avatarBtn = $("#avatar-regen");
         if (avatarBtn) avatarBtn.addEventListener("click", () => {
@@ -1277,6 +1358,11 @@
     if (PAGE === "projects") initProjects();
     if (PAGE === "dashboard") { initDashboard(); initSessionClock(); }
     if (PAGE === "auth") initAuth();
+
+    // Смена цветовой схемы: перерисовать canvas-аватары (они рисуются один раз)
+    document.addEventListener("nexus:theme", () => {
+        $$("canvas[data-avatar-seed]").forEach(c => drawAvatar(c, c.getAttribute("data-avatar-seed")));
+    });
 
     NX.Pages = { openDetails, drawAvatar, Downloads };
 })();

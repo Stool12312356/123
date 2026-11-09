@@ -139,7 +139,7 @@
     opacity: 1;
 }
 .nav-tabs > li.active > a img {
-    filter: brightness(0);
+    filter: var(--icon_filter_bg);
     opacity: 1;
 }
 .tool-btn {
@@ -163,7 +163,7 @@
     border-style: solid;
 }
 .term-btn[aria-expanded="true"] img {
-    filter: brightness(0);
+    filter: var(--icon_filter_bg);
 }
 .dot.pulse {
     animation: pulse 1.6s linear infinite;
@@ -320,7 +320,7 @@
 .how-wrap:focus-visible .how-card {
     transform: translateY(-4px);
     --aug-border-opacity: 1;
-    --aug-inset-bg: rgba(24, 16, 12, 0.94);
+    --aug-inset-bg: rgba(var(--bg_rgb), 0.94);
 }
 .how-wrap:active .how-card {
     transform: translateY(-1px) scale(0.99);
@@ -495,8 +495,8 @@
     overflow: hidden;
     border-bottom: 1px solid var(--c-30);
     background:
-        repeating-linear-gradient(0deg, rgba(204, 94, 55, 0.05) 0 1px, transparent 1px 4px),
-        radial-gradient(ellipse at 35% 45%, rgba(204, 94, 55, 0.14), transparent 70%);
+        repeating-linear-gradient(0deg, rgba(var(--color_r), var(--color_g), var(--color_b), 0.05) 0 1px, transparent 1px 4px),
+        radial-gradient(ellipse at 35% 45%, rgba(var(--color_r), var(--color_g), var(--color_b), 0.14), transparent 70%);
 }
 .art-svg {
     position: absolute;
@@ -515,7 +515,7 @@
     right: 0;
     top: -40%;
     height: 40%;
-    background: linear-gradient(transparent, rgba(204, 94, 55, 0.16), transparent);
+    background: linear-gradient(transparent, rgba(var(--color_r), var(--color_g), var(--color_b), 0.16), transparent);
     opacity: 0;
     pointer-events: none;
 }
@@ -570,7 +570,7 @@
     width: 54px;
     height: 54px;
     border: 1px solid var(--c-60);
-    background: rgba(9, 11, 10, 0.88);
+    background: rgba(var(--bg_rgb), 0.88);
     transition: border-color 0.18s linear, box-shadow 0.18s linear;
 }
 .art-icon img {
@@ -597,7 +597,7 @@
     right: 14px;
     bottom: 12px;
     padding: 1px 6px;
-    background: rgba(9, 11, 10, 0.85);
+    background: rgba(var(--bg_rgb), 0.85);
     font-family: var(--font_main);
     font-size: 11px;
     letter-spacing: 1.5px;
@@ -704,7 +704,7 @@
     box-shadow: none;
 }
 .btn.btn-primary.is-running img {
-    filter: none;
+    filter: var(--icon_filter);
 }
 .pcard-access {
     margin: 0;
@@ -725,7 +725,7 @@
     gap: 6px;
     padding: 10px 12px;
     border: 1px solid var(--c-50);
-    background: rgba(204, 94, 55, 0.05);
+    background: rgba(var(--color_r), var(--color_g), var(--color_b), 0.05);
     font-family: var(--font_mono), monospace;
     font-size: 12px;
     animation: fadeIn 0.2s var(--ease-edex) both;
@@ -752,7 +752,7 @@
     position: relative;
     height: 10px;
     border: 1px solid var(--c-60);
-    background: repeating-linear-gradient(90deg, rgba(204, 94, 55, 0.12) 0 6px, transparent 6px 8px);
+    background: repeating-linear-gradient(90deg, rgba(var(--color_r), var(--color_g), var(--color_b), 0.12) 0 6px, transparent 6px 8px);
     overflow: hidden;
 }
 .dl-fill {
@@ -1004,7 +1004,7 @@ td .dl-hud {
     border: 1px solid var(--c-50);
     border-left-width: 3px;
     border-radius: 0;
-    background: rgba(0, 0, 0, 0.45);
+    background: rgba(var(--black_rgb), 0.45);
     color: var(--c);
     font-family: var(--font_mono), monospace;
     font-size: 15px;
@@ -1023,16 +1023,16 @@ td .dl-hud {
 }
 .input:-webkit-autofill {
     -webkit-text-fill-color: var(--c);
-    box-shadow: 0 0 0 100px #120c0a inset;
+    box-shadow: 0 0 0 100px var(--color_light_black) inset;
 }
 .field.is-invalid .input {
-    border-color: #ff6b4a;
+    border-color: var(--color_err);
     animation: blink 0.1s linear 3;
 }
 .field-error {
     min-height: 1.2em;
     margin: 0;
-    color: #ff6b4a;
+    color: var(--color_err);
     font-family: var(--font_mono), monospace;
     font-size: 12px;
 }
@@ -1096,7 +1096,7 @@ td .dl-hud {
     height: 18px;
     margin-top: 1px;
     border: 1px solid var(--c);
-    background: rgba(0, 0, 0, 0.4);
+    background: rgba(var(--black_rgb), 0.4);
     transition: background-color 0.15s linear;
 }
 .check .box::before,
@@ -1137,7 +1137,7 @@ td .dl-hud {
     text-decoration: underline;
 }
 .field.is-invalid .check .box {
-    border-color: #ff6b4a;
+    border-color: var(--color_err);
 }
 
 /* Переключатель (настройки HUD) */
@@ -1178,7 +1178,7 @@ td .dl-hud {
     width: 64px;
     height: 24px;
     border: 1px solid var(--c);
-    background: rgba(0, 0, 0, 0.4);
+    background: rgba(var(--black_rgb), 0.4);
     font-family: var(--font_main);
     font-size: 10px;
     letter-spacing: 1px;
@@ -1323,7 +1323,7 @@ td .dl-hud {
     padding: 0 12px;
     overflow: hidden;
     border: 1px solid transparent;
-    background: rgba(0, 0, 0, 0.4);
+    background: rgba(var(--black_rgb), 0.4);
     font-family: var(--font_mono), monospace;
     font-size: 12.5px;
     line-height: 1.5;
@@ -1341,7 +1341,7 @@ td .dl-hud {
     font-weight: bold;
 }
 .verify-log .fail {
-    color: #ff6b4a;
+    color: var(--color_err);
 }
 .auth-panel.is-busy .auth-body form {
     pointer-events: none;
@@ -1707,7 +1707,7 @@ td .dl-hud {
     padding: 10px 12px;
     overflow-y: auto;
     border: 1px solid var(--c-30);
-    background: rgba(0, 0, 0, 0.35);
+    background: rgba(var(--black_rgb), 0.35);
     font-family: var(--font_mono), monospace;
     font-size: 12.5px;
     line-height: 1.5;
@@ -1730,7 +1730,7 @@ td .dl-hud {
     padding: 10px 12px;
     overflow-y: auto;
     border: 1px solid var(--c-40);
-    background: rgba(0, 0, 0, 0.55);
+    background: rgba(var(--black_rgb), 0.55);
     font-family: var(--font_mono), monospace;
     font-size: 12.5px;
     line-height: 1.5;
@@ -1741,7 +1741,7 @@ td .dl-hud {
     background: var(--c-20);
 }
 .log-tail .lvl-err {
-    color: #ff6b4a;
+    color: var(--color_err);
 }
 .log-tail .t {
     opacity: 0.5;
@@ -1766,6 +1766,199 @@ td .dl-hud {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 10px 30px;
 }
+/* ----- Цветовые схемы eDEX-UI: сетка карточек выбора темы ----- */
+.theme-mod {
+    margin-top: 16px;
+}
+.theme-hint {
+    margin: 0 0 14px;
+    font-family: var(--font_mono), monospace;
+    font-size: 12px;
+    opacity: 0.75;
+}
+.theme-hint code {
+    padding: 0 4px;
+    background: var(--c-10);
+    font-family: inherit;
+}
+.theme-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+    gap: 10px;
+}
+.theme-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    min-width: 0;
+    padding: 8px 8px 10px;
+    border: 1px solid var(--c-30);
+    background: rgba(var(--black_rgb), 0.35);
+    color: var(--c);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.15s linear, box-shadow 0.15s linear, transform 0.12s var(--ease-edex), background-color 0.15s linear;
+}
+.theme-card:hover {
+    border-color: var(--c);
+    box-shadow: var(--glow-soft);
+    transform: translateY(-1px);
+}
+.theme-card:active {
+    transform: scale(0.98);
+}
+.theme-card:focus-visible {
+    outline: 2px solid var(--c);
+    outline-offset: 2px;
+}
+.theme-card.is-active {
+    border-color: var(--c);
+    background: var(--c-10);
+    box-shadow: inset 0 0 0 1px var(--c), var(--glow-soft);
+}
+.theme-card.is-picked {
+    animation: themePick 0.45s var(--ease-edex);
+}
+@keyframes themePick {
+    0%   { box-shadow: inset 0 0 0 1px var(--c), 0 0 0 0 var(--c-60); }
+    100% { box-shadow: inset 0 0 0 1px var(--c), 0 0 0 12px transparent; }
+}
+/* Мини-превью HUD в цветах самой темы (не текущей) */
+.theme-prev {
+    position: relative;
+    display: block;
+    height: 64px;
+    padding: 6px 7px;
+    overflow: hidden;
+    border: 1px solid var(--t-accent);
+    background:
+        linear-gradient(90deg, var(--t-bg) 10px, transparent 1%) center / 11px 11px,
+        linear-gradient(var(--t-bg) 10px, transparent 1%) center / 11px 11px,
+        var(--t-grey);
+    color: var(--t-accent);
+    clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+}
+.tp-head {
+    display: flex;
+    gap: 3px;
+    margin-bottom: 5px;
+}
+.tp-head b {
+    display: block;
+    width: 14px;
+    height: 3px;
+    background: var(--t-accent);
+    opacity: 0.5;
+}
+.tp-head b:first-child {
+    width: 26px;
+    opacity: 1;
+}
+.tp-title {
+    display: block;
+    font-family: var(--font_main);
+    font-size: 13px;
+    letter-spacing: 1px;
+    line-height: 1.1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 0 6px var(--t-accent);
+}
+.tp-line {
+    display: block;
+    width: 70%;
+    height: 2px;
+    margin-top: 5px;
+    background: var(--t-fg);
+    opacity: 0.55;
+}
+.tp-line.tp-short {
+    width: 42%;
+}
+.tp-btn {
+    position: absolute;
+    right: 8px;
+    bottom: 7px;
+    width: 30px;
+    height: 10px;
+    background: var(--t-accent);
+}
+.theme-swatches {
+    display: flex;
+    gap: 3px;
+}
+.theme-swatches i {
+    flex: 1 1 0;
+    max-width: 18px;
+    height: 12px;
+    border: 1px solid var(--c-20);
+}
+.theme-name {
+    font-family: var(--font_main);
+    font-size: 13px;
+    letter-spacing: 1px;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+}
+.theme-desc {
+    font-family: var(--font_main_light);
+    font-size: 12px;
+    line-height: 1.35;
+    opacity: 0.7;
+}
+.theme-card.is-variant .theme-name {
+    font-size: 12px;
+}
+/* Бейдж встаёт на место «кнопки» превью (правый нижний угол мини-HUD) */
+.theme-badge {
+    position: absolute;
+    top: 53px;
+    right: 15px;
+    padding: 1px 5px;
+    background: var(--c);
+    color: var(--color_light_black);
+    font-family: var(--font_main);
+    font-size: 10px;
+    letter-spacing: 1px;
+    opacity: 0;
+    transform: scale(0.9);
+    transition: opacity 0.15s linear, transform 0.15s var(--ease-edex);
+}
+.theme-card.is-active .theme-badge {
+    opacity: 1;
+    transform: none;
+}
+.theme-card.is-active .tp-btn {
+    visibility: hidden;
+}
+/* Цветные квадратики в выводе команды «theme» */
+.term-swatch {
+    display: inline-block;
+    width: 0.9em;
+    height: 0.9em;
+    margin-right: 2px;
+    vertical-align: -0.1em;
+    border: 1px solid var(--c-30);
+}
+/* Плавная смена цветов при переключении темы (только на время смены) */
+html.theme-switching,
+html.theme-switching body,
+html.theme-switching body *:not(canvas) {
+    transition: color 0.25s linear, background-color 0.25s linear, border-color 0.25s linear, fill 0.25s linear, stroke 0.25s linear !important;
+}
+@media (max-width: 480px) {
+    .theme-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+    }
+    .theme-desc {
+        display: none;
+    }
+}
+
 .settings-actions {
     display: flex;
     flex-wrap: wrap;
@@ -1786,7 +1979,7 @@ td .dl-hud {
     width: 64px;
     height: 64px;
     margin-bottom: 10px;
-    filter: var(--glow-drop);
+    filter: var(--icon_filter) var(--glow-drop);
     animation: pulse 1.6s linear infinite;
 }
 .lock-panel h2 {
@@ -1817,7 +2010,7 @@ td .dl-hud {
     z-index: 3000;
     flex-direction: column;
     gap: 18px;
-    background: rgba(9, 11, 10, 0.92);
+    background: rgba(var(--bg_rgb), 0.92);
 }
 #boot_screen.banner h1 {
     font-size: clamp(30px, 6vw, 80px);
@@ -1852,7 +2045,7 @@ td .dl-hud {
     overflow: hidden;
     border: 1px solid var(--c-60);
     border-left: 4px solid var(--c);
-    background: rgba(9, 11, 10, 0.96);
+    background: rgba(var(--bg_rgb), 0.96);
     clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
     cursor: pointer;
     pointer-events: auto;
@@ -1888,8 +2081,8 @@ td .dl-hud {
     border-left-style: double;
     border-left-width: 6px;
     background:
-        repeating-linear-gradient(-45deg, rgba(204, 94, 55, 0.07) 0 6px, transparent 6px 12px),
-        rgba(9, 11, 10, 0.96);
+        repeating-linear-gradient(-45deg, rgba(var(--color_r), var(--color_g), var(--color_b), 0.07) 0 6px, transparent 6px 12px),
+        rgba(var(--bg_rgb), 0.96);
 }
 .toast-warn .toast-head::before {
     content: "[!] ";

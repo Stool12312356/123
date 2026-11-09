@@ -94,16 +94,146 @@
         return h >>> 0;
     }
 
-    /* Цвет темы читаем из CSS-переменных (blade.json → :root) */
-    function readTheme() {
-        const cs = getComputedStyle(document.documentElement);
-        const r = parseInt(cs.getPropertyValue("--color_r"), 10);
-        const g = parseInt(cs.getPropertyValue("--color_g"), 10);
-        const b = parseInt(cs.getPropertyValue("--color_b"), 10);
-        return { r: isNaN(r) ? 204 : r, g: isNaN(g) ? 94 : g, b: isNaN(b) ? 55 : b };
-    }
-    const THEME = readTheme();
+    /* THEMES:BEGIN — сгенерировано из assets/themes/*.json (не редактировать вручную).
+       r/g/b, black, light_black, grey — colors; term — terminal; globe — globe;
+       iconFilter / iconFilterBg — CSS filter, перекрашивающий иконки assets/icons
+       (#cc5e37) в цвет темы / в цвет фона (для иконок на залитых кнопках).
+       injectCSS из JSON не переносится: он двигал панели окна Electron, которых на сайте нет. */
+    const THEMES = {
+        "blade": {"label": "BLADE", "desc": "Оранжевый неон «Blade Runner» — тема по умолчанию", "variant": "", "light": false, "r": 204, "g": 94, "b": 55, "black": "#000000", "light_black": "#090b0a", "grey": "#262827", "term": {"fg": "#cc5e37", "bg": "#090b0a", "cursor": "#cc5e37", "cursorStyle": "underline", "selection": "rgba(204,94,55,0.3)", "font": "Fira Mono"}, "globe": {"base": "#cc5e37", "marker": "#cc5e37", "pin": "#cc5e37", "satellite": "#cc5e37"}, "iconFilter": "brightness(1)", "iconFilterBg": "brightness(0)"},
+        "tron": {"label": "TRON", "desc": "Ледяной циан на чёрном", "variant": "", "light": false, "r": 170, "g": 207, "b": 209, "black": "#000000", "light_black": "#05080d", "grey": "#262828", "term": {"fg": "#aacfd1", "bg": "#05080d", "cursor": "#aacfd1", "cursorStyle": "block", "selection": "rgba(170,207,209,0.3)", "font": "Fira Mono"}, "globe": {"base": "#000000", "marker": "#aacfd1", "pin": "#aacfd1", "satellite": "#aacfd1"}, "iconFilter": "brightness(0) saturate(100%) invert(84%) sepia(9%) saturate(617%) hue-rotate(134deg) brightness(96%) contrast(88%)", "iconFilterBg": "brightness(0) saturate(100%) invert(4%) sepia(6%) saturate(3238%) hue-rotate(176deg) brightness(92%) contrast(102%)"},
+        "tron-colorfilter": {"label": "TRON · COLORFILTER", "desc": "Ледяной циан на чёрном", "variant": "цветофильтр терминала", "light": false, "r": 170, "g": 207, "b": 209, "black": "#000000", "light_black": "#05080d", "grey": "#262828", "term": {"fg": "#aacfd1", "bg": "#05080d", "cursor": "#aacfd1", "cursorStyle": "block", "selection": "rgba(170,207,209,0.3)", "font": "Fira Mono", "filter": "hue-rotate(180deg) saturate(0.5)"}, "globe": {"base": "#000000", "marker": "#aacfd1", "pin": "#aacfd1", "satellite": "#aacfd1"}, "iconFilter": "brightness(0) saturate(100%) invert(84%) sepia(9%) saturate(617%) hue-rotate(134deg) brightness(96%) contrast(88%)", "iconFilterBg": "brightness(0) saturate(100%) invert(4%) sepia(6%) saturate(3238%) hue-rotate(176deg) brightness(92%) contrast(102%)"},
+        "tron-disrupted": {"label": "TRON · DISRUPTED", "desc": "Ледяной циан на чёрном", "variant": "смещённая раскладка", "light": false, "r": 170, "g": 207, "b": 209, "black": "#000000", "light_black": "#05080d", "grey": "#262828", "term": {"fg": "#aacfd1", "bg": "#05080d", "cursor": "#aacfd1", "cursorStyle": "block", "selection": "rgba(170,207,209,0.3)", "font": "Fira Mono"}, "globe": {"base": "#000000", "marker": "#aacfd1", "pin": "#aacfd1", "satellite": "#aacfd1"}, "iconFilter": "brightness(0) saturate(100%) invert(84%) sepia(9%) saturate(617%) hue-rotate(134deg) brightness(96%) contrast(88%)", "iconFilterBg": "brightness(0) saturate(100%) invert(4%) sepia(6%) saturate(3238%) hue-rotate(176deg) brightness(92%) contrast(102%)"},
+        "tron-fulltype": {"label": "TRON · FULLTYPE", "desc": "Ледяной циан на чёрном", "variant": "полная клавиатура", "light": false, "r": 170, "g": 207, "b": 209, "black": "#000000", "light_black": "#05080d", "grey": "#262828", "term": {"fg": "#aacfd1", "bg": "#05080d", "cursor": "#aacfd1", "cursorStyle": "block", "selection": "rgba(170,207,209,0.3)", "font": "Fira Mono"}, "globe": {"base": "#000000", "marker": "#aacfd1", "pin": "#aacfd1", "satellite": "#aacfd1"}, "iconFilter": "brightness(0) saturate(100%) invert(84%) sepia(9%) saturate(617%) hue-rotate(134deg) brightness(96%) contrast(88%)", "iconFilterBg": "brightness(0) saturate(100%) invert(4%) sepia(6%) saturate(3238%) hue-rotate(176deg) brightness(92%) contrast(102%)"},
+        "tron-notype": {"label": "TRON · NOTYPE", "desc": "Ледяной циан на чёрном", "variant": "без клавиатуры", "light": false, "r": 170, "g": 207, "b": 209, "black": "#000000", "light_black": "#05080d", "grey": "#262828", "term": {"fg": "#aacfd1", "bg": "#05080d", "cursor": "#aacfd1", "cursorStyle": "block", "selection": "rgba(170,207,209,0.3)", "font": "Fira Mono"}, "globe": {"base": "#000000", "marker": "#aacfd1", "pin": "#aacfd1", "satellite": "#aacfd1"}, "iconFilter": "brightness(0) saturate(100%) invert(84%) sepia(9%) saturate(617%) hue-rotate(134deg) brightness(96%) contrast(88%)", "iconFilterBg": "brightness(0) saturate(100%) invert(4%) sepia(6%) saturate(3238%) hue-rotate(176deg) brightness(92%) contrast(102%)"},
+        "tron-typeleft": {"label": "TRON · TYPELEFT", "desc": "Ледяной циан на чёрном", "variant": "клавиатура слева", "light": false, "r": 170, "g": 207, "b": 209, "black": "#000000", "light_black": "#05080d", "grey": "#262828", "term": {"fg": "#aacfd1", "bg": "#05080d", "cursor": "#aacfd1", "cursorStyle": "block", "selection": "rgba(170,207,209,0.3)", "font": "Fira Mono"}, "globe": {"base": "#000000", "marker": "#aacfd1", "pin": "#aacfd1", "satellite": "#aacfd1"}, "iconFilter": "brightness(0) saturate(100%) invert(84%) sepia(9%) saturate(617%) hue-rotate(134deg) brightness(96%) contrast(88%)", "iconFilterBg": "brightness(0) saturate(100%) invert(4%) sepia(6%) saturate(3238%) hue-rotate(176deg) brightness(92%) contrast(102%)"},
+        "matrix": {"label": "MATRIX", "desc": "Зелёный код на чёрном", "variant": "", "light": false, "r": 0, "g": 143, "b": 17, "black": "#0d0208", "light_black": "#090b0a", "grey": "#262827", "term": {"fg": "#00ff41", "bg": "#0d0208", "cursor": "#00ff41", "cursorStyle": "underline", "selection": "#008f11", "font": "Fira Mono"}, "globe": {"base": "#008f11", "marker": "#008f11", "pin": "#008f11", "satellite": "#008f11"}, "iconFilter": "brightness(0) saturate(100%) invert(34%) sepia(81%) saturate(2785%) hue-rotate(114deg) brightness(86%) contrast(102%)", "iconFilterBg": "brightness(0) saturate(100%) invert(3%) sepia(5%) saturate(1231%) hue-rotate(97deg) brightness(93%) contrast(98%)"},
+        "red": {"label": "RED", "desc": "Красная тревога, стальной серый", "variant": "", "light": false, "r": 204, "g": 0, "b": 34, "black": "#000000", "light_black": "#090b0a", "grey": "#0f2e3d", "term": {"fg": "#cc0022", "bg": "#090b0a", "cursor": "#cc0022", "cursorStyle": "underline", "selection": "rgba(204,0,34,0.3)", "font": "Fira Mono"}, "globe": {"base": "#cc0022", "marker": "#cc0022", "pin": "#cc0022", "satellite": "#cc0022"}, "iconFilter": "brightness(0) saturate(100%) invert(33%) sepia(79%) saturate(5526%) hue-rotate(335deg) brightness(73%) contrast(132%)", "iconFilterBg": "brightness(0) saturate(100%) invert(3%) sepia(5%) saturate(1231%) hue-rotate(97deg) brightness(93%) contrast(98%)"},
+        "navy": {"label": "NAVY", "desc": "Сигнальный синий на ночном", "variant": "", "light": false, "r": 20, "g": 119, "b": 205, "black": "#282a36", "light_black": "#222430", "grey": "#222430", "term": {"fg": "#87b7cc", "bg": "#222430", "cursor": "#87b7cc", "cursorStyle": "block", "selection": "rgba(239,240,235,0.3)", "font": "Fira Mono"}, "globe": {"base": "#16739c", "marker": "#ad0c0c", "pin": "#04b80a", "satellite": "#e3f213"}, "ansi": {"red": "#ff5c57", "green": "#5af78e", "yellow": "#f3f99d", "blue": "#57c7ff", "magenta": "#ff6ac1", "cyan": "#9aedfe"}, "iconFilter": "brightness(0) saturate(100%) invert(32%) sepia(91%) saturate(1293%) hue-rotate(187deg) brightness(93%) contrast(89%)", "iconFilterBg": "brightness(0) saturate(100%) invert(12%) sepia(21%) saturate(674%) hue-rotate(194deg) brightness(90%) contrast(93%)"},
+        "navy-disrupted": {"label": "NAVY · DISRUPTED", "desc": "Сигнальный синий на ночном", "variant": "смещённая раскладка", "light": false, "r": 20, "g": 119, "b": 205, "black": "#282a36", "light_black": "#222430", "grey": "#222430", "term": {"fg": "#87b7cc", "bg": "#222430", "cursor": "#87b7cc", "cursorStyle": "block", "selection": "rgba(239,240,235,0.3)", "font": "Fira Mono"}, "globe": {"base": "#16739c", "marker": "#ad0c0c", "pin": "#04b80a", "satellite": "#e3f213"}, "ansi": {"red": "#ff5c57", "green": "#5af78e", "yellow": "#f3f99d", "blue": "#57c7ff", "magenta": "#ff6ac1", "cyan": "#9aedfe"}, "iconFilter": "brightness(0) saturate(100%) invert(32%) sepia(91%) saturate(1293%) hue-rotate(187deg) brightness(93%) contrast(89%)", "iconFilterBg": "brightness(0) saturate(100%) invert(12%) sepia(21%) saturate(674%) hue-rotate(194deg) brightness(90%) contrast(93%)"},
+        "navy-notype": {"label": "NAVY · NOTYPE", "desc": "Сигнальный синий на ночном", "variant": "без клавиатуры", "light": false, "r": 20, "g": 119, "b": 205, "black": "#282a36", "light_black": "#222430", "grey": "#222430", "term": {"fg": "#87b7cc", "bg": "#222430", "cursor": "#87b7cc", "cursorStyle": "block", "selection": "rgba(239,240,235,0.3)", "font": "Fira Mono"}, "globe": {"base": "#16739c", "marker": "#ad0c0c", "pin": "#04b80a", "satellite": "#e3f213"}, "ansi": {"red": "#ff5c57", "green": "#5af78e", "yellow": "#f3f99d", "blue": "#57c7ff", "magenta": "#ff6ac1", "cyan": "#9aedfe"}, "iconFilter": "brightness(0) saturate(100%) invert(32%) sepia(91%) saturate(1293%) hue-rotate(187deg) brightness(93%) contrast(89%)", "iconFilterBg": "brightness(0) saturate(100%) invert(12%) sepia(21%) saturate(674%) hue-rotate(194deg) brightness(90%) contrast(93%)"},
+        "cyborg": {"label": "CYBORG", "desc": "Бирюза на глубоком тёмно-зелёном", "variant": "", "light": false, "r": 95, "g": 215, "b": 215, "black": "#011f1f", "light_black": "#0a3333", "grey": "#034747", "term": {"fg": "#a3c2c2", "bg": "#0a3333", "cursor": "#5cffff", "cursorStyle": "block", "selection": "#ffff5c", "font": "Fira Code"}, "globe": {"base": "#5c5cff", "marker": "#eb0954", "pin": "#85ff5c", "satellite": "#ffff5c"}, "ansi": {"red": "#ad3e5a", "green": "#3cd66f", "yellow": "#c5d63c", "blue": "#3c4dd6", "magenta": "#ad31ad", "cyan": "#31adad"}, "iconFilter": "brightness(0) saturate(100%) invert(85%) sepia(34%) saturate(619%) hue-rotate(123deg) brightness(86%) contrast(95%)", "iconFilterBg": "brightness(0) saturate(100%) invert(14%) sepia(39%) saturate(874%) hue-rotate(131deg) brightness(95%) contrast(94%)"},
+        "cyborg-focus": {"label": "CYBORG · FOCUS", "desc": "Бирюза на глубоком тёмно-зелёном", "variant": "режим фокуса", "light": false, "r": 95, "g": 215, "b": 215, "black": "#011f1f", "light_black": "#0a3333", "grey": "#034747", "term": {"fg": "#a3c2c2", "bg": "#0a3333", "cursor": "#5cffff", "cursorStyle": "block", "selection": "#ffff5c", "font": "Fira Code"}, "globe": {"base": "#5c5cff", "marker": "#eb0954", "pin": "#85ff5c", "satellite": "#ffff5c"}, "ansi": {"red": "#ad3e5a", "green": "#3cd66f", "yellow": "#c5d63c", "blue": "#3c4dd6", "magenta": "#ad31ad", "cyan": "#31adad"}, "iconFilter": "brightness(0) saturate(100%) invert(85%) sepia(34%) saturate(619%) hue-rotate(123deg) brightness(86%) contrast(95%)", "iconFilterBg": "brightness(0) saturate(100%) invert(14%) sepia(39%) saturate(874%) hue-rotate(131deg) brightness(95%) contrast(94%)"},
+        "nord": {"label": "NORD", "desc": "Холодная арктическая палитра Nord", "variant": "", "light": false, "r": 216, "g": 222, "b": 233, "black": "#3b4252", "light_black": "#2e3440", "grey": "#4c566a", "term": {"fg": "#d8dee9", "bg": "#2e3440", "cursor": "#d8dee9", "cursorStyle": "block", "selection": "rgba(67, 76, 94, 0.8)", "font": "Fira Mono"}, "globe": {"base": "#000000", "marker": "#ebcb8b", "pin": "#81a1c1", "satellite": "#bf616a"}, "ansi": {"red": "#bf616a", "green": "#a3be8c", "yellow": "#ebcb8b", "blue": "#81a1c1", "magenta": "#b48ead", "cyan": "#88c0d0"}, "iconFilter": "brightness(0) saturate(100%) invert(90%) sepia(14%) saturate(142%) hue-rotate(180deg) brightness(98%) contrast(90%)", "iconFilterBg": "brightness(0) saturate(100%) invert(16%) sepia(16%) saturate(827%) hue-rotate(181deg) brightness(91%) contrast(85%)"},
+        "chalkboard": {"label": "CHALKBOARD", "desc": "Мягкий меловой белый на графите", "variant": "", "light": false, "r": 239, "g": 240, "b": 235, "black": "#282a36", "light_black": "#222430", "grey": "#222430", "term": {"fg": "#eff0eb", "bg": "#282a36", "cursor": "#97979b", "cursorStyle": "block", "selection": "rgba(239,240,235,0.3)", "font": "Fira Mono"}, "globe": {"base": "#000000", "marker": "#f3f99d", "pin": "#eff0eb", "satellite": "#ff5c57"}, "ansi": {"red": "#ff5c57", "green": "#5af78e", "yellow": "#f3f99d", "blue": "#57c7ff", "magenta": "#ff6ac1", "cyan": "#9aedfe"}, "iconFilter": "brightness(0) saturate(100%) invert(94%) sepia(3%) saturate(1300%) hue-rotate(320deg) brightness(110%) contrast(88%)", "iconFilterBg": "brightness(0) saturate(100%) invert(12%) sepia(21%) saturate(674%) hue-rotate(194deg) brightness(90%) contrast(93%)"},
+        "chalkboard-ligatures": {"label": "CHALKBOARD · LIGATURES", "desc": "Мягкий меловой белый на графите", "variant": "лигатуры Fira Code", "light": false, "r": 239, "g": 240, "b": 235, "black": "#282a36", "light_black": "#222430", "grey": "#222430", "term": {"fg": "#eff0eb", "bg": "#282a36", "cursor": "#97979b", "cursorStyle": "block", "selection": "rgba(239,240,235,0.3)", "font": "Fira Code"}, "globe": {"base": "#000000", "marker": "#f3f99d", "pin": "#eff0eb", "satellite": "#ff5c57"}, "ansi": {"red": "#ff5c57", "green": "#5af78e", "yellow": "#f3f99d", "blue": "#57c7ff", "magenta": "#ff6ac1", "cyan": "#9aedfe"}, "iconFilter": "brightness(0) saturate(100%) invert(94%) sepia(3%) saturate(1300%) hue-rotate(320deg) brightness(110%) contrast(88%)", "iconFilterBg": "brightness(0) saturate(100%) invert(12%) sepia(21%) saturate(674%) hue-rotate(194deg) brightness(90%) contrast(93%)"},
+        "chalkboard-notype": {"label": "CHALKBOARD · NOTYPE", "desc": "Мягкий меловой белый на графите", "variant": "без клавиатуры", "light": false, "r": 239, "g": 240, "b": 235, "black": "#282a36", "light_black": "#222430", "grey": "#222430", "term": {"fg": "#eff0eb", "bg": "#282a36", "cursor": "#97979b", "cursorStyle": "block", "selection": "rgba(239,240,235,0.3)", "font": "Fira Mono"}, "globe": {"base": "#000000", "marker": "#f3f99d", "pin": "#eff0eb", "satellite": "#ff5c57"}, "ansi": {"red": "#ff5c57", "green": "#5af78e", "yellow": "#f3f99d", "blue": "#57c7ff", "magenta": "#ff6ac1", "cyan": "#9aedfe"}, "iconFilter": "brightness(0) saturate(100%) invert(94%) sepia(3%) saturate(1300%) hue-rotate(320deg) brightness(110%) contrast(88%)", "iconFilterBg": "brightness(0) saturate(100%) invert(12%) sepia(21%) saturate(674%) hue-rotate(194deg) brightness(90%) contrast(93%)"},
+        "apollo": {"label": "APOLLO", "desc": "Белый монохром, как приборы «Аполлона»", "variant": "", "light": false, "r": 235, "g": 235, "b": 235, "black": "#000000", "light_black": "#191919", "grey": "#262827", "term": {"fg": "#ebebeb", "bg": "#191919", "cursor": "#ebebeb", "cursorStyle": "block", "selection": "rgba(235,235,235,0.3)", "font": "Fira Mono"}, "globe": {"base": "#000000", "marker": "#ebebeb", "pin": "#ebebeb", "satellite": "#ebebeb"}, "iconFilter": "brightness(0) saturate(100%) invert(100%) sepia(2%) saturate(265%) hue-rotate(72deg) brightness(116%) contrast(84%)", "iconFilterBg": "brightness(0) saturate(100%) invert(8%) sepia(3%) saturate(0%) hue-rotate(332deg) brightness(95%) contrast(95%)"},
+        "apollo-notype": {"label": "APOLLO · NOTYPE", "desc": "Белый монохром, как приборы «Аполлона»", "variant": "без клавиатуры", "light": false, "r": 235, "g": 235, "b": 235, "black": "#000000", "light_black": "#191919", "grey": "#262827", "term": {"fg": "#ebebeb", "bg": "#191919", "cursor": "#ebebeb", "cursorStyle": "block", "selection": "rgba(235,235,235,0.3)", "font": "Fira Mono"}, "globe": {"base": "#000000", "marker": "#ebebeb", "pin": "#ebebeb", "satellite": "#ebebeb"}, "iconFilter": "brightness(0) saturate(100%) invert(100%) sepia(2%) saturate(265%) hue-rotate(72deg) brightness(116%) contrast(84%)", "iconFilterBg": "brightness(0) saturate(100%) invert(8%) sepia(3%) saturate(0%) hue-rotate(332deg) brightness(95%) contrast(95%)"},
+        "interstellar": {"label": "INTERSTELLAR", "desc": "Светлая тема: голубой на сером", "variant": "", "light": true, "r": 3, "g": 169, "b": 244, "black": "#f3f3f3", "light_black": "#dedede", "grey": "#bfbfbf", "term": {"fg": "#03a9f4", "bg": "#dedede", "cursor": "#03a9f4", "cursorStyle": "bar", "selection": "rgba(3,169,244,0.3)", "font": "Fira Mono"}, "globe": {"base": "#03a9f4", "marker": "#03a9f4", "pin": "#03a9f4", "satellite": "#03a9f4"}, "iconFilter": "brightness(0) saturate(100%) invert(46%) sepia(48%) saturate(2193%) hue-rotate(168deg) brightness(101%) contrast(98%)", "iconFilterBg": "brightness(0) saturate(100%) invert(83%) sepia(0%) saturate(0%) hue-rotate(316deg) brightness(106%) contrast(97%)"}
+    };
+    /* THEMES:END */
+
+    /* Текущий цвет темы для canvas-графики (радар, графики, аватар).
+       Объект изменяется на месте при смене темы — rgba() всегда берёт актуальный цвет. */
+    const THEME = { id: "blade", r: 204, g: 94, b: 55 };
     const rgba = a => `rgba(${THEME.r}, ${THEME.g}, ${THEME.b}, ${a === undefined ? 1 : a})`;
+
+    /* ================================================================
+     * Цветовые схемы eDEX-UI (assets/themes/*.json → THEMES)
+     * Тема применяется инлайн-переменными на <html>; тот же набор переменных
+     * кэшируется в nx_settings.themeVars, чтобы скрипт в <head> применил его
+     * до первой отрисовки (без мигания оранжевой blade на других темах).
+     * ================================================================ */
+    const Theme = {
+        DEFAULT: "blade",
+        list() { return Object.keys(THEMES); },
+        get(id) { return THEMES[id] || null; },
+        resolve(name) {
+            if (!name) return null;
+            const q = String(name).trim().toLowerCase().replace(/[\s_·]+/g, "-").replace(/-+/g, "-");
+            if (THEMES[q]) return q;
+            const hits = this.list().filter(id => id.startsWith(q));
+            return hits.length === 1 ? hits[0] : null;
+        },
+        suggest(name) {
+            const q = String(name || "").toLowerCase();
+            return this.list().filter(id => id.includes(q) || q.includes(id.split("-")[0])).slice(0, 4);
+        },
+        current() {
+            const id = Settings.get("theme");
+            return THEMES[id] ? id : this.DEFAULT;
+        },
+        hexToTriplet(hex) {
+            let h = String(hex || "").replace("#", "").trim();
+            if (h.length === 3) h = h.split("").map(c => c + c).join("");
+            const n = parseInt(h, 16);
+            if (isNaN(n) || h.length !== 6) return "0, 0, 0";
+            return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
+        },
+        /* Непрозрачное выделение (cyborg: #ffff5c, matrix: #008f11) делаем полупрозрачным,
+           иначе выделенный текст сливается с фоном выделения */
+        selection(t) {
+            const sel = t.term.selection || "";
+            if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(sel)) return `rgba(${this.hexToTriplet(sel)}, 0.4)`;
+            return sel;
+        },
+        /* Набор CSS-переменных темы — те же имена, что в :root (css/blade-theme.css) */
+        vars(id) {
+            const t = THEMES[id] || THEMES[this.DEFAULT];
+            const ansi = t.ansi || {};
+            return {
+                "--color_r": String(t.r),
+                "--color_g": String(t.g),
+                "--color_b": String(t.b),
+                "--color_black": t.black,
+                "--color_light_black": t.light_black,
+                "--color_grey": t.grey,
+                "--bg_rgb": this.hexToTriplet(t.light_black),
+                "--black_rgb": this.hexToTriplet(t.black),
+                "--selection": this.selection(t),
+                "--color_err": ansi.red || (id === "blade" ? "#ff6b4a" : `rgb(${t.r}, ${t.g}, ${t.b})`),
+                "--color_red": ansi.red || "red",
+                "--color_yellow": ansi.yellow || "yellow",
+                "--term_fg": t.term.fg,
+                "--term_bg": t.term.bg,
+                "--term_cursor": t.term.cursor,
+                "--term_font": `"${t.term.font}", "Fira Mono", monospace`,
+                "--term_filter": t.term.filter || "none",
+                "--icon_filter": t.iconFilter,
+                "--icon_filter_bg": t.iconFilterBg
+            };
+        },
+        /* Применить тему к документу (без сохранения) */
+        paint(id) {
+            if (!THEMES[id]) id = this.DEFAULT;
+            const t = THEMES[id];
+            const d = document.documentElement;
+            const vars = this.vars(id);
+            Object.keys(vars).forEach(k => d.style.setProperty(k, vars[k]));
+            d.style.colorScheme = t.light ? "light" : "dark";
+            d.classList.toggle("theme-light", !!t.light);
+            d.setAttribute("data-theme", id);
+            d.setAttribute("data-term-cursor", t.term.cursorStyle || "block");
+            const meta = document.querySelector('meta[name="theme-color"]');
+            if (meta) meta.setAttribute("content", t.light_black);
+            THEME.id = id; THEME.r = t.r; THEME.g = t.g; THEME.b = t.b;
+            return vars;
+        },
+        /* Сменить тему: применить, сохранить в nx_settings, оповестить страницы */
+        set(id, opts) {
+            opts = opts || {};
+            const key = this.resolve(id);
+            if (!key) return false;
+            const prev = THEME.id;
+            // Короткий плавный переход цветов (класс снимается сразу после смены)
+            const d = document.documentElement;
+            if (opts.animate !== false && !reducedMotion()) {
+                d.classList.add("theme-switching");
+                clearTimeout(this._swT);
+                this._swT = setTimeout(() => d.classList.remove("theme-switching"), 450);
+            }
+            const vars = this.paint(key);
+            if (!Settings.data) Settings.load();
+            Settings.data.theme = key;
+            Settings.data.themeVars = Object.assign({ "color-scheme": THEMES[key].light ? "light" : "dark" }, vars);
+            Settings.data.v = Settings.VERSION;
+            storage.setJSON(Settings.KEY, Settings.data);
+            if (opts.sound !== false) Sound.play("theme");
+            if (prev !== key) document.dispatchEvent(new CustomEvent("nexus:theme", { detail: { id: key } }));
+            return true;
+        }
+    };
 
     /* Выполнять колбэк только пока элемент виден (экономия CPU) */
     function whenVisible(el, onChange) {
@@ -124,7 +254,7 @@
     const Settings = {
         KEY: "nx_settings",
         VERSION: 2,
-        defaults: { sfx: true, intro: true, grid: true, glow: true, motion: true, scale: "normal" },
+        defaults: { sfx: true, intro: true, grid: true, glow: true, motion: true, scale: "normal", theme: "blade" },
         data: null,
         load() {
             const saved = storage.getJSON(this.KEY, {}) || {};
@@ -151,6 +281,7 @@
             this.data = Object.assign({ v: this.VERSION }, this.defaults);
             storage.setJSON(this.KEY, this.data);
             this.apply();
+            Theme.set(this.defaults.theme, { sound: false });
         },
         /* Применение к <html>. Тот же код продублирован инлайном в <head>,
            чтобы при загрузке страницы не было мигания. */
@@ -162,6 +293,19 @@
             const scale = this.get("scale");
             if (scale && scale !== "normal") d.setAttribute("data-hud-scale", scale);
             else d.removeAttribute("data-hud-scale");
+            // Цветовая схема (Theme объявлен ниже, вызывается уже после инициализации модуля)
+            if (typeof Theme !== "undefined") {
+                const prev = THEME.id;
+                const id = Theme.current();
+                const vars = Theme.paint(id);
+                // Обновляем кэш переменных для инлайн-скрипта в <head> (если словарь тем изменился)
+                const cached = Object.assign({ "color-scheme": THEMES[id].light ? "light" : "dark" }, vars);
+                if (JSON.stringify(this.data.themeVars || null) !== JSON.stringify(cached)) {
+                    this.data.themeVars = cached;
+                    storage.setJSON(this.KEY, this.data);
+                }
+                if (prev !== id) document.dispatchEvent(new CustomEvent("nexus:theme", { detail: { id } }));
+            }
         }
     };
     Settings.load();
@@ -1651,6 +1795,14 @@
                 const v = this.input.value.trim().toLowerCase();
                 e.preventDefault();
                 if (!v) return;
+                // Автодополнение названия темы: «theme na» → «theme navy»
+                const tm = /^theme\s+(\S*)$/.exec(v);
+                if (tm) {
+                    const opts = Theme.list().filter(id => id.indexOf(tm[1]) === 0);
+                    if (opts.length === 1) this.input.value = "theme " + opts[0];
+                    else if (opts.length > 1) this.print(opts.join("  "));
+                    return;
+                }
                 const matches = Object.keys(this.commands).filter(c => c.indexOf(v) === 0);
                 if (matches.length === 1) this.input.value = matches[0] + " ";
                 else if (matches.length > 1) this.print(matches.join("  "));
@@ -1709,6 +1861,7 @@
                         "  neofetch        — информация о системе браузера",
                         "  date, echo, history, clear",
                         "  sfx on|off      — звуки интерфейса eDEX-UI",
+                        "  theme [name]    — список цветовых схем / сменить схему",
                         "  credits         — лицензия и происхождение интерфейса",
                         "  reboot          — повторить анимацию загрузки",
                         "  exit            — закрыть терминал"
@@ -1781,7 +1934,7 @@
                         `Resolution: ${window.screen.width}x${window.screen.height}`,
                         `CPU threads: ${navigator.hardwareConcurrency || "N/A"}`,
                         `Clearance: ${s ? "LEVEL " + s.level : "NONE"}`,
-                        "Theme: blade (eDEX-UI)",
+                        `Theme: ${Theme.current()} (eDEX-UI)`,
                         "Font: United Sans / Fira Mono"
                     ];
                     const rows = Math.max(art.length, info.length);
@@ -1796,7 +1949,33 @@
                     else if (v === "off") { Sound.set(false); this.print("sfx: disabled"); }
                     else this.print(`sfx: ${Sound.enabled ? "on" : "off"} (используйте «sfx on» или «sfx off»)`);
                 },
-                theme() { this.print("theme: blade — rgb(204, 94, 55) on #090B0A. Настройки HUD — в кабинете."); },
+                theme(args) {
+                    const arg = (args[0] || "").toLowerCase();
+                    const cur = Theme.current();
+                    if (!arg || arg === "list" || arg === "ls") {
+                        this.print(`Цветовые схемы eDEX-UI: ${Theme.list().length} · текущая: ${cur}`);
+                        Theme.list().forEach(id => {
+                            const t = THEMES[id];
+                            const sw = [`rgb(${t.r}, ${t.g}, ${t.b})`, t.light_black, t.grey, t.term.fg]
+                                .map(c => `<span class="term-swatch" style="background:${c}"></span>`).join("");
+                            const mark = id === cur ? "*" : " ";
+                            this.printHtml(`${mark} ${sw} <span class="${id === cur ? "hl" : ""}">${escapeHtml(id)}</span>${" ".repeat(Math.max(1, 22 - id.length))} ${escapeHtml(t.variant || t.desc)}`);
+                        });
+                        this.printHtml('Переключить: <span class="hl">theme &lt;название&gt;</span> (например: theme matrix) · по умолчанию: <span class="hl">theme reset</span>');
+                        return;
+                    }
+                    const id = (arg === "reset" || arg === "default") ? Theme.DEFAULT : Theme.resolve(args.join("-"));
+                    if (!id) {
+                        const hints = Theme.suggest(arg);
+                        this.print(`theme: схема «${args.join(" ")}» не найдена.${hints.length ? " Возможно: " + hints.join(", ") + "." : ""} Список — «theme».`, "err");
+                        Sound.play("denied");
+                        return;
+                    }
+                    if (id === cur) { this.print(`theme: ${THEMES[id].label} уже активна.`); return; }
+                    Theme.set(id);
+                    this.print(`theme: переключено на ${THEMES[id].label} (${id}). Сохранено для всех страниц.`);
+                    toast(`Тема интерфейса: ${THEMES[id].label}`, "ok");
+                },
                 credits() {
                     this.printHtml('UI inspired by &amp; adapted from <a href="https://github.com/GitSquared/edex-ui" target="_blank" rel="noopener noreferrer">eDEX-UI</a> (GPL-3.0) by Gabriel “Squared” Saillard.');
                     this.printHtml('Рамки: augmented-ui 1.1.2 (BSD-2-Clause). Лицензия сайта: <a href="LICENSE">GPL-3.0</a>.');
@@ -1952,7 +2131,7 @@
         PAGE, $, $$, clamp, rand, randInt, pick, pad, delay, escapeHtml, timeStr, dateStr, hashString, rgba,
         storage, Settings, Sound, Auth, LEVELS, ACCESS_CODES, toast, showBanner, Modal, Tabs, Syslog, Terminal,
         SERVERS, Telemetry, statusBadge, formatPlayers, PROJECTS, CATEGORIES, STATUSES, Docs,
-        observeReveal, reducedMotion, copyText, updateUserUI, NICKS
+        observeReveal, reducedMotion, copyText, updateUserUI, NICKS, THEMES, Theme
     };
 
     init();
