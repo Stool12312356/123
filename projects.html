@@ -3,8 +3,8 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Проекты — NEXUS//DEV</title>
-    <meta name="description" content="Реестр разработок NEXUS//DEV: BASTION: LINE ZERO на Unreal Engine 5, моды и серверы Minecraft, сетевая инфраструктура. Досье, прогресс, стек технологий.">
+    <title>Проекты и сборки — NEXUS//DEV</title>
+    <meta name="description" content="Центр загрузок NEXUS//DEV: лаунчер, моды Minecraft и сборки Unreal Engine 5 со статусами, версиями и patch notes.">
     <meta name="theme-color" content="#090B0A">
     <link rel="icon" type="image/svg+xml" href="assets/icons/terminal.svg">
 
@@ -12,9 +12,9 @@
     <link rel="stylesheet" href="assets/vendor/augmented-ui/augmented.css">
     <!-- Тема blade, перенесённая из eDEX-UI -->
     <link rel="stylesheet" href="css/blade-theme.css">
-    <!-- Адаптивная сетка сайта -->
+    <!-- Адаптивная сетка: шапка, подвал, модули, терминал -->
     <link rel="stylesheet" href="css/layout.css">
-    <!-- Компоненты страниц NEXUS//DEV (формы, карточки проектов, кабинет) -->
+    <!-- Компоненты страниц: главная, каталог, формы, кабинет, тосты -->
     <link rel="stylesheet" href="css/pages.css">
 
     <script>
@@ -36,7 +36,7 @@
 <body data-page="projects">
     <a class="skip-link" href="#main">Перейти к содержимому</a>
 
-    <!-- ===================== ШАПКА ===================== -->
+    <!-- ===================== ШАПКА (общая для всех страниц) ===================== -->
     <header class="site-header" id="top">
         <div class="container header-inner">
             <a class="brand" href="index.html" aria-label="NEXUS//DEV — на главную">
@@ -46,18 +46,21 @@
 
             <nav class="site-nav" id="site-nav" aria-label="Основная навигация">
                 <ul class="skew-tabs nav-tabs">
-                    <li><a href="index.html" data-nav="home">Главная</a></li>
-                    <li class="active"><a href="projects.html" data-nav="projects" aria-current="page">Проекты</a></li>
-                    <li><a href="dashboard.html" data-nav="dashboard">Кабинет</a></li>
-                    <li><a href="auth.html" data-nav="auth">Вход / Регистрация</a></li>
+                    <li><a href="index.html" data-nav="home"><img src="assets/icons/home.svg" alt="" width="16" height="16">Главная</a></li>
+                    <li class="active"><a href="projects.html" data-nav="projects" aria-current="page"><img src="assets/icons/portfolio.svg" alt="" width="16" height="16">Проекты</a></li>
+                    <li><a href="dashboard.html" data-nav="dashboard"><img src="assets/icons/user.svg" alt="" width="16" height="16">Кабинет</a></li>
+                    <li><a href="auth.html" data-nav="auth"><img src="assets/icons/sign-in.svg" alt="" width="16" height="16">Вход</a></li>
                 </ul>
             </nav>
 
             <div class="header-tools">
-                <button class="tool-btn" id="sound-toggle" type="button" aria-pressed="false" title="Звуковые эффекты eDEX-UI">
+                <button class="tool-btn term-btn" type="button" data-terminal aria-expanded="false" aria-controls="term-overlay" aria-label="Терминал (клавиша ~)" title="Терминал [~]">
+                    <img src="assets/icons/shell.svg" alt="" width="18" height="18">
+                </button>
+                <button class="tool-btn" id="sound-toggle" type="button" aria-pressed="true" title="Звуковые эффекты eDEX-UI">
                     <img class="icon-off" src="assets/icons/mute.svg" alt="" width="18" height="18">
                     <img class="icon-on" src="assets/icons/volume.svg" alt="" width="18" height="18">
-                    <span class="tool-label">SFX <b id="sound-state">OFF</b></span>
+                    <span class="tool-label">SFX <b id="sound-state">ON</b></span>
                 </button>
                 <button class="tool-btn menu-toggle" id="menu-toggle" type="button" aria-controls="site-nav" aria-expanded="false" aria-label="Открыть меню">
                     <img class="icon-menu" src="assets/icons/menu.svg" alt="" width="20" height="20">
@@ -67,87 +70,59 @@
         </div>
 
         <div class="container header-status">
-            <p><span class="dot" id="uplink-dot" aria-hidden="true"></span>UPLINK: <b id="uplink-state">ONLINE</b></p>
-            <p class="hide-sm">SERVERS: <b id="header-servers">-/-</b></p>
-            <p>USER: <b id="header-user">GUEST</b></p>
-            <p><b id="header-clock">--:--:--</b> <span class="hide-sm">UTC<span id="header-tz">+0</span></span></p>
+            <p data-sum-state><span class="dot" id="uplink-dot" aria-hidden="true"></span><b data-sum="state">SYSTEM ONLINE</b></p>
+            <p class="hide-sm">SERVERS <b id="header-servers">-/-</b></p>
+            <p class="hide-sm">RELEASES <b data-sum="releases">3</b></p>
+            <p>USER <b id="header-user">GUEST</b></p>
+            <p class="hide-xs"><b id="header-clock">--:--:--</b></p>
         </div>
     </header>
 
     <main id="main">
         <!-- ===================== ЗАГОЛОВОК ===================== -->
         <section class="container page-head" aria-labelledby="page-title">
-            <h2 class="panel-title section-title"><span>Реестр разработок</span><span>/projects</span></h2>
+            <h2 class="panel-title section-title"><span>Центр загрузок</span><span>/projects</span></h2>
             <p class="crumbs"><a href="index.html">~</a> / projects <span class="prompt-sign">_</span></p>
-            <div class="flagship-grid">
-                <div class="reveal-fade">
-                    <h1 class="page-title" id="page-title">Проекты NEXUS//DEV</h1>
-                    <p class="page-lead">
-                        Всё, над чем работает студия: флагманская RTS на Unreal Engine 5, экосистема серверов и модов
-                        Minecraft и сетевая инфраструктура, которая связывает их вместе. У каждого проекта есть досье
-                        с описанием текущей сборки, changelog и списком известных проблем.
-                    </p>
-                </div>
-                <div class="status-summary reveal-stagger" style="grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0;">
-                    <div class="mod summary-item"><h3 class="mod-head">PROJECTS <i>всего</i></h3><p class="summary-value">9</p></div>
-                    <div class="mod summary-item"><h3 class="mod-head">LIVE <i>в продакшене</i></h3><p class="summary-value">2</p></div>
-                    <div class="mod summary-item"><h3 class="mod-head">SERVERS <i>онлайн</i></h3><p class="summary-value" data-sum="online">-/-</p></div>
-                    <div class="mod summary-item"><h3 class="mod-head">FLAGSHIP <i>BASTION</i></h3><p class="summary-value">38%</p></div>
-                </div>
-            </div>
+            <h1 class="page-title" id="page-title">Проекты и сборки</h1>
+            <p class="page-lead">
+                Все сборки экосистемы в одном месте. Публичные релизы скачиваются без входа, а закрытые тесты
+                и dev-снапшоты открываются по уровню допуска вашего аккаунта NEXUS ID.
+            </p>
         </section>
 
         <!-- ===================== ФИЛЬТР И КАРТОЧКИ ===================== -->
-        <section class="container page-section" id="registry" aria-labelledby="registry-title">
-            <h2 class="visually-hidden" id="registry-title">Список проектов</h2>
+        <section class="container page-section" aria-labelledby="registry-title">
+            <h2 class="visually-hidden" id="registry-title">Список сборок</h2>
 
             <div class="filter-bar">
-                <ul class="skew-tabs filter-tabs" id="filter-tabs" aria-label="Фильтр проектов по направлению">
-                    <li class="active"><button type="button" data-filter="all" aria-pressed="true">ALL<span class="count">9</span></button></li>
-                    <li><button type="button" data-filter="ue5" aria-pressed="false">UNREAL ENGINE 5<span class="count">3</span></button></li>
-                    <li><button type="button" data-filter="minecraft" aria-pressed="false">MINECRAFT<span class="count">3</span></button></li>
-                    <li><button type="button" data-filter="network" aria-pressed="false">NETWORK<span class="count">3</span></button></li>
+                <ul class="skew-tabs filter-tabs" id="filter-tabs" aria-label="Фильтр по статусу сборки">
+                    <li class="active"><button type="button" data-filter="all" aria-pressed="true">ВСЕ<span class="count">6</span></button></li>
+                    <li><button type="button" data-filter="available" aria-pressed="false">ДОСТУПНО<span class="count">3</span></button></li>
+                    <li><button type="button" data-filter="closed" aria-pressed="false">ЗАКРЫТЫЙ ТЕСТ<span class="count">1</span></button></li>
+                    <li><button type="button" data-filter="dev" aria-pressed="false">В РАЗРАБОТКЕ<span class="count">2</span></button></li>
                 </ul>
-                <p class="filter-info" id="filter-info" aria-live="polite">&gt; ls /projects</p>
+                <p class="filter-info" id="filter-info" aria-live="polite">6 сборок</p>
             </div>
 
-            <!-- Карточки рендерятся из массива PROJECTS в js/ui-effects.js -->
+            <!-- Карточки рендерятся из массива PROJECTS (js/ui-effects.js) -->
             <div class="project-grid" id="project-grid">
                 <noscript>
-                    <div class="empty-state">
-                        Для фильтра и досье нужен JavaScript. Проекты: BASTION: LINE ZERO (UE5, 38%), TRENCHWORKS (UE5, 61%),
-                        COBALT SYNDICATE ART BIBLE (UE5, 47%), NEXUS CRAFT (Minecraft, 82%), FORTIFY MOD (Minecraft, 54%),
-                        NEXUS TECH (Minecraft, 27%), NEXUS GRID (Network, 76%), PLAYTEST RELAY (Network, 44%), NEXUS ID (Network, 33%).
-                    </div>
+                    <p class="noscript-note">
+                        Для каталога нужен JavaScript. Сборки: NEXUS LAUNCHER 1.4.2, FORTIFY MOD 0.9.2-beta,
+                        NEXUS CRAFT MODPACK 2026.4 (доступно), BASTION: LINE ZERO 0.3.7 (закрытый тест),
+                        TRENCHWORKS 0.6.1 и NEXUS TECH 0.2.0 (в разработке).
+                    </p>
                 </noscript>
             </div>
 
-            <div class="status-wrap glow on-scroll" style="margin-top: clamp(30px, 4vw, 56px);">
-                <div class="status-panel aug-frame" augmented-ui="tr-clip bl-clip exe">
-                    <div class="dash-tab-head">
-                        <h2>Хотите попасть на плейтест?</h2>
-                        <p>&gt; clearance LEVEL 3 // PLAYTESTER</p>
-                    </div>
-                    <p class="page-lead" style="margin-bottom: 18px;">
-                        Сборки BASTION и бета-версии модов выдаются через личный кабинет. Зарегистрируйтесь, введите код доступа
-                        от команды — или посмотрите демо-кабинет через «ТЕСТОВЫЙ ВХОД».
-                    </p>
-                    <div class="hero-actions" style="margin-bottom: 4px;">
-                        <a class="btn btn-primary" href="auth.html" data-auth-href="auth.html|dashboard.html">
-                            <img src="assets/icons/sign-in.svg" alt="" width="18" height="18">
-                            <span data-auth-label="Вход / Регистрация|Перейти в кабинет">Вход / Регистрация</span>
-                        </a>
-                        <a class="btn" href="index.html#status">
-                            <img src="assets/icons/activity.svg" alt="" width="18" height="18">
-                            Статус серверов
-                        </a>
-                    </div>
-                </div>
-            </div>
+            <p class="dl-note">
+                <img src="assets/icons/info.svg" alt="" width="16" height="16">
+                <span>Демо-режим: загрузка симулируется в браузере, файлы не передаются. История загрузок сохраняется в кабинете, если вы вошли.</span>
+            </p>
         </section>
     </main>
 
-    <!-- ===================== ПОДВАЛ ===================== -->
+    <!-- ===================== ПОДВАЛ (общий для всех страниц) ===================== -->
     <footer class="site-footer">
         <div class="container">
             <h2 class="panel-title"><span>NEXUS//DEV</span><span>EOF</span></h2>
@@ -157,7 +132,7 @@
                         <img src="assets/icons/terminal.svg" alt="" width="22" height="22">
                         <span class="brand-name">NEXUS<em>//</em>DEV</span>
                     </p>
-                    <p>Некоммерческий портал инди-разработки: тактическая RTS BASTION: LINE ZERO на Unreal Engine 5, серверы Minecraft NEXUS CRAFT и собственные моды.</p>
+                    <p>Ядро некоммерческой экосистемы инди-проектов: один аккаунт, центр загрузок, доступ к тестам и серверам.</p>
                 </div>
                 <nav class="footer-col" aria-label="Навигация в подвале">
                     <h3>Навигация</h3>
@@ -165,16 +140,16 @@
                         <li><a href="index.html">Главная</a></li>
                         <li><a href="projects.html">Проекты</a></li>
                         <li><a href="dashboard.html">Кабинет</a></li>
-                        <li><a href="auth.html">Вход / Регистрация</a></li>
+                        <li><a href="auth.html">Вход</a></li>
                     </ul>
                 </nav>
                 <div class="footer-col">
-                    <h3>Проект</h3>
+                    <h3>Информация</h3>
                     <ul>
-                        <li><a href="projects.html#dossier-bastion">Досье BASTION</a></li>
+                        <li><button class="link-btn" type="button" data-doc="faq">FAQ</button></li>
+                        <li><button class="link-btn" type="button" data-doc="rules">Правила</button></li>
+                        <li><button class="link-btn" type="button" data-doc="license">Лицензия GPL-3.0</button></li>
                         <li><a href="https://github.com/Stool12312356/123" target="_blank" rel="noopener noreferrer">Исходный код сайта</a></li>
-                        <li><a href="LICENSE">Лицензия GPL-3.0</a></li>
-                        <li><button class="link-btn" type="button" data-doc="faq">Частые вопросы</button></li>
                     </ul>
                 </div>
             </div>
@@ -182,6 +157,9 @@
             <div class="footer-bottom">
                 <p>&copy; <span class="js-year">2026</span> NEXUS//DEV. Некоммерческий проект. Код сайта распространяется под лицензией <a href="LICENSE">GPL-3.0</a>.</p>
                 <p class="credit">
+                    <button class="term-secret" type="button" data-terminal aria-expanded="false" aria-controls="term-overlay" aria-label="Терминал" title="&gt;_">
+                        <img src="assets/icons/terminal.svg" alt="" width="16" height="16">
+                    </button>
                     <img src="assets/img/edex-logo.svg" alt="" width="18" height="18">
                     <span>UI inspired by &amp; adapted from <a href="https://github.com/GitSquared/edex-ui" target="_blank" rel="noopener noreferrer">eDEX-UI</a> (GPL-3.0)</span>
                 </p>

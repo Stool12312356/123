@@ -16,4 +16,7 @@ CSS-правила в `css/blade-theme.css` (и производные стил�
 а логика экрана загрузки и виджетов в `js/ui-effects.js` и `js/pages.js` переписана на браузерном JS
 по мотивам `src/_renderer.js` и `src/classes/*.class.js` (GPL-3.0).
 
+HUD-графика карточек проектов (топография, воксельная сетка, граф узлов) и схема на главной —
+оригинальные SVG, генерируемые кодом сайта (`js/pages.js`, `index.html`); растровых изображений нет.
+
 UI inspired by & adapted from eDEX-UI (GPL-3.0) — © Gabriel “Squared” Saillard и участники проекта.
