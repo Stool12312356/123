@@ -4,18 +4,18 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Личный кабинет — NEXUS//DEV</title>
-    <meta name="description" content="Личный кабинет NEXUS//DEV: профиль и уровень допуска, сборки и история загрузок, управление игровыми серверами, настройки HUD.">
+    <meta name="description" content="Личный кабинет NEXUS//DEV: профиль, роль и права доступа, история загрузок, настройки HUD.">
     <meta name="theme-color" content="#090B0A">
     <link rel="icon" type="image/svg+xml" href="assets/icons/terminal.svg">
 
     <!-- Зависимость оригинального eDEX-UI: augmented-ui 1.1.2 (BSD-2-Clause) — скошенные рамки -->
     <link rel="stylesheet" href="assets/vendor/augmented-ui/augmented.css">
     <!-- Тема blade, перенесённая из eDEX-UI -->
-    <link rel="stylesheet" href="css/blade-theme.css?v=20261109-7">
+    <link rel="stylesheet" href="css/blade-theme.css?v=20261109-8">
     <!-- Адаптивная сетка: шапка, подвал, модули, терминал -->
-    <link rel="stylesheet" href="css/layout.css?v=20261109-7">
+    <link rel="stylesheet" href="css/layout.css?v=20261109-8">
     <!-- Компоненты страниц: главная, каталог, формы, кабинет, тосты -->
-    <link rel="stylesheet" href="css/pages.css?v=20261109-7">
+    <link rel="stylesheet" href="css/pages.css?v=20261109-8">
 
     <script>
         /* Ранняя инициализация: класс js и сохранённые настройки HUD (без мигания) */
@@ -136,9 +136,9 @@
                             <p class="profile-name" id="profile-name">—</p>
                             <p class="profile-id">ID: <b id="profile-id">NX-0000-0000</b></p>
                             <div class="clearance">
-                                <p class="sub-label">Clearance level</p>
-                                <div class="clearance-bars" id="clearance-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-                                <p class="clearance-name" id="profile-level">LEVEL 1 // OBSERVER</p>
+                                <p class="sub-label">Role</p>
+                                <div class="clearance-bars role-bars" id="clearance-bars" aria-hidden="true"><i></i><i></i><i></i></div>
+                                <p class="clearance-name" id="profile-level">USER // Пользователь</p>
                             </div>
                             <div class="profile-actions">
                                 <button class="btn btn-sm" type="button" id="avatar-regen">
@@ -178,9 +178,6 @@
                                 <button type="button" role="tab" id="dtab-profile" aria-selected="true" aria-controls="dpanel-profile">Профиль и доступ</button>
                             </li>
                             <li role="presentation">
-                                <button type="button" role="tab" id="dtab-servers" aria-selected="false" aria-controls="dpanel-servers" tabindex="-1">Управление серверами</button>
-                            </li>
-                            <li role="presentation">
                                 <button type="button" role="tab" id="dtab-settings" aria-selected="false" aria-controls="dpanel-settings" tabindex="-1">Настройки HUD</button>
                             </li>
                         </ul>
@@ -201,31 +198,34 @@
                                                 <tr><td>Позывной</td><td id="pi-callsign">—</td></tr>
                                                 <tr><td>Email</td><td id="pi-email">—</td></tr>
                                                 <tr><td>User ID</td><td id="pi-id">—</td></tr>
-                                                <tr><td>Допуск</td><td id="pi-level">—</td></tr>
+                                                <tr><td>Роль</td><td id="pi-role">—</td></tr>
                                                 <tr><td>Регистрация</td><td id="pi-registered">—</td></tr>
                                                 <tr><td>Последний вход</td><td id="pi-last">—</td></tr>
                                                 <tr><td>Сессия</td><td id="pi-session">—</td></tr>
                                             </tbody>
                                         </table>
                                     </div>
-                                    <div class="mod">
-                                        <h4 class="mod-head">ACCESS MATRIX <i>уровни допуска</i></h4>
-                                        <table class="edex-table access-table stack-table">
-                                            <thead><tr><th>Ресурс</th><th>Уровень</th><th>Доступ</th></tr></thead>
-                                            <tbody id="access-body"></tbody>
-                                        </table>
+                                    <div class="mod role-mod">
+                                        <h4 class="mod-head">ROLE <i>текущая роль и права</i></h4>
+                                        <div class="role-card" id="role-card" data-role="user">
+                                            <p class="role-card-name"><b id="role-name">USER</b><span id="role-title">Пользователь</span></p>
+                                            <p class="role-card-desc" id="role-desc">—</p>
+                                        </div>
+                                        <p class="sub-label">Тестовый переключатель роли</p>
+                                        <div data-role-switch></div>
+                                        <p class="role-hint">&gt; демо-режим: роль хранится в <code>nx_session</code> этого браузера · в терминале: <code>role admin</code></p>
                                     </div>
                                     <div class="mod full">
-                                        <h4 class="mod-head">AVAILABLE BUILDS <i>сборки по уровню допуска</i></h4>
+                                        <h4 class="mod-head">PERMISSIONS <i>что может каждая роль</i></h4>
                                         <div class="table-scroll">
-                                            <table class="edex-table dl-table stack-table">
-                                                <thead><tr><th>Сборка</th><th>Размер</th><th>Допуск</th><th>Действие</th></tr></thead>
-                                                <tbody id="build-list"></tbody>
+                                            <table class="edex-table perm-table stack-table">
+                                                <thead><tr id="perm-head"><th>Право</th><th data-role-col="user">USER</th><th data-role-col="admin">ADMIN</th><th data-role-col="creator">CREATOR</th></tr></thead>
+                                                <tbody id="perm-body"></tbody>
                                             </table>
                                         </div>
                                     </div>
                                     <div class="mod full">
-                                        <h4 class="mod-head">DOWNLOAD HISTORY <i>история загрузок сборок</i></h4>
+                                        <h4 class="mod-head">DOWNLOAD HISTORY <i>история скачанных сборок</i></h4>
                                         <div class="table-scroll">
                                             <table class="edex-table dl-table stack-table">
                                                 <thead><tr><th>Сборка</th><th>Дата</th><th>Размер</th><th>SHA-256</th><th>Статус</th></tr></thead>
@@ -236,49 +236,7 @@
                                 </div>
                             </div>
 
-                            <!-- ===== Вкладка 2: Управление серверами ===== -->
-                            <div class="tab-panel" id="dpanel-servers" role="tabpanel" aria-labelledby="dtab-servers" hidden>
-                                <div class="dash-tab-head">
-                                    <h2>Управление серверами</h2>
-                                    <p>LIVE · обновлено <b id="srv-updated">--:--:--</b></p>
-                                </div>
-
-                                <div class="srv-summary">
-                                    <div class="mod summary-item"><h3 class="mod-head">ONLINE</h3><p class="summary-value" data-dsum="online">-/-</p></div>
-                                    <div class="mod summary-item"><h3 class="mod-head">PLAYERS</h3><p class="summary-value" data-dsum="players">0</p></div>
-                                    <div class="mod summary-item"><h3 class="mod-head">AVG PING</h3><p class="summary-value" data-dsum="ping">-- ms</p></div>
-                                    <div class="mod summary-item"><h3 class="mod-head">OPERATIONS</h3><p class="summary-value" data-dsum="ops">IDLE</p></div>
-                                </div>
-
-                                <div class="table-scroll">
-                                    <table class="edex-table srv-table stack-table">
-                                        <caption class="visually-hidden">Мониторинг игровых серверов</caption>
-                                        <thead>
-                                            <tr>
-                                                <th scope="col">Сервер</th>
-                                                <th scope="col">Статус</th>
-                                                <th scope="col">Игроки</th>
-                                                <th scope="col">Ping</th>
-                                                <th scope="col">CPU / RAM</th>
-                                                <th scope="col">Действия</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="srv-body"></tbody>
-                                    </table>
-                                </div>
-
-                                <div class="settings-actions" style="margin: 14px 0;">
-                                    <button class="btn btn-sm" type="button" id="srv-restart-all">
-                                        <img src="assets/icons/play.svg" alt="" width="14" height="14">
-                                        Перезапустить проблемные (DEGRADED / OFFLINE)
-                                    </button>
-                                </div>
-
-                                <h4 class="mod-head">ACTION LOG <i>действия оператора</i></h4>
-                                <pre class="action-log" id="action-log" aria-live="polite"></pre>
-                            </div>
-
-                            <!-- ===== Вкладка 3: Настройки HUD ===== -->
+                            <!-- ===== Вкладка 2: Настройки HUD ===== -->
                             <div class="tab-panel" id="dpanel-settings" role="tabpanel" aria-labelledby="dtab-settings" hidden>
                                 <div class="dash-tab-head">
                                     <h2>Настройки HUD</h2>
@@ -421,6 +379,7 @@
 
             <div class="footer-bottom">
                 <p>&copy; <span class="js-year">2026</span> NEXUS//DEV. Некоммерческий проект. Код сайта распространяется под лицензией <a href="LICENSE">GPL-3.0</a>.</p>
+                <div class="footer-role" data-role-switch data-compact></div>
                 <p class="credit">
                     <button class="term-secret" type="button" data-terminal aria-expanded="false" aria-label="Терминал" title="&gt;_">
                         <img src="assets/icons/terminal.svg" alt="" width="16" height="16">
@@ -432,7 +391,7 @@
         </div>
     </footer>
 
-    <script src="js/ui-effects.js?v=20261109-7" defer></script>
-    <script src="js/pages.js?v=20261109-7" defer></script>
+    <script src="js/ui-effects.js?v=20261109-8" defer></script>
+    <script src="js/pages.js?v=20261109-8" defer></script>
 </body>
 </html>

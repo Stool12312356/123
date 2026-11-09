@@ -4,8 +4,8 @@
  * Подключается на всех страницах после js/ui-effects.js и использует
  * его API (window.NEXUS). Страница определяется по <body data-page>:
  *   home      — index.html      (ядро экосистемы — логика в ui-effects.js)
- *   projects  — projects.html   (фильтр по статусу, карточки, загрузки, patch notes)
- *   dashboard — dashboard.html  (профиль, серверы, настройки HUD)
+ *   projects  — projects.html   (фильтры, карточки, загрузки, досье, конструктор проектов)
+ *   dashboard — dashboard.html  (профиль и роль, настройки HUD)
  *   auth      — auth.html       (вход, регистрация, DEMO ACCESS)
  *
  * Авторизация демонстрационная: профиль хранится только в localStorage
@@ -19,8 +19,9 @@
     if (!NX) return;
 
     const { $, $$, clamp, rand, randInt, pick, delay, escapeHtml, timeStr, dateStr, hashString,
-        Settings, Sound, Auth, ACCESS_CODES, toast, showBanner, Modal, Tabs, SERVERS, Telemetry,
-        statusBadge, formatPlayers, PROJECTS, CATEGORIES, STATUSES, observeReveal, reducedMotion, NICKS } = NX;
+        Settings, Sound, Auth, ACCESS_CODES, ROLES, ROLE_IDS, PERMISSIONS, ACCESS, Catalog, PROJECT_ICONS,
+        toast, showBanner, Modal, Tabs, Telemetry, statusBadge, formatPlayers,
+        PROJECTS, CATEGORIES, BASE_CATEGORIES, STATUSES, observeReveal, reducedMotion } = NX;
 
     const PAGE = NX.PAGE;
 
@@ -104,13 +105,12 @@
     const ICON_DOWNLOAD = '<img src="assets/icons/download.svg" alt="" width="18" height="18">';
     const ICON_LOCK = '<img src="assets/icons/lock.svg" alt="" width="18" height="18">';
 
-    function canDownload(p, s) {
-        if (!p.access) return true;
-        return !!s && s.level >= p.access;
+    function canDownload(p) {
+        return Auth.canDownload(p);
     }
 
     function accessText(p) {
-        return p.access ? `L${p.access} · ${Auth.levelName(p.access)}` : "без входа";
+        return (ACCESS[p.access] || ACCESS.public).label;
     }
 
     function formatSize(mb) {
@@ -186,8 +186,8 @@
         return `<span class="pbadge pbadge-${p.status}"><i aria-hidden="true"></i>${escapeHtml(STATUSES[p.status].label)}</span>`;
     }
 
-    function dlButtonInner(p, s) {
-        return canDownload(p, s) ? `${ICON_DOWNLOAD}<span>СКАЧАТЬ СБОРКУ</span>` : `${ICON_LOCK}<span>СКАЧАТЬ СБОРКУ</span>`;
+    function dlButtonInner(p) {
+        return `${canDownload(p) ? ICON_DOWNLOAD : ICON_LOCK}<span>${p.url ? "СКАЧАТЬ" : "СКАЧАТЬ СБОРКУ"}</span>`;
     }
 
     function hudHtml() {
@@ -204,17 +204,34 @@
         /* Проверка доступа: true — можно качать; иначе показывает тост и уводит на вход / в кабинет */
         guard(p) {
             const s = Auth.get();
-            if (canDownload(p, s)) return true;
+            if (canDownload(p)) return true;
             Sound.play("denied");
-            NX.storage.set("nx_pending_dl", p.id);
             if (!s) {
-                toast(`${p.title}: нужен вход и допуск ${accessText(p)}. Перенаправляю на вход…`, "warn");
+                NX.storage.set("nx_pending_dl", p.id);
+                toast(`${p.title}: нужен вход (доступ: ${accessText(p)}). Перенаправляю на вход…`, "warn");
                 setTimeout(() => { window.location.href = "auth.html"; }, 1300);
             } else {
-                toast(`${p.title}: требуется допуск ${accessText(p)} (у вас L${s.level}). Открываю кабинет…`, "warn");
-                setTimeout(() => { window.location.href = "dashboard.html#profile"; }, 1300);
+                toast(`${p.title}: доступ «${accessText(p)}», у вас роль ${ROLES[s.role].label}. Сменить роль — в кабинете или командой role.`, "warn", { ttl: 5200 });
             }
             return false;
+        },
+        /* Внешняя ссылка (проекты из конструктора): открываем сразу, в обработчике клика,
+           чтобы браузер не заблокировал новую вкладку */
+        openLink(p) {
+            const a = document.createElement("a");
+            a.href = p.url;
+            a.target = "_blank";
+            a.rel = "noopener noreferrer";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            Sound.play("granted");
+            const s = Auth.get();
+            if (s) {
+                Auth.addDownload({ build: p.title, version: p.version, date: Date.now(), size: p.size, sha: "external", status: "LINK" });
+                NX.Syslog.add(`downloads: ${s.callsign} opened ${p.title} ${p.version} (external link)`);
+            }
+            toast(`${p.title} ${p.version}: открываю ссылку на скачивание в новой вкладке`, "ok", { ttl: 4200 });
         },
         cancel(id) {
             const job = this.active[id];
@@ -225,6 +242,7 @@
             opts = opts || {};
             if (this.active[p.id]) { this.cancel(p.id); return; }
             if (!this.guard(p)) return;
+            if (p.url) { this.openLink(p); if (typeof opts.onDone === "function") opts.onDone("external"); return; }
             const job = { cancelled: false };
             this.active[p.id] = job;
             const huds = () => $$(`[data-hud="${p.id}"] .dl-hud`);
@@ -274,7 +292,7 @@
             }
 
             delete this.active[p.id];
-            btns().forEach(b => { b.classList.remove("is-running"); b.innerHTML = dlButtonInner(p, Auth.get()); });
+            btns().forEach(b => { b.classList.remove("is-running"); b.innerHTML = dlButtonInner(p); });
             document.dispatchEvent(new CustomEvent("nexus:dl-idle", { detail: { id: p.id } }));
 
             if (job.cancelled) {
@@ -305,27 +323,56 @@
     };
 
     /* ================================================================
-     * Проекты — витрина загрузок
+     * Проекты — витрина загрузок + конструктор (ADMIN / CREATOR)
      * ================================================================ */
+    const ICON_EDIT = '<img src="assets/icons/edit.svg" alt="" width="15" height="15">';
+    const ICON_DELETE = '<img src="assets/icons/ban.svg" alt="" width="15" height="15">';
+
+    function categoryLabel(p) {
+        return CATEGORIES[p.category] || CATEGORIES.other;
+    }
+
+    /* Обложка карточки: загруженная картинка или векторная HUD-графика с иконкой */
+    function artHtml(p, iconSize) {
+        const cover = p.cover
+            ? `<img class="art-cover" src="${escapeHtml(p.cover)}" alt="" loading="lazy">`
+            : `${projectArt(p)}<span class="art-icon"><img src="assets/icons/${escapeHtml(p.icon)}.svg" alt="" width="${iconSize}" height="${iconSize}"></span>`;
+        return `${cover}
+            <span class="art-code">${escapeHtml(p.code)}</span>
+            <span class="art-cat">${escapeHtml(categoryLabel(p))}</span>
+            ${p.custom ? '<span class="art-flag">CUSTOM</span>' : (p.edited ? '<span class="art-flag">EDITED</span>' : "")}`;
+    }
+
+    function tagsHtml(p) {
+        if (!p.tags || !p.tags.length) return "";
+        return `<ul class="ptags" aria-label="Стек и особенности">${p.tags.map(t => `<li>${escapeHtml(t)}</li>`).join("")}</ul>`;
+    }
+
+    /* Кнопки управления — видимость по роли переключается через data-require без перерисовки */
+    function adminButtonsHtml(p) {
+        return `<div class="pcard-admin" data-require="edit">
+            <button class="btn btn-sm" type="button" data-edit="${p.id}" data-require="edit">${ICON_EDIT}<span>РЕДАКТИРОВАТЬ</span></button>
+            <button class="btn btn-sm btn-danger" type="button" data-delete="${p.id}" data-require="delete" data-require-id="${p.id}">${ICON_DELETE}<span>УДАЛИТЬ</span></button>
+        </div>`;
+    }
+
     function projectCard(p) {
-        const s = Auth.get();
         const wrap = document.createElement("div");
         wrap.className = "pcard-wrap glow on-scroll";
         wrap.setAttribute("data-status", p.status);
+        wrap.setAttribute("data-category", p.category);
         wrap.setAttribute("data-hud", p.id);
         wrap.id = "project-" + p.id;
         wrap.innerHTML = `
             <article class="pcard aug-card" augmented-ui="tl-clip br-clip exe" aria-labelledby="ptitle-${p.id}">
-                <div class="pcard-art art-${p.category}">
-                    ${projectArt(p)}
-                    <span class="art-icon"><img src="assets/icons/${p.icon}.svg" alt="" width="34" height="34"></span>
-                    <span class="art-code">${escapeHtml(p.code)}</span>
-                    <span class="art-cat">${escapeHtml(CATEGORIES[p.category])}</span>
+                <div class="pcard-art art-${escapeHtml(p.category)}${p.cover ? " has-cover" : ""}">
+                    ${artHtml(p, 34)}
                 </div>
                 <div class="pcard-body">
                     ${badgeHtml(p)}
                     <h3 id="ptitle-${p.id}">${escapeHtml(p.title)}</h3>
                     <p class="summary">${escapeHtml(p.summary)}</p>
+                    ${tagsHtml(p)}
                     <dl class="pmeta">
                         <div><dt>Версия</dt><dd>${escapeHtml(p.version)}</dd></div>
                         <div><dt>Размер</dt><dd>${escapeHtml(p.size)}</dd></div>
@@ -333,36 +380,41 @@
                     </dl>
                     ${hudHtml()}
                     <div class="pcard-actions">
-                        <button class="btn btn-primary btn-dl" type="button" data-dl="${p.id}">${dlButtonInner(p, s)}</button>
-                        <button class="btn btn-ghost" type="button" data-details="${p.id}"><img src="assets/icons/info.svg" alt="" width="16" height="16"><span>Подробнее</span></button>
+                        <button class="btn btn-primary btn-dl" type="button" data-dl="${p.id}">${dlButtonInner(p)}</button>
+                        <button class="btn btn-ghost" type="button" data-details="${p.id}"><img src="assets/icons/info.svg" alt="" width="16" height="16"><span>Досье</span></button>
                     </div>
-                    <p class="pcard-access${canDownload(p, s) ? " is-ok" : ""}" data-access="${p.id}">${accessLine(p, s)}</p>
+                    ${adminButtonsHtml(p)}
+                    <p class="pcard-access${canDownload(p) ? " is-ok" : ""}" data-access="${p.id}">${accessLine(p)}</p>
                 </div>
             </article>`;
+        NX.applyPermissions(wrap);
         return wrap;
     }
 
-    function accessLine(p, s) {
-        if (!p.access) return "Публичный релиз · вход не требуется";
-        if (canDownload(p, s)) return `Допуск подтверждён · ${accessText(p)}`;
-        return s ? `Нужен допуск ${accessText(p)} · у вас L${s.level}` : `Нужен вход · допуск ${accessText(p)}`;
+    function accessLine(p) {
+        const s = Auth.get();
+        if (!p.access || p.access === "public") return "Публичный релиз · вход не требуется";
+        if (canDownload(p)) return `Доступ открыт · ${accessText(p)}`;
+        return s ? `Нужна роль ${ACCESS[p.access].short} · у вас ${ROLES[s.role].label}` : `Нужен вход · ${accessText(p)}`;
     }
 
     function openDetails(id, fromHash) {
         const p = PROJECTS.find(x => x.id === id);
         if (!p) return false;
-        const s = Auth.get();
+        const notes = p.notes && p.notes.length ? p.notes.map(n => `
+                            <div class="pd-note">
+                                <p class="pd-note-head"><b>v${escapeHtml(n.version)}</b><span>${escapeHtml(n.date || "")}</span></p>
+                                <ul class="log">${n.items.map(i => `<li>${escapeHtml(i)}</li>`).join("")}</ul>
+                            </div>`).join("") : '<p class="muted">Патчноут пока не опубликован.</p>';
         const html = `
             <div class="pd" data-hud="${p.id}">
-                <div class="pd-art pcard-art art-${p.category}">
-                    ${projectArt(p)}
-                    <span class="art-icon"><img src="assets/icons/${p.icon}.svg" alt="" width="40" height="40"></span>
-                    <span class="art-code">${escapeHtml(p.code)}</span>
-                    <span class="art-cat">${escapeHtml(CATEGORIES[p.category])}</span>
+                <div class="pd-art pcard-art art-${escapeHtml(p.category)}${p.cover ? " has-cover" : ""}">
+                    ${artHtml(p, 40)}
                 </div>
                 <div class="pd-head">
                     ${badgeHtml(p)}
                     <p>${escapeHtml(p.summary)}</p>
+                    ${tagsHtml(p)}
                 </div>
                 <div class="pd-grid">
                     <div>
@@ -372,25 +424,23 @@
                             <tr><td>Обновлено</td><td>${escapeHtml(p.updated)}</td></tr>
                             <tr><td>Размер</td><td>${escapeHtml(p.size)}</td></tr>
                             <tr><td>Платформа</td><td>${escapeHtml(p.platform)}</td></tr>
-                            <tr><td>Файл</td><td class="pd-file">${escapeHtml(p.file)}</td></tr>
-                            <tr><td>Допуск</td><td>${escapeHtml(accessText(p))}</td></tr>
+                            <tr><td>${p.url ? "Ссылка" : "Файл"}</td><td class="pd-file">${escapeHtml(p.url || p.file)}</td></tr>
+                            <tr><td>Доступ</td><td>${escapeHtml(accessText(p))}</td></tr>
+                            ${p.custom ? `<tr><td>Автор</td><td>${escapeHtml(p.author || "—")}</td></tr>` : ""}
                         </tbody></table>
-                        <h5>Требования</h5>
-                        <p>${escapeHtml(p.requirements)}</p>
+                        ${p.requirements ? `<h5>Требования</h5><p>${escapeHtml(p.requirements)}</p>` : ""}
                     </div>
                     <div>
                         <h5>Patch notes</h5>
-                        ${p.notes.map(n => `
-                            <div class="pd-note">
-                                <p class="pd-note-head"><b>v${escapeHtml(n.version)}</b><span>${escapeHtml(n.date)}</span></p>
-                                <ul class="log">${n.items.map(i => `<li>${escapeHtml(i)}</li>`).join("")}</ul>
-                            </div>`).join("")}
+                        ${notes}
                     </div>
                 </div>
                 ${hudHtml()}
-                <p class="pcard-access${canDownload(p, s) ? " is-ok" : ""}">${accessLine(p, s)}</p>
+                <p class="pcard-access${canDownload(p) ? " is-ok" : ""}">${accessLine(p)}</p>
                 <div class="pd-actions">
-                    <button class="btn btn-primary btn-dl" type="button" data-dl="${p.id}">${dlButtonInner(p, s)}</button>
+                    <button class="btn btn-primary btn-dl" type="button" data-dl="${p.id}">${dlButtonInner(p)}</button>
+                    <button class="btn" type="button" data-edit="${p.id}" data-require="edit">${ICON_EDIT}<span>РЕДАКТИРОВАТЬ</span></button>
+                    <button class="btn btn-danger" type="button" data-delete="${p.id}" data-require="delete" data-require-id="${p.id}">${ICON_DELETE}<span>УДАЛИТЬ</span></button>
                 </div>
             </div>`;
         const modal = Modal.open({
@@ -405,6 +455,7 @@
                 }
             }
         });
+        NX.applyPermissions(modal);
         // Если загрузка уже идёт — показать её состояние в модалке
         if (Downloads.active[p.id]) {
             const b = $(`[data-dl="${p.id}"]`, modal);
@@ -417,27 +468,485 @@
         return true;
     }
 
+    /* ----- Патчноут: текст ⇄ структура { version, date, items } -----
+       Строка «v1.2.0 · 2026-11-09» начинает новую версию, остальные строки — пункты списка. */
+    function notesToText(notes) {
+        return (notes || []).map(n => [`v${n.version}${n.date ? " · " + n.date : ""}`]
+            .concat(n.items.map(i => "- " + i)).join("\n")).join("\n\n");
+    }
+    function textToNotes(text, version) {
+        const notes = [];
+        let cur = null;
+        String(text || "").split(/\r?\n/).forEach(raw => {
+            const l = raw.trim();
+            if (!l) return;
+            const m = /^v(\d[\w.+\-]*)\s*(?:[·|—]\s*(.+))?$/i.exec(l);
+            if (m) {
+                cur = { version: m[1], date: (m[2] || "").trim().slice(0, 20), items: [] };
+                notes.push(cur);
+                return;
+            }
+            if (!cur) {
+                cur = { version: version, date: NX.dateISO(new Date()), items: [] };
+                notes.push(cur);
+            }
+            cur.items.push(l.replace(/^[-•*]\s*/, "").slice(0, 240));
+        });
+        return notes.filter(n => n.items.length).slice(0, 12).map(n => Object.assign(n, { items: n.items.slice(0, 30) }));
+    }
+
+    /* Сжатие картинки через <canvas>: не больше 960×540, JPEG — чтобы уместиться в localStorage */
+    function compressImage(file) {
+        return new Promise((resolve, reject) => {
+            if (!file || !/^image\//.test(file.type)) { reject(new Error("type")); return; }
+            if (file.size > 20 * 1024 * 1024) { reject(new Error("size")); return; }
+            const reader = new FileReader();
+            reader.onerror = () => reject(new Error("read"));
+            reader.onload = () => {
+                const img = new Image();
+                img.onerror = () => reject(new Error("decode"));
+                img.onload = () => {
+                    const encode = (maxW, maxH, q) => {
+                        const k = Math.min(1, maxW / img.naturalWidth, maxH / img.naturalHeight);
+                        const w = Math.max(1, Math.round(img.naturalWidth * k));
+                        const h = Math.max(1, Math.round(img.naturalHeight * k));
+                        const c = document.createElement("canvas");
+                        c.width = w;
+                        c.height = h;
+                        const ctx = c.getContext("2d");
+                        ctx.fillStyle = "#0b0d0c";
+                        ctx.fillRect(0, 0, w, h);
+                        ctx.drawImage(img, 0, 0, w, h);
+                        return c.toDataURL("image/jpeg", q);
+                    };
+                    try {
+                        let url = encode(960, 540, 0.82);
+                        if (url.length > 420000) url = encode(800, 450, 0.7);
+                        if (url.length > 420000) url = encode(640, 360, 0.6);
+                        resolve(url);
+                    } catch (e) {
+                        reject(new Error("canvas"));
+                    }
+                };
+                img.src = reader.result;
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    const DEFAULT_ACCESS = { available: "public", closed: "user", dev: "admin" };
+    const DEFAULT_PLATFORM = { ue5: "Windows · DX12", minecraft: "Java 1.21.1", tools: "Windows · Linux", other: "—" };
+
+    /* Конструктор / редактор проекта */
+    function openEditor(id) {
+        const editing = id ? PROJECTS.find(x => x.id === id) : null;
+        if (id && !editing) return;
+        if (!Auth.can(editing ? "edit" : "create")) {
+            Sound.play("denied");
+            toast(`${editing ? "Редактирование" : "Создание"} проектов доступно ролям ADMIN и CREATOR. Сменить роль: кабинет или команда role.`, "warn", { ttl: 5000 });
+            return;
+        }
+        const d = editing || { title: "", category: "ue5", status: "available", access: "public", version: "", file: "", url: "",
+            sizeMB: "", platform: "", summary: "", notes: [], tags: [], icon: "archive", cover: "" };
+        const state = { cover: d.cover || "", icon: d.icon || "archive", accessTouched: !!editing };
+        const opt = (obj, cur) => Object.keys(obj).map(k => `<option value="${escapeHtml(k)}"${k === cur ? " selected" : ""}>${escapeHtml(typeof obj[k] === "string" ? obj[k] : obj[k].label)}</option>`).join("");
+        const icons = PROJECT_ICONS.map(ic => `
+            <label class="pe-icon" title="${ic}">
+                <input type="radio" name="pe-icon" value="${ic}"${ic === state.icon ? " checked" : ""}>
+                <span><img src="assets/icons/${ic}.svg" alt="${ic}" width="22" height="22"></span>
+            </label>`).join("");
+        const html = `
+            <form class="pe-form" id="pe-form" novalidate>
+                <div class="pe-grid">
+                    <div class="pe-col">
+                        <div class="field">
+                            <label for="pe-title">Название проекта</label>
+                            <input class="input" id="pe-title" type="text" maxlength="${Catalog.MAX_TITLE}" placeholder="Например: IRON FRONT" value="${escapeHtml(d.title)}" required>
+                            <p class="field-error" aria-live="polite"></p>
+                        </div>
+                        <div class="pe-row">
+                            <div class="field">
+                                <label for="pe-category">Категория / тег</label>
+                                <select class="select" id="pe-category">${opt(CATEGORIES, d.category)}</select>
+                            </div>
+                            <div class="field">
+                                <label for="pe-status">Статус</label>
+                                <select class="select" id="pe-status">${Object.keys(STATUSES).map(k => `<option value="${k}"${k === d.status ? " selected" : ""}>${escapeHtml(STATUSES[k].label)}</option>`).join("")}</select>
+                            </div>
+                        </div>
+                        <div class="pe-row">
+                            <div class="field">
+                                <label for="pe-version">Версия сборки</label>
+                                <input class="input" id="pe-version" type="text" maxlength="32" placeholder="v0.1.0-alpha" value="${escapeHtml(d.version ? "v" + d.version : "")}" required>
+                                <p class="field-error" aria-live="polite"></p>
+                            </div>
+                            <div class="field">
+                                <label for="pe-access">Кто может скачивать</label>
+                                <select class="select" id="pe-access">${opt(ACCESS, d.access)}</select>
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label for="pe-file">Ссылка или имя файла <i>— https://… откроется при скачивании</i></label>
+                            <input class="input" id="pe-file" type="text" maxlength="400" spellcheck="false" placeholder="https://example.com/build.zip или MyGame-0.1.0-Win64.zip" value="${escapeHtml(d.url || d.file)}" required>
+                            <p class="field-error" aria-live="polite"></p>
+                        </div>
+                        <div class="pe-row">
+                            <div class="field">
+                                <label for="pe-size">Размер, MiB <i>— необязательно</i></label>
+                                <input class="input" id="pe-size" type="number" min="0.1" max="500000" step="0.1" placeholder="50" value="${escapeHtml(d.sizeMB || "")}">
+                            </div>
+                            <div class="field">
+                                <label for="pe-platform">Платформа <i>— необязательно</i></label>
+                                <input class="input" id="pe-platform" type="text" maxlength="40" placeholder="${escapeHtml(DEFAULT_PLATFORM[d.category] || "—")}" value="${escapeHtml(editing ? d.platform : "")}">
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label for="pe-tags">Стек технологий / особенности <i>— через запятую</i></label>
+                            <input class="input" id="pe-tags" type="text" maxlength="240" placeholder="UE5, C++, Multiplayer, Lumen" value="${escapeHtml((d.tags || []).join(", "))}">
+                            <ul class="ptags pe-tags-preview" id="pe-tags-preview" aria-hidden="true"></ul>
+                        </div>
+                    </div>
+                    <div class="pe-col">
+                        <p class="pe-label">Обложка / картинка</p>
+                        <div class="pe-cover pcard-art" id="pe-cover"></div>
+                        <div class="pe-cover-actions">
+                            <label class="btn btn-sm pe-upload">
+                                <img src="assets/icons/upload.svg" alt="" width="15" height="15">
+                                <span>Загрузить изображение</span>
+                                <input type="file" id="pe-file-input" accept="image/*">
+                            </label>
+                            <button class="btn btn-sm" type="button" id="pe-cover-clear">${ICON_DELETE}<span>Убрать</span></button>
+                        </div>
+                        <p class="pe-hint" id="pe-cover-info">JPG / PNG / WebP · сжимается до 960×540 и хранится в браузере</p>
+                        <p class="pe-label">Иконка <i>— если картинка не загружена</i></p>
+                        <div class="pe-icons" role="radiogroup" aria-label="Иконка проекта">${icons}</div>
+                    </div>
+                </div>
+                <div class="field">
+                    <label for="pe-summary">Краткое описание <i>— для карточки</i> <span class="pe-count" id="pe-summary-count">0/220</span></label>
+                    <textarea class="input pe-textarea" id="pe-summary" rows="2" maxlength="220" placeholder="Одно-два предложения: что это и для кого." required>${escapeHtml(d.summary)}</textarea>
+                    <p class="field-error" aria-live="polite"></p>
+                </div>
+                <div class="field">
+                    <label for="pe-notes">Подробное описание / патчноут <i>— для окна «Досье»; строка «v0.2.0 · 2026-11-09» начинает новую версию</i></label>
+                    <textarea class="input pe-textarea" id="pe-notes" rows="6" maxlength="6000" placeholder="v0.1.0 · ${NX.dateISO(new Date())}&#10;- Первая публичная сборка&#10;- Поддержка геймпада">${escapeHtml(notesToText(d.notes))}</textarea>
+                </div>
+                <div class="field">
+                    <label for="pe-req">Требования <i>— необязательно</i></label>
+                    <input class="input" id="pe-req" type="text" maxlength="300" placeholder="Windows 10+, 8 GiB RAM" value="${escapeHtml(d.requirements || "")}">
+                </div>
+            </form>`;
+
+        const modal = Modal.open({
+            title: editing ? "РЕДАКТИРОВАНИЕ ПРОЕКТА" : "НОВЫЙ ПРОЕКТ",
+            subtitle: editing ? `${escapeHtml(editing.code)} · ${escapeHtml(editing.title)}` : "конструктор · nx_custom_projects",
+            className: "pe-modal",
+            html,
+            buttons: [{ label: editing ? "Сохранить" : "Опубликовать", primary: true, icon: editing ? "checkmark" : "upload", action: () => submit() }]
+        });
+        const f = id2 => $("#" + id2, modal);
+        const cover = f("pe-cover");
+        const coverInfo = f("pe-cover-info");
+
+        const drawCover = () => {
+            const preview = {
+                id: editing ? editing.id : "new-" + (f("pe-title").value || "x"),
+                code: editing ? editing.code : Catalog.nextCode(),
+                category: f("pe-category").value,
+                icon: state.icon,
+                cover: state.cover,
+                custom: !editing || editing.custom,
+                edited: !!editing && !editing.custom
+            };
+            cover.className = `pe-cover pcard-art art-${preview.category}${state.cover ? " has-cover" : ""}`;
+            cover.innerHTML = artHtml(preview, 40);
+            f("pe-cover-clear").disabled = !state.cover;
+        };
+        const drawTags = () => {
+            const tags = f("pe-tags").value.split(",").map(t => t.trim()).filter(Boolean).slice(0, 12);
+            f("pe-tags-preview").innerHTML = tags.map(t => `<li>${escapeHtml(t.slice(0, 28))}</li>`).join("");
+        };
+        const drawCount = () => {
+            f("pe-summary-count").textContent = `${f("pe-summary").value.length}/220`;
+        };
+        drawCover();
+        drawTags();
+        drawCount();
+
+        f("pe-tags").addEventListener("input", drawTags);
+        f("pe-summary").addEventListener("input", drawCount);
+        f("pe-category").addEventListener("change", () => {
+            drawCover();
+            f("pe-platform").placeholder = DEFAULT_PLATFORM[f("pe-category").value] || "—";
+        });
+        f("pe-status").addEventListener("change", () => {
+            if (!state.accessTouched) f("pe-access").value = DEFAULT_ACCESS[f("pe-status").value] || "public";
+        });
+        f("pe-access").addEventListener("change", () => { state.accessTouched = true; });
+        $$("input[name='pe-icon']", modal).forEach(r => r.addEventListener("change", () => {
+            state.icon = r.value;
+            Sound.play("folder");
+            drawCover();
+        }));
+        f("pe-file-input").addEventListener("change", e => {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+            coverInfo.textContent = "Обработка изображения…";
+            compressImage(file).then(url => {
+                state.cover = url;
+                coverInfo.textContent = `${file.name.slice(0, 40)} → ${Math.round(url.length * 0.75 / 1024)} KiB (JPEG)`;
+                Sound.play("granted");
+                drawCover();
+            }).catch(err => {
+                coverInfo.textContent = err.message === "type" ? "Это не изображение — выберите JPG, PNG или WebP"
+                    : err.message === "size" ? "Файл больше 20 MiB — выберите изображение поменьше" : "Не удалось прочитать изображение";
+                Sound.play("denied");
+            });
+            e.target.value = "";
+        });
+        f("pe-cover-clear").addEventListener("click", () => {
+            state.cover = "";
+            coverInfo.textContent = "Картинка убрана — используется иконка";
+            Sound.play("panels");
+            drawCover();
+        });
+        $$(".input", modal).forEach(inp => {
+            inp.addEventListener("input", () => setFieldError(inp, ""));
+            inp.addEventListener("keydown", e => { if (e.key.length === 1) Sound.play("stdin"); });
+        });
+        f("pe-form").addEventListener("submit", e => { e.preventDefault(); if (submit()) Modal.close(); });
+
+        function setFieldError(input, msg) {
+            const field = input.closest(".field");
+            if (!field) return;
+            field.classList.toggle("is-invalid", !!msg);
+            const err = field.querySelector(".field-error");
+            if (err) err.textContent = msg || "";
+            input.setAttribute("aria-invalid", msg ? "true" : "false");
+        }
+
+        function submit() {
+            const title = f("pe-title").value.trim().replace(/\s+/g, " ");
+            const version = f("pe-version").value.trim().replace(/^v/i, "");
+            const target = f("pe-file").value.trim();
+            const summary = f("pe-summary").value.trim();
+            let ok = true;
+            if (title.length < 2) { setFieldError(f("pe-title"), "Минимум 2 символа"); ok = false; }
+            if (!/^[0-9A-Za-z][0-9A-Za-z.+\-_]{0,31}$/.test(version)) { setFieldError(f("pe-version"), "Например: v0.1.0-alpha"); ok = false; }
+            const isUrl = /^https?:\/\/\S+$/i.test(target);
+            if (!target) { setFieldError(f("pe-file"), "Укажите ссылку https://… или имя файла"); ok = false; }
+            else if (!isUrl && /^[a-z]+:/i.test(target)) { setFieldError(f("pe-file"), "Разрешены только ссылки http(s):// или имя файла"); ok = false; }
+            if (summary.length < 10) { setFieldError(f("pe-summary"), "Минимум 10 символов"); ok = false; }
+            if (!ok) {
+                Sound.play("denied");
+                const bad = $(".field.is-invalid .input", modal);
+                if (bad) bad.focus();
+                return false;
+            }
+            const category = f("pe-category").value;
+            const data = {
+                title,
+                category,
+                status: f("pe-status").value,
+                access: f("pe-access").value,
+                version,
+                url: isUrl ? target : "",
+                file: isUrl ? (target.split(/[?#]/)[0].split("/").pop() || "download") : target,
+                sizeMB: parseFloat(f("pe-size").value) || (editing ? editing.sizeMB : 50),
+                platform: f("pe-platform").value.trim() || (editing ? editing.platform : DEFAULT_PLATFORM[category]) || "—",
+                summary,
+                notes: textToNotes(f("pe-notes").value, version),
+                requirements: f("pe-req").value.trim(),
+                tags: f("pe-tags").value.split(",").map(t => t.trim().slice(0, 28)).filter(Boolean).slice(0, 12),
+                icon: state.icon,
+                cover: state.cover
+            };
+            if (editing && Downloads.active[editing.id]) Downloads.cancel(editing.id);
+            const res = editing ? Catalog.update(editing.id, data) : Catalog.create(data);
+            if (!res.ok) {
+                Sound.play("denied");
+                toast(res.error === "quota"
+                    ? "Не хватает места в localStorage — уберите или уменьшите картинку, удалите старые проекты"
+                    : "Недостаточно прав для этого действия", "warn", { ttl: 5200 });
+                return false;
+            }
+            Sound.play("granted");
+            toast(editing ? `Проект обновлён: ${res.project.title}` : `Проект опубликован: ${res.project.title} (${res.project.code})`, "ok");
+            NX.Syslog.add(`catalog: ${Auth.get().callsign} ${editing ? "updated" : "created"} ${res.project.id}`);
+            setTimeout(() => {
+                const card = document.getElementById("project-" + res.project.id);
+                if (card) {
+                    card.scrollIntoView({ block: "center", behavior: reducedMotion() ? "auto" : "smooth" });
+                    card.classList.remove("is-new");
+                    void card.offsetWidth;
+                    card.classList.add("is-new");
+                }
+            }, 220);
+            return true;
+        }
+        setTimeout(() => { const t = f("pe-title"); if (t) t.focus({ preventScroll: true }); }, 60);
+    }
+
+    function confirmDelete(id) {
+        const p = PROJECTS.find(x => x.id === id);
+        if (!p) return;
+        if (!Auth.can("delete", p)) {
+            Sound.play("denied");
+            toast(p.custom ? "Удаление доступно ролям ADMIN и CREATOR" : "Официальные проекты удаляет только CREATOR", "warn");
+            return;
+        }
+        Modal.open({
+            title: "УДАЛЕНИЕ ПРОЕКТА",
+            subtitle: `${escapeHtml(p.code)} · ${escapeHtml(p.title)}`,
+            className: "confirm-modal",
+            html: `<div class="confirm-box">
+                <img src="assets/icons/alert.svg" alt="" width="40" height="40">
+                <p>Удалить <b>${escapeHtml(p.title)}</b> из каталога? Карточка исчезнет у всех ролей в этом браузере.</p>
+                <p class="muted">${p.custom ? "Проект создан через сайт — восстановить его будет нельзя." : "Это официальный проект. Вернуть его можно в «Разделы → Вернуть официальные проекты»."}</p>
+            </div>`,
+            buttons: [{
+                label: "Удалить", primary: true, icon: "ban", action: () => {
+                    if (Downloads.active[p.id]) Downloads.cancel(p.id);
+                    const res = Catalog.remove(p.id);
+                    if (!res.ok) { Sound.play("denied"); toast("Недостаточно прав для удаления", "warn"); return; }
+                    Sound.play("denied");
+                    toast(`Проект удалён: ${p.title}`, "warn");
+                    NX.Syslog.add(`catalog: ${Auth.get().callsign} deleted ${p.id}`);
+                }
+            }]
+        });
+    }
+
+    /* Разделы каталога (только CREATOR): свои категории + сброс официальных проектов */
+    function openSections() {
+        if (!Auth.can("sections")) {
+            Sound.play("denied");
+            toast("Управление разделами доступно только роли CREATOR", "warn");
+            return;
+        }
+        const modal = Modal.open({
+            title: "РАЗДЕЛЫ КАТАЛОГА",
+            subtitle: "CREATOR · nx_custom_categories",
+            className: "sections-modal",
+            html: `<div class="sec-wrap">
+                <table class="edex-table sec-table"><thead><tr><th>Раздел</th><th>Проектов</th><th>Действия</th></tr></thead><tbody id="sec-body"></tbody></table>
+                <form class="sec-add" id="sec-add" novalidate>
+                    <input class="input" id="sec-new" type="text" maxlength="24" placeholder="НОВЫЙ РАЗДЕЛ, например MOBILE" aria-label="Название нового раздела">
+                    <button class="btn btn-sm btn-primary" type="submit"><img src="assets/icons/plus.svg" alt="" width="15" height="15"><span>Добавить</span></button>
+                </form>
+                <div class="sec-restore">
+                    <p id="sec-restore-info"></p>
+                    <button class="btn btn-sm" type="button" id="sec-restore"><img src="assets/icons/reload.svg" alt="" width="15" height="15"><span>Вернуть официальные проекты</span></button>
+                </div>
+            </div>`
+        });
+        const body = $("#sec-body", modal);
+        const render = () => {
+            body.innerHTML = Object.keys(CATEGORIES).map(id => {
+                const count = PROJECTS.filter(p => p.category === id).length;
+                const base = !!BASE_CATEGORIES[id];
+                return `<tr data-cat="${escapeHtml(id)}">
+                    <td>${base ? `<b>${escapeHtml(CATEGORIES[id])}</b> <span class="muted">· базовый</span>`
+                        : `<input class="input input-sm" type="text" maxlength="24" value="${escapeHtml(CATEGORIES[id])}" aria-label="Название раздела">`}</td>
+                    <td>${count}</td>
+                    <td>${base ? '<span class="muted">—</span>' : `<div class="sec-actions">
+                        <button class="btn btn-sm" type="button" data-sec-save>${ICON_EDIT}<span>Сохранить</span></button>
+                        <button class="btn btn-sm btn-danger" type="button" data-sec-del>${ICON_DELETE}<span>Удалить</span></button></div>`}</td>
+                </tr>`;
+            }).join("");
+            const hidden = Catalog.readHidden().length;
+            const edited = Catalog.readCustom().filter(x => x.builtin).length;
+            $("#sec-restore-info", modal).textContent = hidden || edited
+                ? `Официальных проектов: удалено ${hidden}, изменено ${edited}.`
+                : "Официальные проекты в исходном состоянии.";
+            $("#sec-restore", modal).disabled = !hidden && !edited;
+        };
+        render();
+        const fail = res => {
+            Sound.play("denied");
+            toast(res.error === "exists" ? "Такой раздел уже есть" : res.error === "short" ? "Название — минимум 2 символа" : "Недостаточно прав", "warn");
+        };
+        body.addEventListener("click", e => {
+            const row = e.target.closest("tr[data-cat]");
+            if (!row) return;
+            const id = row.getAttribute("data-cat");
+            if (e.target.closest("[data-sec-save]")) {
+                const res = Catalog.renameCategory(id, $("input", row).value);
+                if (!res.ok) { fail(res); return; }
+                Sound.play("granted");
+                toast(`Раздел переименован: ${CATEGORIES[id]}`, "ok");
+                render();
+            } else if (e.target.closest("[data-sec-del]")) {
+                const label = CATEGORIES[id];
+                const res = Catalog.removeCategory(id);
+                if (!res.ok) { fail(res); return; }
+                Sound.play("denied");
+                toast(`Раздел удалён: ${label}${res.moved ? ` · проектов перенесено в OTHER: ${res.moved}` : ""}`, "warn");
+                render();
+            }
+        });
+        $("#sec-add", modal).addEventListener("submit", e => {
+            e.preventDefault();
+            const inp = $("#sec-new", modal);
+            const res = Catalog.addCategory(inp.value);
+            if (!res.ok) { fail(res); return; }
+            inp.value = "";
+            Sound.play("granted");
+            toast(`Раздел добавлен: ${CATEGORIES[res.id]}`, "ok");
+            render();
+        });
+        $("#sec-restore", modal).addEventListener("click", () => {
+            const res = Catalog.restore();
+            if (!res.ok) { fail(res); return; }
+            Sound.play("granted");
+            toast("Официальные проекты восстановлены", "ok");
+            render();
+        });
+    }
+
     function initProjects() {
         const grid = $("#project-grid");
         const tabs = $$("#filter-tabs [data-filter]");
+        const catBox = $("#cat-tabs");
         const info = $("#filter-info");
         if (!grid) return;
 
-        const render = () => {
-            grid.innerHTML = "";
-            PROJECTS.forEach(p => grid.appendChild(projectCard(p)));
-            observeReveal(grid);
-        };
-        render();
-
-        const counts = { all: PROJECTS.length };
-        PROJECTS.forEach(p => { counts[p.status] = (counts[p.status] || 0) + 1; });
-        tabs.forEach(t => {
-            const c = t.querySelector(".count");
-            if (c) c.textContent = String(counts[t.getAttribute("data-filter")] || 0);
-        });
-
         let current = "all";
+        let currentCat = "all";
+
+        const plural = n => `${n} ${n % 10 === 1 && n % 100 !== 11 ? "сборка" : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) ? "сборки" : "сборок"}`;
+
+        const updateCounts = () => {
+            const counts = { all: PROJECTS.length };
+            PROJECTS.forEach(p => { counts[p.status] = (counts[p.status] || 0) + 1; });
+            tabs.forEach(t => {
+                const c = t.querySelector(".count");
+                if (c) c.textContent = String(counts[t.getAttribute("data-filter")] || 0);
+            });
+        };
+
+        const renderCats = () => {
+            if (!catBox) return;
+            if (currentCat !== "all" && !CATEGORIES[currentCat]) currentCat = "all";
+            const items = [["all", "ВСЕ РАЗДЕЛЫ", PROJECTS.length]].concat(Object.keys(CATEGORIES).map(id => [id, CATEGORIES[id], PROJECTS.filter(p => p.category === id).length]));
+            catBox.innerHTML = items.map(([id, label, n]) =>
+                `<button type="button" class="cat-chip${id === currentCat ? " active" : ""}" data-cat-filter="${escapeHtml(id)}" aria-pressed="${id === currentCat}">${escapeHtml(label)}<span>${n}</span></button>`).join("");
+        };
+
+        const renderEmpty = () => {
+            const old = $(".catalog-empty", grid);
+            if (old) old.remove();
+            const shown = $$(".pcard-wrap", grid).filter(c => !c.hidden).length;
+            if (shown) return;
+            const box = document.createElement("div");
+            box.className = "catalog-empty";
+            box.innerHTML = `<img src="assets/icons/search.svg" alt="" width="34" height="34">
+                <p>${PROJECTS.length ? "В этом разделе пока нет сборок." : "Каталог пуст."}</p>
+                <button class="btn btn-primary btn-sm" type="button" data-create data-require="create"><img src="assets/icons/plus.svg" alt="" width="15" height="15"><span>СОЗДАТЬ ПРОЕКТ</span></button>`;
+            grid.appendChild(box);
+            NX.applyPermissions(box);
+        };
+
         const apply = (filter, silent) => {
             current = filter;
             let shown = 0;
@@ -446,8 +955,14 @@
                 t.setAttribute("aria-pressed", String(on));
                 t.parentElement.classList.toggle("active", on);
             });
+            $$(".cat-chip", catBox || grid).forEach(c => {
+                const on = c.getAttribute("data-cat-filter") === currentCat;
+                c.classList.toggle("active", on);
+                c.setAttribute("aria-pressed", String(on));
+            });
             $$(".pcard-wrap", grid).forEach(card => {
-                const match = filter === "all" || card.getAttribute("data-status") === filter;
+                const match = (filter === "all" || card.getAttribute("data-status") === filter)
+                    && (currentCat === "all" || card.getAttribute("data-category") === currentCat);
                 if (match) {
                     const wasHidden = card.hidden;
                     card.hidden = false;
@@ -462,18 +977,38 @@
                     card.hidden = true;
                 }
             });
-            if (info) info.textContent = `${shown} ${shown === 1 ? "сборка" : shown < 5 && shown > 0 ? "сборки" : "сборок"}`;
+            if (info) info.textContent = plural(shown);
+            renderEmpty();
             if (!silent) Sound.play("folder");
             NX.storage.set("nx_filter2", filter);
         };
+
+        const render = () => {
+            grid.innerHTML = "";
+            PROJECTS.forEach(p => grid.appendChild(projectCard(p)));
+            observeReveal(grid);
+            updateCounts();
+            renderCats();
+            apply(current, true);
+        };
+
+        const saved = NX.storage.get("nx_filter2", "all");
+        current = saved === "all" || STATUSES[saved] ? saved : "all";
+        render();
 
         tabs.forEach(t => t.addEventListener("click", () => {
             if (t.getAttribute("data-filter") === current) return;
             grid.classList.add("is-filtering");
             setTimeout(() => { apply(t.getAttribute("data-filter")); grid.classList.remove("is-filtering"); }, reducedMotion() ? 0 : 140);
         }));
+        if (catBox) catBox.addEventListener("click", e => {
+            const c = e.target.closest("[data-cat-filter]");
+            if (!c || c.getAttribute("data-cat-filter") === currentCat) return;
+            currentCat = c.getAttribute("data-cat-filter");
+            apply(current);
+        });
 
-        // Кнопки «Скачать» и «Подробнее» — и в карточках, и в модалке
+        // Кнопки карточек и модалок: скачать, досье, редактировать, удалить, создать, разделы
         document.addEventListener("click", e => {
             const dl = e.target.closest("[data-dl]");
             if (dl) {
@@ -482,23 +1017,71 @@
                 return;
             }
             const det = e.target.closest("[data-details]");
-            if (det) openDetails(det.getAttribute("data-details"));
+            if (det) { openDetails(det.getAttribute("data-details")); return; }
+            const ed = e.target.closest("[data-edit]");
+            if (ed) { openEditor(ed.getAttribute("data-edit")); return; }
+            const del = e.target.closest("[data-delete]");
+            if (del) { confirmDelete(del.getAttribute("data-delete")); return; }
+            if (e.target.closest("[data-create]")) { openEditor(); return; }
+            if (e.target.closest("[data-sections]")) openSections();
         });
 
-        // Вход / выход в другой вкладке — перерисовать допуск
-        // Если в момент входа/выхода идёт загрузка — перерисуем, когда она закончится
+        // Плашка текущей роли над каталогом
+        const roleChip = $("#role-chip");
+        const paintRole = () => {
+            if (!roleChip) return;
+            const s = Auth.get();
+            const r = s ? ROLES[s.role] : null;
+            roleChip.innerHTML = r
+                ? `<span>РОЛЬ</span><b>${r.label}</b><i>${escapeHtml(r.name)}${s.role === "user" ? " · только скачивание" : ""}</i>`
+                : `<span>РОЛЬ</span><b>GUEST</b><i>войдите, чтобы скачивать закрытые сборки</i>`;
+        };
+        paintRole();
+
+        // Вход / выход / смена роли — перерисовать доступ (во время загрузки — после её окончания)
         let stale = false;
         const refresh = () => {
             if (Object.keys(Downloads.active).length) { stale = true; return; }
             stale = false;
             render();
-            apply(current, true);
         };
-        document.addEventListener("nexus:auth", refresh);
+        document.addEventListener("nexus:auth", () => { paintRole(); refresh(); });
         document.addEventListener("nexus:dl-idle", () => { if (stale) setTimeout(refresh, 2500); });
+
+        // Изменения каталога: точечно, чтобы не сбивать идущие загрузки других проектов
+        document.addEventListener("nexus:catalog", e => {
+            const { action, id } = e.detail || {};
+            const old = id ? document.getElementById("project-" + id) : null;
+            const p = id ? PROJECTS.find(x => x.id === id) : null;
+            if (action === "create" && p) {
+                grid.appendChild(projectCard(p));
+                observeReveal(grid);
+                currentCat = "all";
+                if (current !== "all" && current !== p.status) current = "all";
+            } else if (action === "update" && p && old) {
+                const card = projectCard(p);
+                card.classList.add("is-visible");
+                old.replaceWith(card);
+                if (currentCat !== "all" && currentCat !== p.category) currentCat = "all";
+            } else if (action === "delete" && old) {
+                old.remove();
+                if (Modal.current && $(`[data-hud="${id}"]`, Modal.current.modal)) Modal.close(true);
+            } else {
+                refresh();
+                return;
+            }
+            updateCounts();
+            renderCats();
+            apply(current, true);
+        });
 
         const fromHash = () => {
             let h = decodeURIComponent(window.location.hash.replace("#", ""));
+            if (h === "new" || h === "create") {
+                if (window.history.replaceState) window.history.replaceState(null, "", window.location.pathname + window.location.search);
+                openEditor();
+                return;
+            }
             if (h.indexOf("dossier-") === 0) h = h.slice(8);
             if (h === "nexuscraft") h = "modpack";
             if (h.indexOf("filter-") === 0) {
@@ -510,34 +1093,36 @@
             if (p) {
                 const card = document.getElementById("project-" + p.id);
                 if (card) {
-                    if (card.hidden) apply("all", true);
+                    if (card.hidden) { currentCat = "all"; apply("all", true); }
                     card.scrollIntoView({ block: "center" });
                 }
                 openDetails(p.id, true);
             }
         };
-
-        const saved = NX.storage.get("nx_filter2", "all");
-        apply(saved === "all" || STATUSES[saved] ? saved : "all", true);
         window.addEventListener("hashchange", fromHash);
         setTimeout(fromHash, 60);
+
+        // Отложенная загрузка: гость нажал «Скачать», вошёл — продолжаем здесь
+        const pending = NX.storage.get("nx_pending_dl", null);
+        if (pending && Auth.get()) {
+            NX.storage.remove("nx_pending_dl");
+            const p = PROJECTS.find(x => x.id === pending);
+            if (p && canDownload(p)) {
+                setTimeout(() => {
+                    const card = document.getElementById("project-" + p.id);
+                    if (card) { if (card.hidden) { currentCat = "all"; apply("all", true); } card.scrollIntoView({ block: "center" }); }
+                    toast(`Доступ подтверждён — запускаю загрузку ${p.title}`, "ok");
+                    Downloads.run(p);
+                }, 700);
+            } else if (p) {
+                toast(`${p.title}: доступ «${accessText(p)}». Сменить роль — в кабинете или командой role.`, "warn", { ttl: 5000 });
+            }
+        }
     }
 
     /* ================================================================
-     * Кабинет
+     * Кабинет: профиль, роль и права, история загрузок
      * ================================================================ */
-    const ACCESS_ROWS = [
-        { name: "Портал NEXUS//DEV и devlog", level: 1 },
-        { name: "Серверы NEXUS CRAFT", level: 2 },
-        { name: "Бета-сборки модов FORTIFY / NEXUS TECH", level: 2 },
-        { name: "Плейтесты BASTION: LINE ZERO", level: 3 },
-        { name: "Перезапуск и логи игровых серверов", level: 2 },
-        { name: "Dev-сборки и плагин TRENCHWORKS", level: 4 }
-    ];
-
-    /* Сборки в кабинете — те же проекты, что и в центре загрузок */
-    const BUILDS = PROJECTS;
-
     function initDashboard() {
         const lock = $("#dash-lock");
         const app = $("#dash-app");
@@ -552,15 +1137,16 @@
         if (demoBtn) {
             demoBtn.addEventListener("click", async () => {
                 demoBtn.classList.add("is-busy");
-                Auth.login({ callsign: "demo_operator", level: 3, demo: true, remember: true });
-                await showBanner("ACCESS GRANTED", { sub: "DEMO ACCESS · LEVEL 3 // PLAYTESTER" });
+                Auth.login({ callsign: "demo_operator", role: "user", demo: true, remember: true });
+                await showBanner("ACCESS GRANTED", { sub: "DEMO ACCESS · ROLE USER" });
                 demoBtn.classList.remove("is-busy");
                 start();
-                toast("Демо-доступ активирован: LEVEL 3 // PLAYTESTER", "ok");
+                toast("Демо-доступ: роль USER. Переключить роль можно ниже или командой role", "ok", { ttl: 4800 });
             });
         }
 
         let started = false;
+        const map = { profile: "dtab-profile", settings: "dtab-settings" };
         const start = () => {
             const s = Auth.get();
             if (!s) { showLocked(); return; }
@@ -568,16 +1154,13 @@
             app.hidden = false;
             if (NX.storage.sessionGet("nx_welcome")) {
                 try { window.sessionStorage.removeItem("nx_welcome"); } catch (e) { /* ignore */ }
-                setTimeout(() => toast(`Добро пожаловать, ${s.callsign}! Допуск: LEVEL ${s.level} // ${Auth.levelName(s.level)}`, "ok", { ttl: 4500 }), 350);
+                setTimeout(() => toast(`Добро пожаловать, ${s.callsign}! Роль: ${ROLES[s.role].label} // ${ROLES[s.role].name}`, "ok", { ttl: 4500 }), 350);
             }
-            if (started) { renderProfile(); return; }
-            started = true;
             renderProfile();
-            initServerPanel();
+            if (started) return;
+            started = true;
             initSettingsPanel();
-            initDownloads();
             const h = window.location.hash.replace("#", "");
-            const map = { profile: "dtab-profile", servers: "dtab-servers", settings: "dtab-settings" };
             if (map[h]) Tabs.byId(map[h]);
             window.addEventListener("hashchange", () => {
                 const k = window.location.hash.replace("#", "");
@@ -588,22 +1171,6 @@
                 const key = Object.keys(map).find(k => map[k] === e.detail.id);
                 if (key && window.history.replaceState) window.history.replaceState(null, "", "#" + key);
             });
-            const pending = NX.storage.get("nx_pending_dl", null);
-            if (pending) {
-                NX.storage.remove("nx_pending_dl");
-                const p = BUILDS.find(x => x.id === pending);
-                if (p && canDownload(p, Auth.get())) {
-                    Tabs.byId("dtab-profile");
-                    setTimeout(() => {
-                        const row = $(`#build-list [data-hud="${p.id}"]`);
-                        if (row) row.scrollIntoView({ block: "center" });
-                        toast(`Допуск подтверждён — запускаю загрузку ${p.title}`, "ok");
-                        Downloads.run(p, { onDone: () => renderDownloads(true) });
-                    }, 600);
-                } else if (p) {
-                    toast(`${p.title}: требуется допуск ${accessText(p)}. Получите код доступа у команды проекта.`, "warn", { ttl: 5000 });
-                }
-            }
         };
 
         // Выход
@@ -614,8 +1181,10 @@
             setTimeout(() => { window.location.href = "auth.html"; }, 400);
         }));
 
-        window.addEventListener("storage", e => {
-            if (e.key === Auth.KEY && !Auth.get()) showLocked();
+        // Вход / выход / смена роли (в т.ч. из терминала или подвала) — сразу обновить кабинет
+        document.addEventListener("nexus:auth", () => {
+            if (!Auth.get()) { showLocked(); return; }
+            if (app.hidden) start(); else renderProfile();
         });
 
         start();
@@ -624,29 +1193,43 @@
     function renderProfile() {
         const s = Auth.get();
         if (!s) return;
+        const role = ROLES[s.role];
         drawAvatar($("#avatar-canvas"), avatarSeed(s));
         const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
         set("profile-name", s.callsign);
         set("profile-id", s.id);
-        set("profile-level", `LEVEL ${s.level} // ${Auth.levelName(s.level)}`);
+        set("profile-level", `${role.label} // ${role.name}`);
         set("pi-callsign", s.callsign);
         set("pi-email", s.email);
         set("pi-id", s.id);
-        set("pi-level", `${s.level} — ${Auth.levelName(s.level)}${s.demo ? " (DEMO)" : ""}`);
+        set("pi-role", `${role.label} — ${role.name}${s.demo ? " (DEMO)" : ""}`);
         set("pi-registered", formatDate(s.registered));
         set("pi-last", formatDate(s.lastLogin));
         set("pi-session", s.expires ? "до " + formatDate(s.expires) : "запомнена на устройстве");
-        $$("#clearance-bars i").forEach((el, i) => el.classList.toggle("on", i < s.level));
+        $$("#clearance-bars i").forEach((el, i) => el.classList.toggle("on", i < role.rank));
 
-        const acc = $("#access-body");
-        if (acc) {
-            acc.innerHTML = ACCESS_ROWS.map(r => {
-                const ok = s.level >= r.level;
-                return `<tr><td data-label="Ресурс">${escapeHtml(r.name)}</td><td data-label="Уровень">L${r.level} · ${Auth.levelName(r.level)}</td><td data-label="Доступ"><span class="${ok ? "access-yes" : "access-no"}">${ok ? "GRANTED" : "DENIED"}</span></td></tr>`;
+        // Карточка роли
+        const card = $("#role-card");
+        if (card) {
+            card.setAttribute("data-role", s.role);
+            set("role-name", role.label);
+            set("role-title", role.name);
+            set("role-desc", role.desc);
+        }
+
+        // Матрица прав: строки — права, колонки — роли
+        const perm = $("#perm-body");
+        if (perm) {
+            perm.innerHTML = PERMISSIONS.map(x => {
+                const cells = ROLE_IDS.map(id => {
+                    const ok = ROLES[id].rank >= ROLES[x.min].rank;
+                    return `<td data-label="${ROLES[id].label}" class="${id === s.role ? "is-current" : ""}"><span class="${ok ? "access-yes" : "access-no"}">${ok ? "YES" : "—"}</span></td>`;
+                }).join("");
+                return `<tr><td data-label="Право">${escapeHtml(x.label)}</td>${cells}</tr>`;
             }).join("");
+            $$("#perm-head th[data-role-col]").forEach(th => th.classList.toggle("is-current", th.getAttribute("data-role-col") === s.role));
         }
         renderDownloads();
-        NX.updateUserUI();
     }
 
     function renderDownloads(highlightFirst) {
@@ -655,7 +1238,7 @@
         if (!s || !body) return;
         const list = s.downloads || [];
         if (!list.length) {
-            body.innerHTML = '<tr><td colspan="5" data-label="История">Загрузок пока нет</td></tr>';
+            body.innerHTML = '<tr><td colspan="5" data-label="История">Загрузок пока нет — сборки скачиваются в <a href="projects.html">центре загрузок</a></td></tr>';
             return;
         }
         body.innerHTML = list.map((d, i) => `
@@ -663,300 +1246,9 @@
                 <td data-label="Сборка"><b>${escapeHtml(d.build)}</b><br><span class="muted">${escapeHtml(d.version)}</span></td>
                 <td data-label="Дата">${escapeHtml(formatDate(d.date))}</td>
                 <td data-label="Размер">${escapeHtml(d.size)}</td>
-                <td data-label="SHA-256">${escapeHtml(d.sha)}…</td>
+                <td data-label="SHA-256">${d.sha === "external" ? "внешняя ссылка" : escapeHtml(d.sha) + "…"}</td>
                 <td data-label="Статус"><span class="badge badge-online">${escapeHtml(d.status)}</span></td>
             </tr>`).join("");
-    }
-
-    function initDownloads() {
-        const wrap = $("#build-list");
-        if (!wrap) return;
-        const render = () => {
-            const s = Auth.get();
-            if (!s) return;
-            wrap.innerHTML = BUILDS.map(p => {
-                const ok = canDownload(p, s);
-                return `<tr data-hud="${p.id}">
-                    <td data-label="Сборка" class="build-cell"><span class="build-name"><b>${escapeHtml(p.title)}</b><br><span class="muted">${escapeHtml(p.version)} · ${escapeHtml(STATUSES[p.status].short)}</span></span>${hudHtml()}</td>
-                    <td data-label="Размер">${escapeHtml(p.size)}</td>
-                    <td data-label="Допуск">${p.access ? "L" + p.access : "—"}</td>
-                    <td data-label="Действие">${ok
-                        ? `<button class="btn btn-sm btn-dl" type="button" data-dl="${p.id}">${ICON_DOWNLOAD}<span>Скачать</span></button>`
-                        : `<span class="access-no">LOCKED</span>`}</td>
-                </tr>`;
-            }).join("");
-        };
-        render();
-        let stale = false;
-        const refresh = () => {
-            if (Object.keys(Downloads.active).length) { stale = true; return; }
-            stale = false;
-            render();
-        };
-        document.addEventListener("nexus:auth", refresh);
-        document.addEventListener("nexus:dl-idle", () => { if (stale) setTimeout(refresh, 2500); });
-
-        wrap.addEventListener("click", e => {
-            const btn = e.target.closest("[data-dl]");
-            if (!btn) return;
-            const p = BUILDS.find(x => x.id === btn.getAttribute("data-dl"));
-            if (!p) return;
-            Downloads.run(p, { onDone: () => renderDownloads(true) });
-        });
-    }
-
-    /* ----- Управление серверами ----- */
-    const actionLog = {
-        el: null,
-        add(text, warn) {
-            if (!this.el) this.el = $("#action-log");
-            if (!this.el) return;
-            const line = document.createElement("div");
-            if (warn) line.className = "w";
-            const t = document.createElement("span");
-            t.className = "t";
-            t.textContent = `[${timeStr()}] `;
-            line.appendChild(t);
-            line.appendChild(document.createTextNode(text));
-            this.el.appendChild(line);
-            while (this.el.childElementCount > 120) this.el.removeChild(this.el.firstChild);
-            this.el.scrollTop = this.el.scrollHeight;
-        }
-    };
-
-    function initServerPanel() {
-        const body = $("#srv-body");
-        if (!body) return;
-        const labels = ["Сервер", "Статус", "Игроки", "Ping", "CPU / RAM", "Действия"];
-        const rows = {};
-        const bar = cls => `<span class="loadbar ${cls}"><span class="loadbar-key">${cls === "srv-cpu" ? "CPU" : "RAM"}</span><span class="loadbar-track"><span class="loadbar-fill"></span></span><span class="loadbar-val"></span></span>`;
-        SERVERS.forEach(n => {
-            const tr = document.createElement("tr");
-            tr.innerHTML = `
-                <td data-label="${labels[0]}" class="srv-name"><b>${escapeHtml(n.name)}</b><span>${escapeHtml(n.id)} · ${escapeHtml(n.type)} · ${escapeHtml(n.city)}, ${n.cc}</span></td>
-                <td data-label="${labels[1]}" class="srv-status"></td>
-                <td data-label="${labels[2]}" class="srv-players"></td>
-                <td data-label="${labels[3]}" class="srv-ping"></td>
-                <td data-label="${labels[4]}" class="srv-load">${bar("srv-cpu")}${bar("srv-ram")}</td>
-                <td data-label="${labels[5]}" class="srv-actions-cell"><div class="srv-actions">
-                    <button class="btn btn-sm" type="button" data-restart="${n.id}" aria-label="Перезапуск ${escapeHtml(n.id)}"><img src="assets/icons/play.svg" alt="" width="14" height="14"><span>Перезапуск</span></button>
-                    <button class="btn btn-sm" type="button" data-logs="${n.id}" aria-label="Логи ${escapeHtml(n.id)}"><img src="assets/icons/clipboard.svg" alt="" width="14" height="14">Логи</button>
-                </div></td>`;
-            body.appendChild(tr);
-            rows[n.id] = tr;
-        });
-
-        const setBar = (el, v, up) => {
-            const fill = el.querySelector(".loadbar-fill");
-            const val = el.querySelector(".loadbar-val");
-            fill.style.width = (up ? Math.round(v) : 0) + "%";
-            val.textContent = up ? Math.round(v) + "%" : "—";
-        };
-
-        const render = () => {
-            SERVERS.forEach(n => {
-                const tr = rows[n.id];
-                const up = Telemetry.isUp(n);
-                const st = tr.querySelector(".srv-status");
-                if (n.status === "restarting") {
-                    if (!st.querySelector(".badge-restarting")) {
-                        st.innerHTML = `${statusBadge("restarting")}<span class="restart-meter"><i></i></span>`;
-                    }
-                } else {
-                    const html = statusBadge(n.status);
-                    if (st.innerHTML !== html) st.innerHTML = html;
-                }
-                tr.querySelector(".srv-players").textContent = n.status === "restarting" ? "…" : formatPlayers(n);
-                tr.querySelector(".srv-ping").textContent = up ? Math.round(n.ping) + " ms" : "—";
-                setBar(tr.querySelector(".srv-cpu"), n.cpu, up);
-                setBar(tr.querySelector(".srv-ram"), n.ram, up);
-                tr.classList.toggle("is-offline", n.status === "offline");
-                tr.classList.toggle("is-restarting", n.status === "restarting");
-                const rb = tr.querySelector("[data-restart]");
-                rb.querySelector("span").textContent = n.status === "offline" ? "Запуск" : "Перезапуск";
-                rb.disabled = n.status === "restarting";
-            });
-            const s = Telemetry.summary();
-            const set = (k, v) => $$(`[data-dsum='${k}']`).forEach(el => { el.textContent = v; });
-            set("online", `${s.online}/${s.total}`);
-            set("players", String(s.players));
-            set("ping", Math.round(s.avgPing) + " ms");
-            const restarting = SERVERS.filter(n => n.status === "restarting").length;
-            set("ops", restarting ? `${restarting} RESTART` : "IDLE");
-            const upd = $("#srv-updated");
-            if (upd) upd.textContent = timeStr();
-        };
-        Telemetry.on(render);
-        render();
-
-        body.addEventListener("click", e => {
-            const r = e.target.closest("[data-restart]");
-            const l = e.target.closest("[data-logs]");
-            if (r) restartServer(r.getAttribute("data-restart"), rows, render);
-            if (l) openLogs(l.getAttribute("data-logs"));
-        });
-
-        const all = $("#srv-restart-all");
-        if (all) {
-            all.addEventListener("click", () => {
-                const targets = SERVERS.filter(n => n.status === "degraded" || n.status === "offline");
-                if (!targets.length) {
-                    toast("Все серверы в норме — перезапуск не требуется", "ok");
-                    Sound.play("info");
-                    return;
-                }
-                targets.forEach((n, i) => setTimeout(() => restartServer(n.id, rows, render), i * 400));
-            });
-        }
-
-        actionLog.add(`session: ${Auth.get().callsign} подключён к NEXUS GRID control plane`);
-        actionLog.add(`grid: ${SERVERS.length} серверов под управлением, ${Telemetry.summary().online} онлайн`);
-    }
-
-    async function restartServer(id, rows, render) {
-        const n = Telemetry.find(id);
-        const s = Auth.get();
-        if (!n || n.lock) return;
-        if (!s) { Sound.play("denied"); return; }
-        if (s.level < 2) {
-            Sound.play("denied");
-            toast("ACCESS DENIED: перезапуск доступен с уровня MEMBER", "warn");
-            return;
-        }
-        const wasOffline = n.status === "offline";
-        n.lock = true;
-        n.status = "restarting";
-        n.players = 0;
-        Sound.play("expand");
-        actionLog.add(`${s.callsign}: ${wasOffline ? "start" : "restart"} ${n.id} (${n.name})`, true);
-        NX.Syslog.add(`grid: ${n.id} ${wasOffline ? "start" : "restart"} requested by ${s.callsign}`, true);
-        render();
-
-        const tr = rows[id];
-        const meter = () => tr.querySelector(".restart-meter > i");
-        const stages = n.type === "MINECRAFT"
-            ? ["broadcast: «Сервер перезапустится через 5 секунд»", "save-all: мир сохранён", "stop: сервер остановлен", "docker: контейнер пересоздан", "paper: загрузка плагинов и мира", "healthcheck: TPS 20.0"]
-            : n.type === "UE5"
-                ? ["agones: drain активных матчей", "server: shutdown signal", "docker: образ bastion-server:0.3.7 загружен", "ue5: загрузка карты Ridge-01", "healthcheck: tick 30 Hz стабилен"]
-                : ["nginx: graceful drain", "systemd: stop api", "postgres: соединения закрыты", "systemd: start api", "healthcheck: /health 200 OK"];
-        for (let i = 0; i < stages.length; i++) {
-            await delay(reducedMotion() ? 150 : randInt(550, 1000));
-            actionLog.add(`${n.id}: ${stages[i]}`);
-            Sound.play("stdout");
-            const m = meter();
-            if (m) m.style.width = Math.round(((i + 1) / stages.length) * 100) + "%";
-        }
-        await delay(300);
-        n.status = "online";
-        n.ping = 10 + n.dist * 24;
-        n.cpu = rand(18, 34);
-        n.ram = rand(25, 40);
-        n.players = n.max > 0 ? randInt(0, Math.min(6, n.max)) : randInt(80, 160);
-        n.pid = randInt(1200, 9800);
-        n.lock = false;
-        n.changed = true;
-        Sound.play("granted");
-        actionLog.add(`${n.id}: ONLINE (pid ${n.pid})`);
-        NX.Syslog.add(`healthcheck: ${n.id} is back ONLINE after restart`);
-        toast(`${n.id}: перезапуск завершён — ONLINE`, "ok");
-        render();
-        tr.classList.remove("flash");
-        void tr.offsetWidth;
-        tr.classList.add("flash");
-        Telemetry.emit();
-    }
-
-    function logLine(n) {
-        const lvl = Math.random();
-        const level = lvl > 0.94 ? "ERROR" : (lvl > 0.82 ? "WARN" : "INFO");
-        let msg;
-        if (n.status === "offline") {
-            msg = pick(["healthcheck failed: connection refused", "container exited with code 137", "waiting for operator…"]);
-            return { level: "ERROR", msg };
-        }
-        if (n.status === "restarting") {
-            return { level: "WARN", msg: pick(["shutdown in progress…", "saving state…", "starting up…"]) };
-        }
-        if (n.type === "MINECRAFT") {
-            msg = level === "ERROR" ? pick(["Can't keep up! Is the server overloaded? Running 2140ms behind", "Exception in plugin MiniGames: NullPointerException at ArenaManager.java:212"])
-                : level === "WARN" ? pick([`${pick(NICKS)} moved too quickly!`, "Chunk save took 412 ms", "fortify: trench recalculation exceeded 50 ms"])
-                    : pick([`${pick(NICKS)} joined the game`, `${pick(NICKS)} left the game`, `<${pick(NICKS)}> кто строит ров у спавна?`, `Saving chunks for level 'world'`, `fortify: hedgehog placed at ${randInt(-900, 900)} ${randInt(60, 90)} ${randInt(-900, 900)}`, `TPS: 20.0, players ${Math.round(n.players)}/${n.max}`]);
-        } else if (n.type === "UE5") {
-            msg = level === "ERROR" ? pick(["LogNet: Warning: Connection timeout; client 7", "LogMass: Error: entity budget exceeded (1240/1200)"])
-                : level === "WARN" ? pick(["LogNavigation: tile rebuild took 46 ms", "LogNet: high packet loss (3.1%) for player 4"])
-                    : pick([`LogGameMode: match #${randInt(4000, 9999)} started — Ridge-0${randInt(1, 9)}`, `LogTrench: segment dug (${randInt(4, 30)} m), navmesh tiles ${randInt(2, 9)}`, `LogNet: Join succeeded: ${pick(NICKS)}`, `LogStats: tick ${rand(29.4, 30).toFixed(1)} Hz, ${randInt(600, 1150)} entities`]);
-        } else {
-            msg = level === "ERROR" ? pick(["upstream timed out (110) while reading response header", "token signature invalid: kid=old-2025"])
-                : level === "WARN" ? pick(["rate limit hit for 203.0.113.42", "slow query 312 ms: SELECT * FROM sessions"])
-                    : pick([`POST /oauth/token 200 ${randInt(8, 40)}ms`, `GET /v1/servers 200 ${randInt(2, 12)}ms`, `login ok: ${pick(NICKS)}`, "GET /health 200 1ms"]);
-        }
-        return { level, msg };
-    }
-
-    function openLogs(id) {
-        const n = Telemetry.find(id);
-        if (!n) return;
-        let paused = false;
-        let timer = null;
-        const modal = Modal.open({
-            title: "LOGS",
-            subtitle: `${escapeHtml(n.id)} — tail -f`,
-            className: "logs",
-            html: `
-                <div class="log-toolbar">
-                    <span>${escapeHtml(n.name)} · ${escapeHtml(n.software)}</span>
-                    <span class="legend"><span class="badge badge-online">INFO</span><span class="badge badge-degraded">WARN</span><span class="badge badge-offline">ERROR</span></span>
-                </div>
-                <pre class="log-tail" id="log-tail" aria-live="off"></pre>`,
-            buttons: [
-                {
-                    label: "Пауза", action: el => {
-                        paused = !paused;
-                        el.textContent = paused ? "Продолжить" : "Пауза";
-                        Sound.play("folder");
-                        return false;
-                    }
-                },
-                {
-                    label: "Копировать", action: () => {
-                        const tail = $("#log-tail");
-                        NX.copyText(tail ? tail.textContent : "").then(ok => {
-                            Sound.play(ok ? "granted" : "denied");
-                            toast(ok ? "Логи скопированы в буфер обмена" : "Не удалось скопировать", ok ? "ok" : "warn");
-                        });
-                        return false;
-                    }
-                }
-            ],
-            onClose: () => { if (timer) clearInterval(timer); }
-        });
-        const tail = $("#log-tail", modal);
-        const write = (ts, entry) => {
-            const atBottom = tail.scrollHeight - tail.scrollTop - tail.clientHeight < 30;
-            const line = document.createElement("div");
-            if (entry.level === "WARN") line.className = "lvl-warn";
-            if (entry.level === "ERROR") line.className = "lvl-err";
-            const t = document.createElement("span");
-            t.className = "t";
-            t.textContent = `${ts} `;
-            line.appendChild(t);
-            line.appendChild(document.createTextNode(`[${entry.level}] ${entry.msg}`));
-            tail.appendChild(line);
-            while (tail.childElementCount > 400) tail.removeChild(tail.firstChild);
-            if (atBottom) tail.scrollTop = tail.scrollHeight;
-        };
-        // Предзаполняем «историю» последних минут
-        const now = Date.now();
-        for (let i = 40; i > 0; i--) {
-            write(timeStr(new Date(now - i * randInt(2500, 4500))), logLine(n));
-        }
-        tail.scrollTop = tail.scrollHeight;
-        timer = setInterval(() => {
-            if (paused) return;
-            write(timeStr(), logLine(n));
-            Sound.play("stdout");
-        }, 700);
-        actionLog.add(`${Auth.get() ? Auth.get().callsign : "guest"}: tail logs ${n.id}`);
     }
 
     /* ----- Цветовые схемы eDEX-UI (вкладка «Настройки HUD») ----- */
@@ -1134,7 +1426,7 @@
                 sessionView.hidden = false;
                 drawAvatar($("#auth-avatar"), avatarSeed(s));
                 $("#auth-session-name").textContent = s.callsign;
-                $("#auth-session-meta").textContent = `${s.id} · LEVEL ${s.level} // ${Auth.levelName(s.level)}`;
+                $("#auth-session-meta").textContent = `${s.id} · ${ROLES[s.role].label} // ${ROLES[s.role].name}`;
             } else {
                 formsView.hidden = false;
                 sessionView.hidden = true;
@@ -1252,13 +1544,15 @@
                 busy = false;
                 return;
             }
-            await step(`clearance LEVEL ${opts.level} // ${Auth.levelName(opts.level)}`);
+            await step(`role ${ROLES[opts.role].label} // ${ROLES[opts.role].name}`);
             vlog("session token issued (stored locally, demo mode)");
-            Auth.login({ callsign: opts.callsign, email: opts.email, level: opts.level, remember: opts.remember, demo: opts.demo, registered: opts.register ? Date.now() : undefined });
+            Auth.login({ callsign: opts.callsign, email: opts.email, role: opts.role, remember: opts.remember, demo: opts.demo, registered: opts.register ? Date.now() : undefined });
             NX.storage.sessionSet("nx_welcome", "1");
-            await showBanner("ACCESS GRANTED", { keep: true, sub: `${opts.callsign.toUpperCase()} · LEVEL ${opts.level} — переход в кабинет…` });
+            // Гость нажимал «Скачать» на закрытой сборке — возвращаем его в центр загрузок
+            const pending = NX.storage.get("nx_pending_dl", null);
+            await showBanner("ACCESS GRANTED", { keep: true, sub: `${opts.callsign.toUpperCase()} · ${ROLES[opts.role].label} — ${pending ? "возврат к загрузке…" : "переход в кабинет…"}` });
             await delay(fast ? 150 : 650);
-            window.location.href = "dashboard.html";
+            window.location.href = pending ? "projects.html" : "dashboard.html";
         };
 
         const CALLSIGN_RE = /^[A-Za-z0-9_.\-]{3,24}$/;
@@ -1266,9 +1560,9 @@
 
         const resolveCode = raw => {
             const code = (raw || "").trim().toUpperCase();
-            if (!code) return { code: "", level: 2, ok: true };
-            const lvl = ACCESS_CODES[code];
-            return { code, level: lvl || 2, ok: !!lvl };
+            if (!code) return { code: "", role: "user", ok: true };
+            const role = ACCESS_CODES[code];
+            return { code, role: role || "user", ok: !!role };
         };
 
         // ---- Вход
@@ -1292,7 +1586,7 @@
             runSequence({
                 callsign,
                 email: isEmail ? v : undefined,
-                level: c.level,
+                role: c.role,
                 code: c.code,
                 codeOk: c.ok,
                 fail: c.ok ? null : "код доступа не распознан",
@@ -1321,7 +1615,7 @@
                 register: true,
                 callsign: nick.value.trim(),
                 email: mail.value.trim(),
-                level: c.level,
+                role: c.role,
                 code: c.code,
                 codeOk: c.ok,
                 fail: c.ok ? null : "код доступа не распознан",
@@ -1344,8 +1638,8 @@
             };
             await fill(id, "demo_operator");
             await fill(pass, "••••••••".replace(/•/g, "x"));
-            await fill(code, "PLAYTEST");
-            runSequence({ callsign: "demo_operator", level: 3, code: "PLAYTEST", codeOk: true, remember: true, demo: true });
+            code.value = "";
+            runSequence({ callsign: "demo_operator", role: "user", remember: true, demo: true });
         }));
 
         renderSession();
@@ -1364,5 +1658,5 @@
         $$("canvas[data-avatar-seed]").forEach(c => drawAvatar(c, c.getAttribute("data-avatar-seed")));
     });
 
-    NX.Pages = { openDetails, drawAvatar, Downloads };
+    NX.Pages = { openDetails, openEditor, openSections, confirmDelete, drawAvatar, Downloads, textToNotes, notesToText, compressImage };
 })();

@@ -11,11 +11,11 @@
     <!-- Зависимость оригинального eDEX-UI: augmented-ui 1.1.2 (BSD-2-Clause) — скошенные рамки -->
     <link rel="stylesheet" href="assets/vendor/augmented-ui/augmented.css">
     <!-- Тема blade, перенесённая из eDEX-UI -->
-    <link rel="stylesheet" href="css/blade-theme.css?v=20261109-7">
+    <link rel="stylesheet" href="css/blade-theme.css?v=20261109-8">
     <!-- Адаптивная сетка: шапка, подвал, модули, терминал -->
-    <link rel="stylesheet" href="css/layout.css?v=20261109-7">
+    <link rel="stylesheet" href="css/layout.css?v=20261109-8">
     <!-- Компоненты страниц: главная, каталог, формы, кабинет, тосты -->
-    <link rel="stylesheet" href="css/pages.css?v=20261109-7">
+    <link rel="stylesheet" href="css/pages.css?v=20261109-8">
 
     <script>
         /* Ранняя инициализация: класс js и сохранённые настройки HUD (без мигания) */
@@ -94,8 +94,8 @@
             <p class="crumbs"><a href="index.html">~</a> / projects <span class="prompt-sign">_</span></p>
             <h1 class="page-title" id="page-title">Проекты и сборки</h1>
             <p class="page-lead">
-                Все сборки экосистемы в одном месте. Публичные релизы скачиваются без входа, а закрытые тесты
-                и dev-снапшоты открываются по уровню допуска вашего аккаунта NEXUS ID.
+                Все сборки экосистемы в одном месте. Публичные релизы скачиваются без входа, закрытые тесты —
+                после входа, dev-снапшоты — ролям ADMIN и CREATOR. Администраторы публикуют новые проекты прямо отсюда.
             </p>
         </section>
 
@@ -113,7 +113,23 @@
                 <p class="filter-info" id="filter-info" aria-live="polite">6 сборок</p>
             </div>
 
-            <!-- Карточки рендерятся из массива PROJECTS (js/ui-effects.js) -->
+            <!-- Разделы, текущая роль и управление каталогом (кнопки видны только ADMIN / CREATOR) -->
+            <div class="catalog-bar">
+                <div class="cat-chips" id="cat-tabs" role="group" aria-label="Фильтр по разделу"></div>
+                <div class="catalog-actions">
+                    <p class="role-chip" id="role-chip" aria-live="polite"><span>РОЛЬ</span><b>GUEST</b></p>
+                    <button class="btn btn-sm" type="button" data-sections data-require="sections" hidden>
+                        <img src="assets/icons/options.svg" alt="" width="15" height="15">
+                        <span>РАЗДЕЛЫ</span>
+                    </button>
+                    <button class="btn btn-primary btn-create" type="button" data-create data-require="create" hidden>
+                        <img src="assets/icons/plus.svg" alt="" width="18" height="18">
+                        <span>СОЗДАТЬ ПРОЕКТ</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Карточки рендерятся из PROJECTS (js/ui-effects.js): официальные + созданные через сайт (nx_custom_projects) -->
             <div class="project-grid" id="project-grid">
                 <noscript>
                     <p class="noscript-note">
@@ -126,7 +142,7 @@
 
             <p class="dl-note">
                 <img src="assets/icons/info.svg" alt="" width="16" height="16">
-                <span>Демо-режим: загрузка симулируется в браузере, файлы не передаются. История загрузок сохраняется в кабинете, если вы вошли.</span>
+                <span>Демо-режим: загрузка официальных сборок симулируется в браузере. Проекты со ссылкой https:// открывают её в новой вкладке. Созданные проекты и роли хранятся в localStorage этого браузера.</span>
             </p>
         </section>
     </main>
@@ -165,6 +181,7 @@
 
             <div class="footer-bottom">
                 <p>&copy; <span class="js-year">2026</span> NEXUS//DEV. Некоммерческий проект. Код сайта распространяется под лицензией <a href="LICENSE">GPL-3.0</a>.</p>
+                <div class="footer-role" data-role-switch data-compact></div>
                 <p class="credit">
                     <button class="term-secret" type="button" data-terminal aria-expanded="false" aria-label="Терминал" title="&gt;_">
                         <img src="assets/icons/terminal.svg" alt="" width="16" height="16">
@@ -176,7 +193,7 @@
         </div>
     </footer>
 
-    <script src="js/ui-effects.js?v=20261109-7" defer></script>
-    <script src="js/pages.js?v=20261109-7" defer></script>
+    <script src="js/ui-effects.js?v=20261109-8" defer></script>
+    <script src="js/pages.js?v=20261109-8" defer></script>
 </body>
 </html>

@@ -11,11 +11,11 @@
     <!-- Зависимость оригинального eDEX-UI: augmented-ui 1.1.2 (BSD-2-Clause) — скошенные рамки -->
     <link rel="stylesheet" href="assets/vendor/augmented-ui/augmented.css">
     <!-- Тема blade, перенесённая из eDEX-UI -->
-    <link rel="stylesheet" href="css/blade-theme.css?v=20261109-7">
+    <link rel="stylesheet" href="css/blade-theme.css?v=20261109-8">
     <!-- Адаптивная сетка: шапка, подвал, модули, терминал -->
-    <link rel="stylesheet" href="css/layout.css?v=20261109-7">
+    <link rel="stylesheet" href="css/layout.css?v=20261109-8">
     <!-- Компоненты страниц: главная, каталог, формы, кабинет, тосты -->
-    <link rel="stylesheet" href="css/pages.css?v=20261109-7">
+    <link rel="stylesheet" href="css/pages.css?v=20261109-8">
 
     <script>
         /* Ранняя инициализация: класс js и сохранённые настройки HUD (без мигания) */
@@ -300,7 +300,7 @@
                             <img src="assets/icons/user.svg" alt="" width="30" height="30">
                         </header>
                         <h3>01 // ЕДИНЫЙ АККАУНТ</h3>
-                        <p>Одна регистрация NEXUS ID — и вы в системе: профиль, уровень допуска и история загрузок для всех проектов.</p>
+                        <p>Одна регистрация NEXUS ID — и вы в системе: профиль, роль и история загрузок для всех проектов.</p>
                         <span class="how-go"><span data-auth-label="Создать аккаунт|Открыть профиль">Создать аккаунт</span> <i aria-hidden="true">&rarr;</i></span>
                     </article>
                 </a>
@@ -311,7 +311,7 @@
                             <img src="assets/icons/download.svg" alt="" width="30" height="30">
                         </header>
                         <h3>02 // ЦЕНТР ЗАГРУЗОК</h3>
-                        <p>Лаунчер, моды и сборки с проверкой SHA-256. Публичные релизы качаются без входа, остальное — по допуску.</p>
+                        <p>Лаунчер, моды и сборки с проверкой SHA-256. Публичные релизы качаются без входа, закрытые сборки — по роли аккаунта.</p>
                         <span class="how-go">Открыть каталог <i aria-hidden="true">&rarr;</i></span>
                     </article>
                 </a>
@@ -383,6 +383,7 @@
 
             <div class="footer-bottom">
                 <p>&copy; <span class="js-year">2026</span> NEXUS//DEV. Некоммерческий проект. Код сайта распространяется под лицензией <a href="LICENSE">GPL-3.0</a>.</p>
+                <div class="footer-role" data-role-switch data-compact></div>
                 <p class="credit">
                     <button class="term-secret" type="button" data-terminal aria-expanded="false" aria-label="Терминал" title="&gt;_">
                         <img src="assets/icons/terminal.svg" alt="" width="16" height="16">
@@ -394,7 +395,7 @@
         </div>
     </footer>
 
-    <script src="js/ui-effects.js?v=20261109-7" defer></script>
-    <script src="js/pages.js?v=20261109-7" defer></script>
+    <script src="js/ui-effects.js?v=20261109-8" defer></script>
+    <script src="js/pages.js?v=20261109-8" defer></script>
 </body>
 </html>
