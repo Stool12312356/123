@@ -548,6 +548,7 @@
 
             body.appendChild(screen);
             body.appendChild(skipBtn);
+            document.documentElement.classList.remove("boot-pending");
 
             const onKey = e => {
                 if (e.key === "Escape" || e.key === "Enter" || e.key === " ") Boot.skip();
@@ -600,9 +601,13 @@
             }
 
             document.removeEventListener("keydown", onKey);
-            screen.remove();
             skipBtn.remove();
-            body.classList.remove("is-booting", "is-boot-full", "solidBackground");
+            // Плавный уход экрана загрузки (сплошной фон → страница), без мигания
+            body.classList.remove("is-boot-full", "solidBackground");
+            screen.classList.add("is-leaving");
+            await delay(280);
+            screen.remove();
+            body.classList.remove("is-booting");
             storage.sessionSet("nx_booted", "1");
             this.running = false;
         }
@@ -610,8 +615,8 @@
 
     /* Последовательность заголовка из displayTitleScreen() */
     async function titleSequence(screen, text, wait, full) {
-        const body = document.body;
-        body.classList.remove("solidBackground");
+        // Фон экрана загрузки больше не мигает (оригинал переключал body.solidBackground,
+        // из-за чего на сайте на мгновение показывалась страница под логотипом)
         screen.classList.add("center");
         const title = document.createElement("h1");
         title.textContent = text;
@@ -619,16 +624,13 @@
         screen.innerHTML = "";
         screen.appendChild(title);
 
-        await wait(160);
-        body.classList.add("solidBackground");
-        await wait(90);
+        await wait(250);
         title.className = "flash";
         await wait(240);
         title.className = "boxed";
         await wait(90);
         title.className = "glitch";
         await wait(420);
-        body.classList.remove("solidBackground");
         title.className = "boxed";
         await wait(full ? 500 : 380);
         return title;
@@ -1940,6 +1942,7 @@
         if (shouldBoot()) {
             Boot.run().then(revealUI);
         } else {
+            document.documentElement.classList.remove("boot-pending");
             revealUI();
         }
     }

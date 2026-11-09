@@ -145,8 +145,15 @@ body.is-booting {
 }
 /* Полная загрузка (Boot): страница под экраном загрузки скрыта целиком —
    ни шапка, ни hero не должны просвечивать и ловить фокус/клики. */
-body.is-boot-full > :not(#boot_screen):not(.boot_skip):not(script) {
+body.is-boot-full > :not(#boot_screen):not(.boot_skip):not(script),
+html.boot-pending body > * {
     visibility: hidden;
+}
+/* boot-pending ставится инлайн-скриптом в <head> ещё до первой отрисовки:
+   до старта Boot страница не должна мелькать */
+html.boot-pending body {
+    background: var(--color_light_black);
+    overflow: hidden;
 }
 
 ::selection {
@@ -464,20 +471,18 @@ svg {
     word-break: break-word;
     background: var(--color_light_black);
 }
-/* В оригинале фон экрана заголовка прозрачный — там под ним пустое окно Electron.
-   На сайте под ним уже свёрстана страница, поэтому вместо прозрачности
-   показываем ту же сетку, что и у body: эффект «мигания» фона сохраняется,
-   а контент страницы не просвечивает сквозь логотип. */
-body:not(.solidBackground) #boot_screen.center {
-    background:
-        linear-gradient(90deg, var(--color_light_black) calc(1.85 * var(--u)), transparent 1%) center,
-        linear-gradient(var(--color_light_black) calc(1.85 * var(--u)), transparent 1%) center,
-        var(--color_grey);
-    background-size: calc(2.04 * var(--u)) calc(2.04 * var(--u));
-}
 #boot_screen.center {
     align-items: center;
     justify-content: center;
+}
+/* В оригинале на этапе логотипа фон экрана то становится прозрачным, то снова
+   чёрным (окно Electron под ним пустое). На сайте под ним уже лежит страница,
+   и это выглядело как «чёрный экран пропал → появилась страница → вернулся».
+   Поэтому фон экрана загрузки всегда сплошной, до самого конца. */
+#boot_screen.is-leaving {
+    opacity: 0;
+    transition: opacity 0.28s linear;
+    pointer-events: none;
 }
 #boot_screen .boot_log {
     width: 100%;

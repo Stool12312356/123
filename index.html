@@ -29,6 +29,16 @@
                 if (s.glow === false) d.classList.add("hud-no-glow");
                 if (s.motion === false) d.classList.add("hud-reduced");
                 if (s.scale && s.scale !== "normal") d.setAttribute("data-hud-scale", s.scale);
+                /* Экран загрузки: прячем страницу ещё до первой отрисовки, чтобы она
+                   не мелькала до старта Boot (условия — как в shouldBoot()) */
+                var reduce = s.motion === false || (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+                if (true && s.intro !== false && !reduce &&
+                    sessionStorage.getItem("nx_booted") !== "1" &&
+                    (!location.hash || location.hash === "#top")) {
+                    d.classList.add("boot-pending");
+                    /* страховка: если скрипты не загрузились, страница не останется скрытой */
+                    setTimeout(function () { d.classList.remove("boot-pending"); }, 6000);
+                }
             } catch (e) { /* localStorage недоступен */ }
         })();
     </script>
