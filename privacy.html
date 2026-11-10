@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="ru" class="no-js">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Политика конфиденциальности — NEXUS//DEV</title>
+    <meta name="description" content="Политика конфиденциальности NEXUS//DEV: какие данные хранятся в браузере, что не собирается и как удалить свои данные.">
+    <meta name="theme-color" content="#090B0A">
+    <link rel="icon" type="image/svg+xml" href="assets/img/logo-icon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+    <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+
+    <!-- Зависимость оригинального eDEX-UI: augmented-ui 1.1.2 (BSD-2-Clause) — скошенные рамки -->
+    <link rel="stylesheet" href="assets/vendor/augmented-ui/augmented.css">
+    <!-- Тема blade, перенесённая из eDEX-UI -->
+    <link rel="stylesheet" href="css/blade-theme.css?v=20261110-1">
+    <!-- Адаптивная сетка: шапка, подвал, модули, терминал -->
+    <link rel="stylesheet" href="css/layout.css?v=20261110-1">
+    <!-- Компоненты страниц: главная, каталог, формы, кабинет, тосты -->
+    <link rel="stylesheet" href="css/pages.css?v=20261110-1">
+
+    <script>
+        /* Ранняя инициализация: класс js и сохранённые настройки HUD (без мигания) */
+        (function () {
+            var d = document.documentElement;
+            d.classList.remove("no-js");
+            d.classList.add("js");
+            try {
+                var s = JSON.parse(localStorage.getItem("nx_settings") || "{}");
+                if (s.grid === false) d.classList.add("hud-no-grid");
+                if (s.glow === false) d.classList.add("hud-no-glow");
+                if (s.motion === false) d.classList.add("hud-reduced");
+                if (s.scale && s.scale !== "normal") d.setAttribute("data-hud-scale", s.scale);
+                /* Цветовая схема (nx_settings.theme): кэш CSS-переменных темы из ui-effects.js */
+                if (s.theme && s.theme !== "blade" && s.themeVars && typeof s.themeVars === "object") {
+                    for (var k in s.themeVars) {
+                        if (k.indexOf("--") === 0) d.style.setProperty(k, s.themeVars[k]);
+                    }
+                    d.style.colorScheme = s.themeVars["color-scheme"] || "dark";
+                    if (s.themeVars["color-scheme"] === "light") d.classList.add("theme-light");
+                    d.setAttribute("data-theme", s.theme);
+                }
+            } catch (e) { /* localStorage недоступен */ }
+        })();
+    </script>
+</head>
+<body data-page="privacy">
+    <a class="skip-link" href="#main">Перейти к содержимому</a>
+
+    <!-- ===================== ШАПКА (общая для всех страниц) ===================== -->
+    <header class="site-header" id="top">
+        <div class="container header-inner">
+            <a class="brand" href="index.html" aria-label="NEXUS//DEV — на главную">
+                <svg class="brand-logo logo-header" viewBox="128 128 768 768" width="30" height="30" aria-hidden="true" focusable="false"><path class="logo-frame" d="M634 230.4 512 160 207 336v352l305 176 305-176V336l-122-70.4"/><g class="logo-spokes"><path d="M608 506h106v12H608zM714 486h52v52h-52z"/><g transform="rotate(120 512 512)"><path d="M608 506h106v12H608zM714 486h52v52h-52z"/></g><g transform="rotate(240 512 512)"><path d="M608 506h106v12H608zM714 486h52v52h-52z"/></g></g><circle class="logo-core" cx="512" cy="512" r="72"/></svg>
+                <span class="brand-name">NEXUS<em>//</em>DEV</span>
+            </a>
+
+            <nav class="site-nav" id="site-nav" aria-label="Основная навигация">
+                <ul class="skew-tabs nav-tabs">
+                    <li><a href="index.html" data-nav="home"><img src="assets/icons/home.svg" alt="" width="16" height="16">Главная</a></li>
+                    <li><a href="projects.html" data-nav="projects"><img src="assets/icons/portfolio.svg" alt="" width="16" height="16">Проекты</a></li>
+                    <li><a href="dashboard.html" data-nav="dashboard"><img src="assets/icons/user.svg" alt="" width="16" height="16">Кабинет</a></li>
+                    <li><a href="auth.html" data-nav="auth"><img src="assets/icons/sign-in.svg" alt="" width="16" height="16">Вход</a></li>
+                </ul>
+            </nav>
+
+            <div class="header-tools">
+                <button class="tool-btn term-btn" type="button" data-terminal aria-expanded="false" aria-label="Терминал (клавиша ~)" title="Терминал [~]">
+                    <img src="assets/icons/shell.svg" alt="" width="18" height="18">
+                </button>
+                <button class="tool-btn" id="sound-toggle" type="button" aria-pressed="true" title="Звуковые эффекты eDEX-UI">
+                    <img class="icon-off" src="assets/icons/mute.svg" alt="" width="18" height="18">
+                    <img class="icon-on" src="assets/icons/volume.svg" alt="" width="18" height="18">
+                    <span class="tool-label">SFX <b id="sound-state">ON</b></span>
+                </button>
+                <button class="tool-btn menu-toggle" id="menu-toggle" type="button" aria-controls="site-nav" aria-expanded="false" aria-label="Открыть меню">
+                    <img class="icon-menu" src="assets/icons/menu.svg" alt="" width="20" height="20">
+                    <img class="icon-close" src="assets/icons/close.svg" alt="" width="16" height="16">
+                </button>
+            </div>
+        </div>
+
+        <div class="container header-status">
+            <p data-sum-state><span class="dot" id="uplink-dot" aria-hidden="true"></span><b data-sum="state">SYSTEM ONLINE</b></p>
+            <p class="hide-sm">SERVERS <b id="header-servers">-/-</b></p>
+            <p class="hide-sm">RELEASES <b data-sum="releases">3</b></p>
+            <p class="hdr-wallet" id="header-wallet" hidden><a href="dashboard.html#wallet" title="Баланс NEXUS ID"><span class="hw-label">BALANCE </span><b id="header-balance">0&nbsp;₽</b></a></p>
+            <p>USER <b id="header-user">GUEST</b></p>
+            <p class="hide-xs"><b id="header-clock">--:--:--</b></p>
+        </div>
+    </header>
+
+    <main id="main">
+        <!-- ===================== ЗАГОЛОВОК ===================== -->
+        <section class="container page-head" aria-labelledby="page-title">
+            <h2 class="panel-title section-title"><span>Документы</span><span>/privacy</span></h2>
+            <p class="crumbs"><a href="index.html">~</a> / privacy <span class="prompt-sign">_</span></p>
+            <h1 class="page-title" id="page-title">Политика конфиденциальности</h1>
+            <p class="page-lead">
+                Какие данные использует сайт NEXUS//DEV, где они хранятся и как их удалить.
+                Редакция <b>1.0</b> от <time datetime="2026-11-09">9 ноября 2026 г.</time>
+            </p>
+        </section>
+
+        <section class="container page-section" aria-label="Текст политики">
+            <div class="doc-grid">
+                <!-- Оглавление -->
+                <aside class="mod-column doc-toc reveal-fade" aria-label="Содержание">
+                    <h3 class="panel-title"><span>INDEX</span><span>9 разделов</span></h3>
+                    <nav class="mod">
+                        <ol class="toc-list" id="toc-list">
+                            <li><a href="#p-summary">Коротко</a></li>
+                            <li><a href="#p-owner">Кто отвечает за данные</a></li>
+                            <li><a href="#p-data">Какие данные хранятся</a></li>
+                            <li><a href="#p-not">Что мы не собираем</a></li>
+                            <li><a href="#p-pay">Платежи</a></li>
+                            <li><a href="#p-third">Сторонние сервисы и ссылки</a></li>
+                            <li><a href="#p-rights">Ваши права</a></li>
+                            <li><a href="#p-kids">Дети</a></li>
+                            <li><a href="#p-changes">Изменения политики</a></li>
+                        </ol>
+                    </nav>
+                    <div class="mod doc-side-note">
+                        <p class="sub-label">Вопросы по данным</p>
+                        <p>Напишите нам — ответим и поможем удалить или выгрузить данные.</p>
+                        <a class="btn btn-sm" href="contacts.html"><img src="assets/icons/mail.svg" alt="" width="14" height="14">Контакты</a>
+                    </div>
+                </aside>
+
+                <div class="doc-shell shell-wrap glow">
+                    <article class="shell aug-frame shell-anim doc-body" augmented-ui="bl-clip tr-clip exe">
+                        <h3 class="panel-title shell-title"><span>PRIVACY.MD</span><span>REV 1.0 · 2026-11-09</span></h3>
+                        <div class="shell-inner">
+
+                            <section class="doc-section" id="p-summary">
+                                <h2><span class="doc-num">01</span>Коротко</h2>
+                                <ul class="fact-grid">
+                                    <li><img src="assets/icons/ban.svg" alt="" width="22" height="22"><b>Без cookie</b><span>сайт не ставит ни одного cookie-файла</span></li>
+                                    <li><img src="assets/icons/eye.svg" alt="" width="22" height="22"><b>Без трекеров</b><span>нет аналитики, рекламы и пикселей соцсетей</span></li>
+                                    <li><img src="assets/icons/disk.svg" alt="" width="22" height="22"><b>Только в браузере</b><span>аккаунт, баланс и настройки лежат в localStorage вашего устройства</span></li>
+                                    <li><img src="assets/icons/close.svg" alt="" width="22" height="22"><b>Удаление в один клик</b><span>кнопка в конце страницы стирает всё, что сайт сохранил</span></li>
+                                </ul>
+                                <p>NEXUS//DEV — некоммерческий проект. Сайт работает целиком в вашем браузере: регистрация,
+                                    вход, кабинет, кошелёк и настройки не отправляются на наш сервер, а сохраняются в
+                                    хранилище браузера (<code>localStorage</code> и <code>sessionStorage</code>). Мы не видим эти данные и не можем
+                                    получить к ним доступ.</p>
+                            </section>
+
+                            <section class="doc-section" id="p-owner">
+                                <h2><span class="doc-num">02</span>Кто отвечает за данные</h2>
+                                <p>Сайт ведёт команда некоммерческого проекта NEXUS//DEV. По любым вопросам о данных пишите
+                                    через страницу <a href="contacts.html">«Контакты»</a>.</p>
+                                <p>Политика составлена с учётом Общего регламента ЕС по защите данных (GDPR / AVG).</p>
+                            </section>
+
+                            <section class="doc-section" id="p-data">
+                                <h2><span class="doc-num">03</span>Какие данные хранятся</h2>
+                                <p>Все записи создаются только на вашем устройстве и только после ваших действий. Срок хранения —
+                                    пока вы их не удалите (выход из аккаунта, удаление аккаунта, кнопка ниже или очистка данных
+                                    сайта в настройках браузера).</p>
+                                <div class="table-scroll">
+                                    <table class="edex-table doc-table stack-table">
+                                        <thead><tr><th>Ключ</th><th>Что внутри</th><th>Когда появляется</th><th>Срок</th></tr></thead>
+                                        <tbody>
+                                            <tr><td data-label="Ключ"><code>nx_session</code></td><td data-label="Что внутри">Логин, email, ID пользователя, роль, дата регистрации, история загрузок, номер аватара</td><td data-label="Когда">Вход или регистрация</td><td data-label="Срок">До выхода; без «Запомнить устройство» — 2 часа</td></tr>
+                                            <tr><td data-label="Ключ"><code>nx_accounts</code></td><td data-label="Что внутри">Кошелёк (баланс, операции, сохранённые карты — только платёжная система и 4 последние цифры), подписка, уведомления, настройки безопасности, публичный профиль</td><td data-label="Когда">Первый вход в кабинет</td><td data-label="Срок">До удаления аккаунта</td></tr>
+                                            <tr><td data-label="Ключ"><code>nx_settings</code></td><td data-label="Что внутри">Цветовая схема, звук, масштаб, сетка, свечение, анимации</td><td data-label="Когда">Первое открытие сайта (кэш цветовой схемы, чтобы страница не мигала) и изменение настроек</td><td data-label="Срок">Бессрочно</td></tr>
+                                            <tr><td data-label="Ключ"><code>nx_custom_projects</code>, <code>nx_hidden_projects</code>, <code>nx_custom_categories</code></td><td data-label="Что внутри">Проекты, обложки и разделы, созданные в конструкторе</td><td data-label="Когда">Только для ролей ADMIN и CREATOR</td><td data-label="Срок">Бессрочно</td></tr>
+                                            <tr><td data-label="Ключ"><code>nx_tickets</code></td><td data-label="Что внутри">Номера, темы и даты ваших обращений со страницы «Контакты» (без текста сообщения)</td><td data-label="Когда">Отправка обращения</td><td data-label="Срок">Последние 20 обращений</td></tr>
+                                            <tr><td data-label="Ключ"><code>nx_consent</code></td><td data-label="Что внутри">Отметка, что вы прочитали уведомление о хранилище, и дата</td><td data-label="Когда">Кнопка «Понятно»</td><td data-label="Срок">До смены редакции политики</td></tr>
+                                            <tr><td data-label="Ключ"><code>nx_pending_dl</code></td><td data-label="Что внутри">ID сборки, которую вы хотели скачать до входа</td><td data-label="Когда">Попытка скачать без входа</td><td data-label="Срок">Удаляется сразу после входа</td></tr>
+                                            <tr><td data-label="Ключ"><code>nx_booted</code>, <code>nx_welcome</code> <i>(sessionStorage)</i></td><td data-label="Что внутри">Служебные отметки: заставка уже показана, приветствие после входа</td><td data-label="Когда">Первое открытие сайта</td><td data-label="Срок">До закрытия вкладки</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <p class="doc-note">Это хранилище необходимо для работы функций, которые вы сами включаете (вход, кабинет, настройки),
+                                    поэтому отдельного согласия не требуется — мы просто сообщаем о нём.</p>
+                            </section>
+
+                            <section class="doc-section" id="p-not">
+                                <h2><span class="doc-num">04</span>Что мы не собираем</h2>
+                                <ul class="doc-list">
+                                    <li>Cookie, рекламные идентификаторы и «отпечатки» браузера.</li>
+                                    <li>Аналитику посещений: счётчиков, тепловых карт и записи действий на сайте нет.</li>
+                                    <li>Пароли: пароль проверяется в форме и нигде не сохраняется.</li>
+                                    <li>Полные номера банковских карт и CVC.</li>
+                                    <li>Ваши данные не продаются и не передаются третьим лицам.</li>
+                                </ul>
+                                <p>IP-адреса и устройства в разделе кабинета «Безопасность → Активные сеансы» демонстрационные
+                                    и формируются в браузере.</p>
+                                <p class="doc-note"><b>Сервер хостинга.</b> Как и любой веб-сервер, хостинг сайта может вести
+                                    стандартные технические журналы: IP-адрес, время запроса, адрес страницы, тип браузера.
+                                    Они нужны для защиты от атак и устранения сбоев, не связываются с аккаунтом NEXUS ID и
+                                    хранятся не дольше срока, установленного хостинг-провайдером.</p>
+                            </section>
+
+                            <section class="doc-section" id="p-pay">
+                                <h2><span class="doc-num">05</span>Платежи</h2>
+                                <p>Кошелёк NEXUS ID сейчас работает в <b>тестовом режиме</b>: деньги не списываются, данные карты
+                                    никуда не передаются. Номер карты и CVC проверяются в форме и сразу забываются, а в истории
+                                    операций остаются только платёжная система и последние 4 цифры.</p>
+                                <p>Если появятся настоящие платежи, их будет обрабатывать сертифицированный платёжный провайдер
+                                    (стандарт PCI DSS). Мы обновим этот раздел и заранее предупредим об этом на сайте.</p>
+                            </section>
+
+                            <section class="doc-section" id="p-third">
+                                <h2><span class="doc-num">06</span>Сторонние сервисы и ссылки</h2>
+                                <p>Шрифты, звуки и иконки загружаются с того же сервера, что и сайт. Внешние CDN не используются.</p>
+                                <p>Сайт содержит ссылки на GitHub (исходный код, проект eDEX-UI). Сборки проектов тоже могут
+                                    скачиваться по внешним ссылкам. После перехода по такой ссылке действуют правила
+                                    конфиденциальности этого сервиса.</p>
+                            </section>
+
+                            <section class="doc-section" id="p-rights">
+                                <h2><span class="doc-num">07</span>Ваши права</h2>
+                                <p>По GDPR вы можете в любой момент получить копию своих данных, исправить их, удалить
+                                    или перенести. Поскольку данные хранятся у вас, всё это делается без запроса к нам:</p>
+                                <ul class="doc-list">
+                                    <li><b>Доступ и перенос</b> — «Скачать копию» ниже или «Кабинет → Безопасность → Экспорт данных».</li>
+                                    <li><b>Исправление</b> — «Кабинет → Профиль и роль».</li>
+                                    <li><b>Удаление</b> — «Удалить все данные сайта» ниже или «Кабинет → Безопасность → Удалить аккаунт».</li>
+                                </ul>
+                                <p>Если вы считаете, что ваши права нарушены, можно подать жалобу в надзорный орган по защите
+                                    данных своей страны (в Нидерландах — Autoriteit Persoonsgegevens).</p>
+                            </section>
+
+                            <section class="doc-section" id="p-kids">
+                                <h2><span class="doc-num">08</span>Дети</h2>
+                                <p>Сайт не предназначен для сбора данных детей младше 16 лет. Если вам меньше 16, пользуйтесь
+                                    аккаунтом с разрешения родителей. Данные можно удалить кнопкой ниже.</p>
+                            </section>
+
+                            <section class="doc-section" id="p-changes">
+                                <h2><span class="doc-num">09</span>Изменения политики</h2>
+                                <p>При изменениях обновляется номер редакции и дата в начале страницы. Если изменения
+                                    существенные, уведомление о хранилище покажется снова.</p>
+                            </section>
+
+                            <!-- Данные в этом браузере -->
+                            <section class="doc-section storage-box" id="p-storage" aria-labelledby="storage-title">
+                                <h2 id="storage-title"><span class="doc-num">&gt;_</span>Данные сайта в этом браузере</h2>
+                                <p class="doc-note" id="storage-summary">Подсчёт…</p>
+                                <div class="table-scroll">
+                                    <table class="edex-table storage-table stack-table">
+                                        <thead><tr><th>Хранилище</th><th>Ключ</th><th class="num">Размер</th></tr></thead>
+                                        <tbody id="storage-body"></tbody>
+                                    </table>
+                                </div>
+                                <div class="storage-actions">
+                                    <button class="btn btn-sm" type="button" id="storage-export"><img src="assets/icons/download.svg" alt="" width="14" height="14">Скачать копию (JSON)</button>
+                                    <button class="btn btn-sm btn-danger" type="button" id="storage-clear"><img src="assets/icons/close.svg" alt="" width="14" height="14">Удалить все данные сайта</button>
+                                </div>
+                            </section>
+                        </div>
+                    </article>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- ===================== ПОДВАЛ (общий для всех страниц) ===================== -->
+    <footer class="site-footer">
+        <div class="container">
+            <h2 class="panel-title"><span>NEXUS//DEV</span><span>EOF</span></h2>
+            <div class="footer-grid">
+                <div class="footer-about">
+                    <p class="brand footer-brand">
+                        <svg class="brand-logo logo-footer" viewBox="128 128 768 768" width="26" height="26" aria-hidden="true" focusable="false"><path class="logo-frame" d="M634 230.4 512 160 207 336v352l305 176 305-176V336l-122-70.4"/><g class="logo-spokes"><path d="M608 506h106v12H608zM714 486h52v52h-52z"/><g transform="rotate(120 512 512)"><path d="M608 506h106v12H608zM714 486h52v52h-52z"/></g><g transform="rotate(240 512 512)"><path d="M608 506h106v12H608zM714 486h52v52h-52z"/></g></g><circle class="logo-core" cx="512" cy="512" r="72"/></svg>
+                        <span class="brand-name">NEXUS<em>//</em>DEV</span>
+                    </p>
+                    <p>Ядро некоммерческой экосистемы инди-проектов: один аккаунт, центр загрузок, доступ к тестам и серверам.</p>
+                </div>
+                <nav class="footer-col" aria-label="Навигация в подвале">
+                    <h3>Навигация</h3>
+                    <ul>
+                        <li><a href="index.html">Главная</a></li>
+                        <li><a href="projects.html">Проекты</a></li>
+                        <li><a href="dashboard.html">Кабинет</a></li>
+                        <li><a href="auth.html">Вход</a></li>
+                    </ul>
+                </nav>
+                <div class="footer-col">
+                    <h3>Информация</h3>
+                    <ul>
+                        <li><button class="link-btn" type="button" data-doc="faq">FAQ</button></li>
+                        <li><button class="link-btn" type="button" data-doc="rules">Правила</button></li>
+                        <li><button class="link-btn" type="button" data-doc="license">Лицензия GPL-3.0</button></li>
+                        <li><a href="privacy.html">Конфиденциальность</a></li>
+                        <li><a href="contacts.html">Контакты</a></li>
+                        <li><a href="https://github.com/Stool12312356/123" target="_blank" rel="noopener noreferrer">Исходный код сайта</a></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="footer-bottom">
+                <p>&copy; <span class="js-year">2026</span> NEXUS//DEV. Некоммерческий проект. Код сайта распространяется под лицензией <a href="LICENSE">GPL-3.0</a>.</p>
+                <div class="footer-role" data-role-switch data-compact></div>
+                <p class="credit">
+                    <button class="term-secret" type="button" data-terminal aria-expanded="false" aria-label="Терминал" title="&gt;_">
+                        <img src="assets/icons/terminal.svg" alt="" width="16" height="16">
+                    </button>
+                    <img src="assets/img/edex-logo.svg" alt="" width="18" height="18">
+                    <span>UI inspired by &amp; adapted from <a href="https://github.com/GitSquared/edex-ui" target="_blank" rel="noopener noreferrer">eDEX-UI</a> (GPL-3.0)</span>
+                </p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="js/ui-effects.js?v=20261110-1" defer></script>
+    <script src="js/pages.js?v=20261110-1" defer></script>
+</body>
+</html>

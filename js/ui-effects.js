@@ -2720,6 +2720,125 @@
     };
 
     /* ================================================================
+     * Данные сайта: контакты команды и уведомление о хранилище
+     * ================================================================ */
+    /* Каналы связи для страницы «Контакты». Пустые значения скрываются.
+       email   — адрес поддержки (например, "support@example.org"), откроется почтовый клиент;
+       discord — ссылка-приглашение https://discord.gg/…;
+       telegram — ссылка https://t.me/…;
+       github  — репозиторий: туда открываются баг-репорты (issues). */
+    const SITE = {
+        name: "NEXUS//DEV",
+        privacyVersion: "1.0",
+        contacts: {
+            email: "",
+            discord: "",
+            telegram: "",
+            github: "https://github.com/Stool12312356/123"
+        }
+    };
+
+    /* Все ключи, которые сайт пишет в хранилище браузера (для политики и кнопки «удалить всё») */
+    const STORAGE_KEYS = {
+        local: ["nx_session", "nx_accounts", "nx_settings", "nx_custom_projects", "nx_hidden_projects", "nx_custom_categories", "nx_tickets", "nx_consent", "nx_pending_dl"],
+        session: ["nx_booted", "nx_welcome"]
+    };
+
+    const SiteData = {
+        /* Снимок всех данных сайта: [{ area, key, bytes, value }] */
+        list() {
+            const out = [];
+            const scan = (area, store) => {
+                try {
+                    const keys = [];
+                    for (let i = 0; i < store.length; i++) {
+                        const k = store.key(i);
+                        if (k && k.indexOf("nx_") === 0) keys.push(k);
+                    }
+                    keys.sort().forEach(k => {
+                        const v = store.getItem(k) || "";
+                        out.push({ area, key: k, bytes: (k.length + v.length) * 2, value: v });
+                    });
+                } catch (e) { /* хранилище недоступно */ }
+            };
+            try { scan("localStorage", window.localStorage); } catch (e) { /* ignore */ }
+            try { scan("sessionStorage", window.sessionStorage); } catch (e) { /* ignore */ }
+            return out;
+        },
+        exportJSON() {
+            const data = { site: SITE.name, exported: new Date().toISOString(), localStorage: {}, sessionStorage: {} };
+            this.list().forEach(r => {
+                let v = r.value;
+                try { v = JSON.parse(r.value); } catch (e) { /* строка */ }
+                data[r.area][r.key] = v;
+            });
+            return data;
+        },
+        /* Удаляет все ключи nx_* (включая неизвестные будущие версии) */
+        clearAll() {
+            this.list().forEach(r => {
+                try { (r.area === "localStorage" ? window.localStorage : window.sessionStorage).removeItem(r.key); } catch (e) { /* ignore */ }
+            });
+            Syslog.add("privacy: данные сайта удалены");
+        }
+    };
+
+    /* Уведомление о хранилище (сайт не использует cookie; localStorage — функциональный) */
+    const Consent = {
+        KEY: "nx_consent",
+        el: null,
+        accepted() {
+            const c = storage.getJSON(this.KEY, null);
+            return !!(c && c.v === SITE.privacyVersion);
+        },
+        init() {
+            if (this.accepted() || PAGE === "privacy") return;
+            // На главной ждём окончания заставки, чтобы баннер не перекрывал загрузку
+            document.addEventListener("nexus:ready", () => setTimeout(() => this.show(), 700), { once: true });
+        },
+        show() {
+            if (this.el || this.accepted()) return;
+            const el = document.createElement("section");
+            el.className = "consent-banner";
+            el.setAttribute("role", "region");
+            el.setAttribute("aria-label", "Уведомление о хранении данных");
+            el.setAttribute("augmented-ui", "tr-clip exe");
+            el.innerHTML = `
+                <div class="consent-icon" aria-hidden="true"><img src="assets/icons/disk.svg" alt="" width="22" height="22"></div>
+                <div class="consent-text">
+                    <p class="consent-title">Без cookie и трекеров</p>
+                    <p>Настройки, вход и данные кабинета хранятся только в вашем браузере (localStorage) — мы их не получаем.
+                        <a href="privacy.html">Подробнее</a></p>
+                </div>
+                <div class="consent-actions">
+                    <button class="btn btn-sm btn-primary" type="button" data-consent-ok>Понятно</button>
+                </div>`;
+            document.body.appendChild(el);
+            this.el = el;
+            const sync = () => document.documentElement.style.setProperty("--consent-h", el.offsetHeight + 12 + "px");
+            requestAnimationFrame(() => { el.classList.add("is-visible"); sync(); });
+            window.addEventListener("resize", sync);
+            this.onResize = sync;
+            el.querySelector("[data-consent-ok]").addEventListener("click", () => this.accept());
+        },
+        accept() {
+            storage.setJSON(this.KEY, { v: SITE.privacyVersion, date: Date.now() });
+            this.hide();
+            Sound.play("granted");
+        },
+        hide() {
+            const el = this.el;
+            if (!el) return;
+            this.el = null;
+            window.removeEventListener("resize", this.onResize);
+            document.documentElement.style.removeProperty("--consent-h");
+            el.classList.remove("is-visible");
+            el.classList.add("is-hiding");
+            setTimeout(() => el.remove(), reducedMotion() ? 0 : 260);
+        }
+    };
+
+    /* ================================================================
      * Документы (FAQ, правила, лицензия) — открываются в модальном окне
      * по кнопкам с атрибутом data-doc
      * ================================================================ */
@@ -2749,7 +2868,7 @@
                     <li>Уважайте других игроков: никаких оскорблений и спама.</li>
                     <li>Не распространяйте сборки закрытых тестов за пределами экосистемы.</li>
                     <li>Проект некоммерческий: торговля внутриигровыми вещами за реальные деньги запрещена.</li>
-                    <li>Нашли баг — сообщите через кабинет: это лучший способ помочь проекту.</li>
+                    <li>Нашли баг — сообщите через страницу <a href="contacts.html#bug">«Контакты»</a>: это лучший способ помочь проекту.</li>
                 </ol>`
         },
         license: {
@@ -3339,6 +3458,7 @@
         Tabs.init();
         Terminal.init();
         Docs.init();
+        Consent.init();
         initNav();
         observeReveal();
         initGlitch();
@@ -3358,6 +3478,7 @@
             if (e.key === Auth.KEY) updateUserUI();
             if (e.key === Account.KEY) Account.emit({ action: "sync" });
             if (e.key === Settings.KEY) { Settings.load(); Settings.apply(); Sound.syncUI(); }
+            if (e.key === Consent.KEY && Consent.accepted()) Consent.hide();
             if (e.key === Catalog.KEY || e.key === Catalog.HIDDEN_KEY || e.key === Catalog.CAT_KEY) {
                 Catalog.load();
                 applyPermissions();
@@ -3376,7 +3497,7 @@
     /* Публичное API для js/pages.js */
     window.NEXUS = {
         PAGE, $, $$, clamp, rand, randInt, pick, pad, delay, escapeHtml, timeStr, dateStr, hashString, rgba,
-        storage, Settings, Sound, Auth, Account, PLANS, PROMO_CODES, TEST_CARDS, WALLET_LIMITS, FUNDING,
+        storage, Settings, Sound, Auth, Account, SITE, STORAGE_KEYS, SiteData, Consent, PLANS, PROMO_CODES, TEST_CARDS, WALLET_LIMITS, FUNDING,
         formatMoney, cardBrand, luhnOk, topupBonus, deviceName, uid, detectOS, detectBrowser, ROLES, ROLE_IDS, PERMISSIONS, ACCESS, ACCESS_CODES, switchRole, applyPermissions,
         Catalog, BUILTIN_PROJECTS, BASE_CATEGORIES, PROJECT_ICONS, formatMiB, dateISO, toast, showBanner, Modal, Tabs, Syslog, Terminal,
         SERVERS, Telemetry, statusBadge, formatPlayers, PROJECTS, CATEGORIES, STATUSES, Docs,

@@ -3027,9 +3027,423 @@
      * Старт
      * ================================================================ */
     initServerBindings();
+    /* ================================================================
+     * Политика конфиденциальности: оглавление и данные в этом браузере
+     * ================================================================ */
+    const STORAGE_LABELS = {
+        nx_session: "сессия и профиль",
+        nx_accounts: "кошелёк, уведомления, безопасность",
+        nx_settings: "настройки HUD",
+        nx_custom_projects: "проекты из конструктора",
+        nx_hidden_projects: "скрытые официальные проекты",
+        nx_custom_categories: "свои разделы каталога",
+        nx_tickets: "обращения в поддержку",
+        nx_consent: "уведомление о хранилище",
+        nx_pending_dl: "отложенная загрузка",
+        nx_booted: "заставка показана",
+        nx_welcome: "приветствие после входа"
+    };
+
+    function formatBytes(b) {
+        if (b < 1024) return `${b} Б`;
+        if (b < 1024 * 1024) return `${(b / 1024).toFixed(1).replace(".", ",")} КБ`;
+        return `${(b / 1024 / 1024).toFixed(2).replace(".", ",")} МБ`;
+    }
+
+    function initTocSpy(listSel) {
+        const links = $$(`${listSel} a[href^="#"]`);
+        if (!links.length) return;
+        const map = new Map();
+        links.forEach(a => {
+            const sec = document.getElementById(a.getAttribute("href").slice(1));
+            if (sec) map.set(sec, a);
+            a.addEventListener("click", e => {
+                if (!sec) return;
+                e.preventDefault();
+                const top = sec.getBoundingClientRect().top + window.scrollY - 120;
+                window.scrollTo({ top, behavior: reducedMotion() ? "auto" : "smooth" });
+                if (window.history.replaceState) window.history.replaceState(null, "", "#" + sec.id);
+                Sound.play("folder");
+            });
+        });
+        if (!("IntersectionObserver" in window)) return;
+        const seen = new Set();
+        const io = new IntersectionObserver(entries => {
+            entries.forEach(en => { if (en.isIntersecting) seen.add(en.target); else seen.delete(en.target); });
+            const first = [...map.keys()].find(sec => seen.has(sec));
+            if (!first) return;
+            links.forEach(a => a.classList.toggle("active", a === map.get(first)));
+        }, { rootMargin: "-120px 0px -55% 0px" });
+        map.forEach((a, sec) => io.observe(sec));
+    }
+
+    function initPrivacy() {
+        initTocSpy("#toc-list");
+        const body = $("#storage-body");
+        const render = () => {
+            if (!body) return;
+            const rows = NX.SiteData.list();
+            const total = rows.reduce((s, r) => s + r.bytes, 0);
+            setText("storage-summary", rows.length
+                ? `Сейчас сайт хранит ${rows.length} ${plural(rows.length, "запись", "записи", "записей")} общим объёмом ${formatBytes(total)}. Эти данные есть только на этом устройстве.`
+                : "В этом браузере нет данных сайта.");
+            body.innerHTML = rows.length ? rows.map(r => `
+                <tr>
+                    <td data-label="Хранилище">${r.area === "localStorage" ? "localStorage" : "sessionStorage"}</td>
+                    <td data-label="Ключ"><code>${escapeHtml(r.key)}</code>${STORAGE_LABELS[r.key] ? `<br><span class="muted">${escapeHtml(STORAGE_LABELS[r.key])}</span>` : ""}</td>
+                    <td data-label="Размер" class="num">${escapeHtml(formatBytes(r.bytes))}</td>
+                </tr>`).join("") : '<tr><td colspan="3" data-label="Данные">Пусто — сайт ничего не сохранил</td></tr>';
+            const exp = $("#storage-export"), clr = $("#storage-clear");
+            if (exp) exp.disabled = !rows.length;
+            if (clr) clr.disabled = !rows.length;
+        };
+        render();
+        window.addEventListener("storage", render);
+        ["nexus:auth", "nexus:account", "nexus:settings"].forEach(ev => document.addEventListener(ev, render));
+
+        const exp = $("#storage-export");
+        if (exp) exp.addEventListener("click", () => {
+            if (downloadFile(`nexus-site-data-${NX.dateISO(new Date())}.json`, JSON.stringify(NX.SiteData.exportJSON(), null, 2), "application/json")) {
+                Sound.play("granted");
+                toast("Копия данных сайта сохранена в JSON", "ok");
+            }
+        });
+        const clr = $("#storage-clear");
+        if (clr) clr.addEventListener("click", () => {
+            const n = NX.SiteData.list().length;
+            Modal.open({
+                title: "Удалить все данные сайта",
+                subtitle: `${n} ${plural(n, "запись", "записи", "записей")}`,
+                className: "confirm-modal",
+                html: `<div class="confirm-box"><img src="assets/icons/alert.svg" alt="" width="34" height="34">
+                    <p>Будут удалены вход, все аккаунты NEXUS ID в этом браузере (баланс, история, подписка), настройки HUD,
+                    проекты из конструктора и обращения.</p>
+                    <p class="muted">Отменить удаление нельзя. Перед удалением можно скачать копию.</p></div>`,
+                buttons: [{
+                    label: "Удалить всё", icon: "close", action: () => {
+                        NX.SiteData.clearAll();
+                        Sound.play("denied");
+                        toast("Данные сайта удалены. Страница перезагрузится", "warn");
+                        setTimeout(() => window.location.reload(), 900);
+                    }
+                }]
+            });
+        });
+    }
+
+    /* ================================================================
+     * Контакты: каналы связи, форма обращения, мои обращения
+     * ================================================================ */
+    const TICKETS_KEY = "nx_tickets";
+    const TOPICS = {
+        bug: { label: "Ошибка на сайте", tag: "bug", project: true },
+        build: { label: "Сборка или сервер", tag: "build", project: true },
+        account: { label: "Аккаунт и данные", tag: "account", project: false },
+        idea: { label: "Идея или отзыв", tag: "idea", project: true },
+        collab: { label: "Сотрудничество", tag: "collab", project: false }
+    };
+
+    function ticketId() {
+        const n = Date.now().toString(36).toUpperCase().slice(-4);
+        const r = Math.random().toString(36).toUpperCase().slice(2, 4).padEnd(2, "0");
+        return `NX-T-${n}${r}`;
+    }
+
+    function diagnostics() {
+        const s = Auth.get();
+        const os = NX.detectOS();
+        const ver = (($("script[src*='ui-effects.js']") || {}).src || "").split("v=")[1] || "—";
+        const lines = [
+            `Браузер: ${NX.detectBrowser()}`,
+            `Система: ${os.full}`,
+            `Экран: ${window.screen.width}×${window.screen.height} @${window.devicePixelRatio || 1}x, окно ${window.innerWidth}×${window.innerHeight}`,
+            `Язык: ${navigator.language || "—"}`,
+            `Тема HUD: ${Settings.get("theme") || "blade"}`,
+            `Аккаунт: ${s ? `${s.id} · ${ROLES[s.role].label}` : "гость"}`,
+            `Версия сайта: ${ver}`,
+            `Время: ${new Date().toISOString()}`
+        ];
+        return lines.join("\n");
+    }
+
+    function initContacts() {
+        const C = NX.SITE.contacts;
+        const grid = $("#channel-grid");
+        const issuesUrl = C.github ? C.github.replace(/\/$/, "") + "/issues" : "";
+        if (grid) {
+            const cards = [];
+            if (C.email) cards.push({ icon: "mail", title: "Email", text: "Вопросы по аккаунту, данным и сотрудничеству", value: C.email, href: `mailto:${C.email}`, cta: "Написать" });
+            if (C.discord) cards.push({ icon: "discord", title: "Discord", text: "Сообщество, тестеры и быстрые вопросы", value: C.discord.replace(/^https?:\/\//, ""), href: C.discord, cta: "Присоединиться", ext: true });
+            if (C.telegram) cards.push({ icon: "satellite", title: "Telegram", text: "Новости проектов и связь с командой", value: C.telegram.replace(/^https?:\/\//, ""), href: C.telegram, cta: "Открыть", ext: true });
+            if (issuesUrl) cards.push({ icon: "github", title: "GitHub Issues", text: "Баг-репорты и предложения по сайту. Обращения публичные — не пишите туда личные данные", value: issuesUrl.replace(/^https?:\/\//, ""), href: issuesUrl, cta: "Открыть issues", ext: true });
+            cards.push({ icon: "edit", title: "Форма на сайте", text: "Соберём обращение с номером и технической информацией и отправим через удобный канал", value: "ниже на этой странице", href: "#contact-form", cta: "Заполнить", local: true });
+            grid.innerHTML = cards.map(c => `
+                <li class="channel">
+                    <span class="channel-icon"><img src="assets/icons/${c.icon}.svg" alt="" width="24" height="24"></span>
+                    <h3>${escapeHtml(c.title)}</h3>
+                    <p>${escapeHtml(c.text)}</p>
+                    <p class="channel-value">${escapeHtml(c.value)}</p>
+                    <a class="btn btn-sm" href="${escapeHtml(c.href)}"${c.ext ? ' target="_blank" rel="noopener noreferrer"' : ""}${c.local ? " data-scroll-form" : ""}>${escapeHtml(c.cta)}${c.ext ? ' <img src="assets/icons/external.svg" alt="" width="12" height="12">' : ""}</a>
+                </li>`).join("");
+            grid.addEventListener("click", e => {
+                const a = e.target.closest("[data-scroll-form]");
+                if (!a) return;
+                e.preventDefault();
+                const f = $("#contact-form");
+                window.scrollTo({ top: f.getBoundingClientRect().top + window.scrollY - 140, behavior: reducedMotion() ? "auto" : "smooth" });
+                setTimeout(() => { const i = $("#ct-name"); if (i) i.focus({ preventScroll: true }); }, 400);
+            });
+        }
+
+        const form = $("#contact-form");
+        if (!form) return;
+        const name = $("#ct-name"), email = $("#ct-email"), msg = $("#ct-message"), project = $("#ct-project");
+        const diag = $("#ct-diag"), diagPre = $("#ct-diag-preview"), agree = $("#ct-agree");
+        let currentId = ticketId();
+        setText("ticket-preview", currentId);
+
+        const fillProjects = () => {
+            const cur = project.value;
+            project.innerHTML = '<option value="">— не относится к проекту —</option><option value="site">Сайт NEXUS//DEV</option>' +
+                PROJECTS.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.title)} · ${escapeHtml(p.version)}</option>`).join("");
+            if ([...project.options].some(o => o.value === cur)) project.value = cur;
+        };
+        fillProjects();
+        document.addEventListener("nexus:catalog", fillProjects);
+
+        const prefill = () => {
+            const s = Auth.get();
+            if (!s) return;
+            const a = NX.Account.get();
+            if (!name.value) name.value = (a && a.profile.displayName) || s.callsign;
+            if (!email.value && s.email && !/\.example$/.test(s.email)) email.value = s.email;
+        };
+        prefill();
+        document.addEventListener("nexus:auth", prefill);
+
+        const topicNow = () => (form.querySelector("input[name='ct-topic']:checked") || {}).value || "bug";
+        const syncTopic = () => {
+            const t = TOPICS[topicNow()];
+            $("#ct-project-field").hidden = !t.project;
+        };
+        const syncDiag = () => {
+            diagPre.hidden = !diag.checked;
+            if (diag.checked) diagPre.textContent = diagnostics();
+        };
+        syncTopic();
+        syncDiag();
+        // Предвыбор темы по ссылке: contacts.html#bug, #build, #account, #idea, #collab
+        const hashTopic = window.location.hash.slice(1);
+        if (TOPICS[hashTopic]) {
+            const r = form.querySelector(`input[name='ct-topic'][value='${hashTopic}']`);
+            if (r) { r.checked = true; syncTopic(); }
+        }
+
+        form.addEventListener("change", e => {
+            if (e.target.name === "ct-topic") { syncTopic(); Sound.play("folder"); }
+            if (e.target === diag) syncDiag();
+            if (e.target === agree) setText("ct-agree-error", "");
+        });
+        form.addEventListener("input", e => {
+            if (e.target.classList.contains("input")) fieldError(e.target, "");
+            if (e.target === msg) setText("ct-count", `${msg.value.length}/1500`);
+        });
+        form.addEventListener("reset", () => {
+            setTimeout(() => {
+                [name, email, msg].forEach(i => fieldError(i, ""));
+                setText("ct-count", "0/1500");
+                setText("ct-agree-error", "");
+                syncTopic();
+                syncDiag();
+                prefill();
+            }, 0);
+        });
+
+        form.addEventListener("submit", e => {
+            e.preventDefault();
+            let ok = true;
+            if (name.value.trim().length < 2) { fieldError(name, "Как к вам обращаться?"); ok = false; }
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.value.trim())) { fieldError(email, "Нужен email, чтобы мы могли ответить"); ok = false; }
+            if (msg.value.trim().length < 15) { fieldError(msg, "Опишите подробнее — хотя бы пару предложений"); ok = false; }
+            if (!agree.checked) { setText("ct-agree-error", "Подтвердите, что прочитали политику конфиденциальности"); ok = false; }
+            if (!ok) {
+                Sound.play("denied");
+                const bad = form.querySelector(".field.is-invalid .input");
+                if (bad) bad.focus();
+                return;
+            }
+            const topic = TOPICS[topicNow()];
+            const projOpt = !$("#ct-project-field").hidden && project.value ? project.options[project.selectedIndex].text : "";
+            const subject = `[${currentId}] ${topic.label}${projOpt ? " · " + projOpt : ""}`;
+            const text = [
+                `Обращение: ${currentId}`,
+                `Тема: ${topic.label}`,
+                projOpt ? `Проект: ${projOpt}` : "",
+                `От: ${name.value.trim()} <${email.value.trim()}>`,
+                "",
+                msg.value.trim(),
+                diag.checked ? "\n— Техническая информация —\n" + diagnostics() : ""
+            ].filter((l, i) => l !== "" || i === 4).join("\n");
+            openSendDialog({ id: currentId, topic: topicNow(), subject, text, project: project.value, emailAddr: email.value.trim() }, issuesUrl, () => {
+                form.reset();
+                currentId = ticketId();
+                setText("ticket-preview", currentId);
+            });
+        });
+
+        renderTickets();
+        window.addEventListener("storage", e => { if (e.key === TICKETS_KEY) renderTickets(); });
+        const list = $("#ticket-list");
+        if (list) list.addEventListener("click", e => {
+            if (!e.target.closest("[data-tickets-clear]")) return;
+            NX.storage.remove(TICKETS_KEY);
+            renderTickets();
+            Sound.play("panels");
+        });
+    }
+
+    function openSendDialog(t, issuesUrl, onSent) {
+        const C = NX.SITE.contacts;
+        const save = channel => {
+            const list = NX.storage.getJSON(TICKETS_KEY, []);
+            const arr = Array.isArray(list) ? list : [];
+            arr.unshift({ id: t.id, topic: t.topic, project: t.project || "", date: Date.now(), channel });
+            NX.storage.setJSON(TICKETS_KEY, arr.slice(0, 20));
+            renderTickets();
+            if (NX.Account && Auth.get()) NX.Account.notify("system", `Обращение ${t.id} создано`, `${TOPICS[t.topic].label} · ${channel}`, { toast: false, link: "contacts.html" });
+            NX.Syslog.add(`support: обращение ${t.id} (${channel})`);
+            onSent();
+        };
+        const buttons = [];
+        if (C.email) buttons.push({
+            label: "Отправить письмом", primary: true, icon: "mail", action: () => {
+                const href = `mailto:${C.email}?subject=${encodeURIComponent(t.subject)}&body=${encodeURIComponent(t.text)}`;
+                window.location.href = href.length > 1900 ? `mailto:${C.email}?subject=${encodeURIComponent(t.subject)}` : href;
+                if (href.length > 1900) { NX.copyText(t.text); toast("Текст длинный — он скопирован, вставьте его в письмо", "info", { ttl: 6000 }); }
+                save("email");
+                toast(`Обращение ${t.id} передано в почтовый клиент`, "ok");
+            }
+        });
+        if (issuesUrl) buttons.push({
+            label: "Создать issue на GitHub", primary: !C.email, icon: "github", action: () => {
+                const url = `${issuesUrl}/new?title=${encodeURIComponent(t.subject)}&body=${encodeURIComponent(t.text.replace(/^От: .*$/m, "От: " + t.text.match(/^От: ([^<]*)/m)[1].trim()))}`;
+                window.open(url, "_blank", "noopener");
+                save("GitHub");
+                toast(`Обращение ${t.id}: откройте вкладку GitHub и нажмите Submit`, "ok", { ttl: 6000 });
+            }
+        });
+        buttons.push({
+            label: "Скопировать текст", icon: "clipboard", action: () => {
+                NX.copyText(t.text);
+                toast("Текст обращения скопирован", "ok");
+                return false;
+            }
+        });
+        Modal.open({
+            title: `Обращение ${escapeHtml(t.id)}`,
+            subtitle: "готово к отправке",
+            className: "send-modal",
+            html: `
+                <p>Проверьте текст и выберите, как отправить обращение.${C.email ? "" : " Сейчас обращения принимаются через GitHub Issues."}</p>
+                ${issuesUrl ? '<p class="send-warn"><img src="assets/icons/alert.svg" alt="" width="14" height="14"> Issues на GitHub публичные: email из формы туда не попадёт, не добавляйте личные данные в текст.</p>' : ""}
+                <pre class="send-preview">${escapeHtml(t.text)}</pre>`,
+            buttons
+        });
+    }
+
+    function renderTickets() {
+        const list = $("#ticket-list");
+        if (!list) return;
+        const raw = NX.storage.getJSON(TICKETS_KEY, []);
+        const arr = Array.isArray(raw) ? raw : [];
+        setText("tickets-count", String(arr.length));
+        list.innerHTML = arr.length ? arr.map(t => `
+            <li>
+                <b>${escapeHtml(t.id)}</b>
+                <span>${escapeHtml((TOPICS[t.topic] || TOPICS.bug).label)} · ${escapeHtml(t.channel)}</span>
+                <i>${escapeHtml(formatDate(t.date))}</i>
+            </li>`).join("") + '<li class="ticket-clear"><button class="link-btn" type="button" data-tickets-clear>Очистить список</button></li>'
+            : '<li class="muted">Здесь появятся номера ваших обращений — назовите номер, если будете писать повторно.</li>';
+    }
+
+    /* ================================================================
+     * 404: путь, подсказки «возможно, вы искали»
+     * ================================================================ */
+    function levenshtein(a, b) {
+        if (a === b) return 0;
+        const m = a.length, n = b.length;
+        if (!m) return n;
+        if (!n) return m;
+        let prev = Array.from({ length: n + 1 }, (_, j) => j);
+        for (let i = 1; i <= m; i++) {
+            const cur = [i];
+            for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+            prev = cur;
+        }
+        return prev[n];
+    }
+
+    function init404() {
+        // <base> указывает на корень сайта — якоря «#…» должны оставаться на этой странице
+        $$('a[href^="#"]').forEach(a => { a.href = window.location.pathname + window.location.search + a.getAttribute("href"); });
+
+        let path = window.location.pathname;
+        try { path = decodeURIComponent(path); } catch (e) { /* ignore */ }
+        if (window.location.protocol === "file:") path = "/" + path.split("/").pop();
+        path = (path + window.location.search).slice(0, 80);
+        setText("nf-path", path);
+        setText("nf-path2", path);
+        NX.Syslog.add(`http: 404 ${path}`);
+
+        const PAGES_IDX = [
+            { keys: ["index", "home", "main", "glavnaya", "start"], href: "index.html", label: "Главная" },
+            { keys: ["projects", "project", "builds", "downloads", "games", "catalog", "proekty"], href: "projects.html", label: "Проекты и сборки" },
+            { keys: ["dashboard", "cabinet", "kabinet", "account", "profile", "lk"], href: "dashboard.html", label: "Личный кабинет" },
+            { keys: ["wallet", "balance", "topup", "pay", "billing"], href: "dashboard.html#wallet", label: "Кабинет → Кошелёк" },
+            { keys: ["security", "2fa", "password"], href: "dashboard.html#security", label: "Кабинет → Безопасность" },
+            { keys: ["subscription", "plus", "donate", "support-project"], href: "dashboard.html#plus", label: "Кабинет → Подписка и поддержка" },
+            { keys: ["auth", "login", "signin", "register", "signup", "vhod"], href: "auth.html", label: "Вход и регистрация" },
+            { keys: ["privacy", "policy", "gdpr", "cookies", "data"], href: "privacy.html", label: "Политика конфиденциальности" },
+            { keys: ["contacts", "contact", "support", "help", "about", "feedback"], href: "contacts.html", label: "Контакты" }
+        ];
+        PROJECTS.forEach(p => PAGES_IDX.push({ keys: [p.id, p.title.toLowerCase().replace(/[^a-z0-9а-яё]+/g, "")], href: "projects.html#" + p.id, label: `Проект ${p.title}` }));
+
+        const tokens = path.toLowerCase().replace(/\.html?$/, "").split(/[\/\-_.?=&#\s]+/).filter(t => t.length >= 2 && t !== "123");
+        const scored = [];
+        PAGES_IDX.forEach(pg => {
+            let best = Infinity;
+            tokens.forEach(t => pg.keys.forEach(k => {
+                if (!k) return;
+                if (k === t) best = Math.min(best, 0);
+                else if (k.length >= 4 && (k.includes(t) && t.length >= 4 || t.includes(k))) best = Math.min(best, 0.5);
+                else {
+                    const d = levenshtein(t, k);
+                    if (d <= Math.max(1, Math.floor(k.length * 0.34))) best = Math.min(best, d);
+                }
+            }));
+            if (best < Infinity) scored.push({ pg, best });
+        });
+        const seen = new Set();
+        const top = scored.sort((a, b) => a.best - b.best).filter(x => !seen.has(x.pg.href) && seen.add(x.pg.href)).slice(0, 4);
+        if (top.length) {
+            $("#nf-suggest").hidden = false;
+            $("#nf-links").innerHTML = top.map(x => `<li><a href="${escapeHtml(x.pg.href)}"><span class="prompt-sign">&gt;</span> ${escapeHtml(x.pg.label)}</a></li>`).join("");
+        }
+
+        const back = $("#nf-back");
+        if (back) back.addEventListener("click", () => {
+            if (document.referrer && window.history.length > 1) window.history.back();
+            else window.location.href = "index.html";
+        });
+        setTimeout(() => Sound.play("denied"), 400);
+    }
+
     if (PAGE === "projects") initProjects();
     if (PAGE === "dashboard") { initDashboard(); initSessionClock(); }
     if (PAGE === "auth") initAuth();
+    if (PAGE === "privacy") initPrivacy();
+    if (PAGE === "contacts") initContacts();
+    if (PAGE === "404") init404();
 
     // Смена цветовой схемы: перерисовать canvas-аватары (они рисуются один раз)
     document.addEventListener("nexus:theme", () => {

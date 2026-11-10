@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="ru" class="no-js">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Контакты — NEXUS//DEV</title>
+    <meta name="description" content="Связь с командой NEXUS//DEV: баг-репорты, вопросы по сборкам и аккаунту, сотрудничество.">
+    <meta name="theme-color" content="#090B0A">
+    <link rel="icon" type="image/svg+xml" href="assets/img/logo-icon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+    <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+
+    <!-- Зависимость оригинального eDEX-UI: augmented-ui 1.1.2 (BSD-2-Clause) — скошенные рамки -->
+    <link rel="stylesheet" href="assets/vendor/augmented-ui/augmented.css">
+    <!-- Тема blade, перенесённая из eDEX-UI -->
+    <link rel="stylesheet" href="css/blade-theme.css?v=20261110-1">
+    <!-- Адаптивная сетка: шапка, подвал, модули, терминал -->
+    <link rel="stylesheet" href="css/layout.css?v=20261110-1">
+    <!-- Компоненты страниц: главная, каталог, формы, кабинет, тосты -->
+    <link rel="stylesheet" href="css/pages.css?v=20261110-1">
+
+    <script>
+        /* Ранняя инициализация: класс js и сохранённые настройки HUD (без мигания) */
+        (function () {
+            var d = document.documentElement;
+            d.classList.remove("no-js");
+            d.classList.add("js");
+            try {
+                var s = JSON.parse(localStorage.getItem("nx_settings") || "{}");
+                if (s.grid === false) d.classList.add("hud-no-grid");
+                if (s.glow === false) d.classList.add("hud-no-glow");
+                if (s.motion === false) d.classList.add("hud-reduced");
+                if (s.scale && s.scale !== "normal") d.setAttribute("data-hud-scale", s.scale);
+                /* Цветовая схема (nx_settings.theme): кэш CSS-переменных темы из ui-effects.js */
+                if (s.theme && s.theme !== "blade" && s.themeVars && typeof s.themeVars === "object") {
+                    for (var k in s.themeVars) {
+                        if (k.indexOf("--") === 0) d.style.setProperty(k, s.themeVars[k]);
+                    }
+                    d.style.colorScheme = s.themeVars["color-scheme"] || "dark";
+                    if (s.themeVars["color-scheme"] === "light") d.classList.add("theme-light");
+                    d.setAttribute("data-theme", s.theme);
+                }
+            } catch (e) { /* localStorage недоступен */ }
+        })();
+    </script>
+</head>
+<body data-page="contacts">
+    <a class="skip-link" href="#main">Перейти к содержимому</a>
+
+    <!-- ===================== ШАПКА (общая для всех страниц) ===================== -->
+    <header class="site-header" id="top">
+        <div class="container header-inner">
+            <a class="brand" href="index.html" aria-label="NEXUS//DEV — на главную">
+                <svg class="brand-logo logo-header" viewBox="128 128 768 768" width="30" height="30" aria-hidden="true" focusable="false"><path class="logo-frame" d="M634 230.4 512 160 207 336v352l305 176 305-176V336l-122-70.4"/><g class="logo-spokes"><path d="M608 506h106v12H608zM714 486h52v52h-52z"/><g transform="rotate(120 512 512)"><path d="M608 506h106v12H608zM714 486h52v52h-52z"/></g><g transform="rotate(240 512 512)"><path d="M608 506h106v12H608zM714 486h52v52h-52z"/></g></g><circle class="logo-core" cx="512" cy="512" r="72"/></svg>
+                <span class="brand-name">NEXUS<em>//</em>DEV</span>
+            </a>
+
+            <nav class="site-nav" id="site-nav" aria-label="Основная навигация">
+                <ul class="skew-tabs nav-tabs">
+                    <li><a href="index.html" data-nav="home"><img src="assets/icons/home.svg" alt="" width="16" height="16">Главная</a></li>
+                    <li><a href="projects.html" data-nav="projects"><img src="assets/icons/portfolio.svg" alt="" width="16" height="16">Проекты</a></li>
+                    <li><a href="dashboard.html" data-nav="dashboard"><img src="assets/icons/user.svg" alt="" width="16" height="16">Кабинет</a></li>
+                    <li><a href="auth.html" data-nav="auth"><img src="assets/icons/sign-in.svg" alt="" width="16" height="16">Вход</a></li>
+                </ul>
+            </nav>
+
+            <div class="header-tools">
+                <button class="tool-btn term-btn" type="button" data-terminal aria-expanded="false" aria-label="Терминал (клавиша ~)" title="Терминал [~]">
+                    <img src="assets/icons/shell.svg" alt="" width="18" height="18">
+                </button>
+                <button class="tool-btn" id="sound-toggle" type="button" aria-pressed="true" title="Звуковые эффекты eDEX-UI">
+                    <img class="icon-off" src="assets/icons/mute.svg" alt="" width="18" height="18">
+                    <img class="icon-on" src="assets/icons/volume.svg" alt="" width="18" height="18">
+                    <span class="tool-label">SFX <b id="sound-state">ON</b></span>
+                </button>
+                <button class="tool-btn menu-toggle" id="menu-toggle" type="button" aria-controls="site-nav" aria-expanded="false" aria-label="Открыть меню">
+                    <img class="icon-menu" src="assets/icons/menu.svg" alt="" width="20" height="20">
+                    <img class="icon-close" src="assets/icons/close.svg" alt="" width="16" height="16">
+                </button>
+            </div>
+        </div>
+
+        <div class="container header-status">
+            <p data-sum-state><span class="dot" id="uplink-dot" aria-hidden="true"></span><b data-sum="state">SYSTEM ONLINE</b></p>
+            <p class="hide-sm">SERVERS <b id="header-servers">-/-</b></p>
+            <p class="hide-sm">RELEASES <b data-sum="releases">3</b></p>
+            <p class="hdr-wallet" id="header-wallet" hidden><a href="dashboard.html#wallet" title="Баланс NEXUS ID"><span class="hw-label">BALANCE </span><b id="header-balance">0&nbsp;₽</b></a></p>
+            <p>USER <b id="header-user">GUEST</b></p>
+            <p class="hide-xs"><b id="header-clock">--:--:--</b></p>
+        </div>
+    </header>
+
+    <main id="main">
+        <!-- ===================== ЗАГОЛОВОК ===================== -->
+        <section class="container page-head" aria-labelledby="page-title">
+            <h2 class="panel-title section-title"><span>Связь с командой</span><span>/contacts</span></h2>
+            <p class="crumbs"><a href="index.html">~</a> / contacts <span class="prompt-sign">_</span></p>
+            <h1 class="page-title" id="page-title">Контакты</h1>
+            <p class="page-lead">
+                Нашли баг, не скачивается сборка или есть идея для проекта? Выберите удобный канал или
+                заполните форму — мы подготовим обращение с номером и всей нужной информацией.
+            </p>
+        </section>
+
+        <section class="container page-section" aria-label="Каналы связи">
+            <ul class="channel-grid" id="channel-grid"></ul>
+        </section>
+
+        <section class="container page-section" aria-label="Форма обращения">
+            <div class="contact-grid">
+                <div class="contact-shell shell-wrap glow">
+                    <section class="shell aug-frame shell-anim" augmented-ui="bl-clip tr-clip exe" aria-labelledby="form-title">
+                        <h3 class="panel-title shell-title"><span>NEW TICKET</span><span id="ticket-preview">NX-T-····</span></h3>
+                        <div class="shell-inner">
+                            <div class="dash-tab-head">
+                                <h2 id="form-title">Написать нам</h2>
+                                <p>&gt; support --new</p>
+                            </div>
+                            <form class="contact-form" id="contact-form" novalidate>
+                                <div class="pe-row">
+                                    <div class="field">
+                                        <label for="ct-name">Имя или ник</label>
+                                        <input class="input" id="ct-name" type="text" maxlength="40" autocomplete="nickname" required>
+                                        <span class="field-error" role="alert"></span>
+                                    </div>
+                                    <div class="field">
+                                        <label for="ct-email">Email для ответа</label>
+                                        <input class="input" id="ct-email" type="email" maxlength="80" autocomplete="email" required>
+                                        <span class="field-error" role="alert"></span>
+                                    </div>
+                                </div>
+                                <div class="field">
+                                    <span class="field-label" id="ct-topic-label">Тема</span>
+                                    <div class="topic-grid" role="radiogroup" aria-labelledby="ct-topic-label" id="topic-grid">
+                                        <label class="topic"><input type="radio" name="ct-topic" value="bug" checked><span><img src="assets/icons/alert.svg" alt="" width="16" height="16">Ошибка на сайте</span></label>
+                                        <label class="topic"><input type="radio" name="ct-topic" value="build"><span><img src="assets/icons/download.svg" alt="" width="16" height="16">Сборка или сервер</span></label>
+                                        <label class="topic"><input type="radio" name="ct-topic" value="account"><span><img src="assets/icons/user.svg" alt="" width="16" height="16">Аккаунт и данные</span></label>
+                                        <label class="topic"><input type="radio" name="ct-topic" value="idea"><span><img src="assets/icons/lightning.svg" alt="" width="16" height="16">Идея или отзыв</span></label>
+                                        <label class="topic"><input type="radio" name="ct-topic" value="collab"><span><img src="assets/icons/work.svg" alt="" width="16" height="16">Сотрудничество</span></label>
+                                    </div>
+                                </div>
+                                <div class="field" id="ct-project-field">
+                                    <label for="ct-project">Проект</label>
+                                    <select class="select" id="ct-project"></select>
+                                </div>
+                                <div class="field">
+                                    <label for="ct-message">Сообщение <span class="pe-count" id="ct-count">0/1500</span></label>
+                                    <textarea class="input pe-textarea" id="ct-message" rows="7" maxlength="1500" required placeholder="Опишите, что произошло. Для ошибок: что вы делали, что ожидали увидеть и что получилось."></textarea>
+                                    <span class="field-error" role="alert"></span>
+                                </div>
+                                <label class="check">
+                                    <input type="checkbox" id="ct-diag" checked>
+                                    <span class="box" aria-hidden="true"><i></i></span>
+                                    <span>Приложить техническую информацию: браузер, система, размер экрана, тема, роль</span>
+                                </label>
+                                <pre class="diag-preview" id="ct-diag-preview" aria-label="Техническая информация"></pre>
+                                <label class="check">
+                                    <input type="checkbox" id="ct-agree">
+                                    <span class="box" aria-hidden="true"><i></i></span>
+                                    <span>Я прочитал(а) <a href="privacy.html" target="_blank" rel="noopener">политику конфиденциальности</a></span>
+                                </label>
+                                <span class="field-error agree-error" id="ct-agree-error" role="alert"></span>
+                                <div class="form-actions">
+                                    <button class="btn btn-primary" type="submit"><img src="assets/icons/mail.svg" alt="" width="18" height="18">Подготовить обращение</button>
+                                    <button class="btn" type="reset"><img src="assets/icons/close.svg" alt="" width="18" height="18">Очистить</button>
+                                </div>
+                            </form>
+                        </div>
+                    </section>
+                </div>
+
+                <aside class="mod-column contact-side reveal-fade" aria-label="Перед обращением">
+                    <h3 class="panel-title"><span>HELP</span><span>частые вопросы</span></h3>
+                    <div class="column-stack">
+                        <div class="mod faq-mod">
+                            <h4 class="mod-head">QUICK FIX <i>проверьте сначала</i></h4>
+                            <details class="faq-item">
+                                <summary>Сборка не скачивается</summary>
+                                <p>Закрытые тесты доступны после входа, dev-снапшоты — ролям ADMIN и CREATOR. Проверьте статус
+                                    сборки в <a href="projects.html">центре загрузок</a>: у проектов «В разработке» файла пока нет.</p>
+                            </details>
+                            <details class="faq-item">
+                                <summary>Не приходит код 2FA</summary>
+                                <p>Сайт работает в тестовом режиме: письмо с кодом приходит в «Кабинет → Уведомления»
+                                    и показывается во всплывающем окне.</p>
+                            </details>
+                            <details class="faq-item">
+                                <summary>Пропал баланс или аккаунт</summary>
+                                <p>Данные хранятся в браузере. Если очистить данные сайта или открыть его в другом браузере,
+                                    аккаунт будет новым. Подробнее — в <a href="privacy.html#p-data">политике конфиденциальности</a>.</p>
+                            </details>
+                            <details class="faq-item">
+                                <summary>Как удалить свои данные</summary>
+                                <p>«Кабинет → Безопасность → Удалить аккаунт» или кнопка
+                                    <a href="privacy.html#p-storage">«Удалить все данные сайта»</a>.</p>
+                            </details>
+                            <details class="faq-item">
+                                <summary>Как попасть в тестеры</summary>
+                                <p>Зарегистрируйтесь — закрытые тесты открываются сразу после входа. Подписчики NEXUS+
+                                    получают приоритет в очереди на новые тесты.</p>
+                            </details>
+                        </div>
+                        <div class="mod">
+                            <h4 class="mod-head">MY TICKETS <i id="tickets-count">0</i></h4>
+                            <ul class="ticket-list" id="ticket-list"></ul>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+        </section>
+    </main>
+
+    <!-- ===================== ПОДВАЛ (общий для всех страниц) ===================== -->
+    <footer class="site-footer">
+        <div class="container">
+            <h2 class="panel-title"><span>NEXUS//DEV</span><span>EOF</span></h2>
+            <div class="footer-grid">
+                <div class="footer-about">
+                    <p class="brand footer-brand">
+                        <svg class="brand-logo logo-footer" viewBox="128 128 768 768" width="26" height="26" aria-hidden="true" focusable="false"><path class="logo-frame" d="M634 230.4 512 160 207 336v352l305 176 305-176V336l-122-70.4"/><g class="logo-spokes"><path d="M608 506h106v12H608zM714 486h52v52h-52z"/><g transform="rotate(120 512 512)"><path d="M608 506h106v12H608zM714 486h52v52h-52z"/></g><g transform="rotate(240 512 512)"><path d="M608 506h106v12H608zM714 486h52v52h-52z"/></g></g><circle class="logo-core" cx="512" cy="512" r="72"/></svg>
+                        <span class="brand-name">NEXUS<em>//</em>DEV</span>
+                    </p>
+                    <p>Ядро некоммерческой экосистемы инди-проектов: один аккаунт, центр загрузок, доступ к тестам и серверам.</p>
+                </div>
+                <nav class="footer-col" aria-label="Навигация в подвале">
+                    <h3>Навигация</h3>
+                    <ul>
+                        <li><a href="index.html">Главная</a></li>
+                        <li><a href="projects.html">Проекты</a></li>
+                        <li><a href="dashboard.html">Кабинет</a></li>
+                        <li><a href="auth.html">Вход</a></li>
+                    </ul>
+                </nav>
+                <div class="footer-col">
+                    <h3>Информация</h3>
+                    <ul>
+                        <li><button class="link-btn" type="button" data-doc="faq">FAQ</button></li>
+                        <li><button class="link-btn" type="button" data-doc="rules">Правила</button></li>
+                        <li><button class="link-btn" type="button" data-doc="license">Лицензия GPL-3.0</button></li>
+                        <li><a href="privacy.html">Конфиденциальность</a></li>
+                        <li><a href="contacts.html">Контакты</a></li>
+                        <li><a href="https://github.com/Stool12312356/123" target="_blank" rel="noopener noreferrer">Исходный код сайта</a></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="footer-bottom">
+                <p>&copy; <span class="js-year">2026</span> NEXUS//DEV. Некоммерческий проект. Код сайта распространяется под лицензией <a href="LICENSE">GPL-3.0</a>.</p>
+                <div class="footer-role" data-role-switch data-compact></div>
+                <p class="credit">
+                    <button class="term-secret" type="button" data-terminal aria-expanded="false" aria-label="Терминал" title="&gt;_">
+                        <img src="assets/icons/terminal.svg" alt="" width="16" height="16">
+                    </button>
+                    <img src="assets/img/edex-logo.svg" alt="" width="18" height="18">
+                    <span>UI inspired by &amp; adapted from <a href="https://github.com/GitSquared/edex-ui" target="_blank" rel="noopener noreferrer">eDEX-UI</a> (GPL-3.0)</span>
+                </p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="js/ui-effects.js?v=20261110-1" defer></script>
+    <script src="js/pages.js?v=20261110-1" defer></script>
+</body>
+</html>
