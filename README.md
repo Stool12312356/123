@@ -13,8 +13,14 @@
 работают и ссылаются друг на друга через `file://`. Можно и через любой статический сервер:
 
 ```bash
-python3 -m http.server 8080
+python3 tools/serve.py        # http://localhost:8080, на несуществующие адреса отдаёт 404.html
+python3 -m http.server 8080   # тоже работает, но вместо своей 404 покажет стандартную ошибку
 ```
+
+**Проверка страницы 404:** откройте любой несуществующий адрес (например `/abc/projetcs`) или
+наберите в скрытом терминале (клавиша `~` / `Ё`) команду `404`: случайный адрес. С путём, например
+`404 wallet`, видно подсказки похожих страниц. При открытии с диска (`file://`) команда
+открывает `404.html?path=/…`.
 
 ## Страницы
 
@@ -34,6 +40,7 @@ python3 -m http.server 8080
 index.html, projects.html, dashboard.html, auth.html
 privacy.html, contacts.html, 404.html
 .htaccess               ErrorDocument 404 для Apache
+tools/serve.py          локальный сервер как на хостинге: 404 → 404.html, без кэша
 css/blade-theme.css     тема blade: переменные из blade.json, шрифты, сетка-фон, панели, вкладки,
                         кнопки, экран загрузки, модалки, анимации (общий для всех страниц)
 css/layout.css          адаптивная сетка, общая шапка и подвал, модули mod_*, терминал, бейджи
@@ -163,7 +170,7 @@ CREATOR может вернуть официальные проекты в ок�
 Нажмите `~` (на русской раскладке — `Ё`) или маленькую иконку терминала в шапке / подвале на любой
 странице. `Esc` или повторное `~` закрывают окно. Команды: `help`, `projects`, `open <id>`, `status`,
 `servers`, `syslog`, `role [user|admin|creator]`, `balance`, `topup <сумма>`, `create`, `login`, `register`, `logout`, `dashboard`,
-`home`, `whoami`, `neofetch`, `date`,
+`home`, `privacy`, `contacts`, `404 [путь]`, `whoami`, `neofetch`, `date`,
 `echo`, `history`, `sfx on|off`, `theme [название]`, `credits`, `reboot`, `clear`, `exit`.
 
 ## Цветовые схемы

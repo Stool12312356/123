@@ -125,12 +125,14 @@
     fill: var(--c);
     transition: transform 0.25s var(--ease-edex);
 }
-/* Центр вращения — середина viewBox (512, 512). Дочерние <g transform="rotate(… 512 512)">
-   намеренно не трогаем: transform-origin сместил бы и их атрибутные повороты. */
+/* Центр вращения — центр ядра (512, 512) в координатах SVG. Для view-box точка отсчёта —
+   начало координат (0, 0), а не угол viewBox (128, 128), поэтому только абсолютные 512px;
+   «50% 50%» дало бы (384, 384). Дочерние <g transform="rotate(… 512 512)"> не трогаем:
+   transform-origin сместил бы и их повороты, заданные атрибутом. */
 .brand-logo .logo-core,
 .brand-logo .logo-spokes {
     transform-box: view-box;
-    transform-origin: 50% 50%;
+    transform-origin: 512px 512px;
 }
 .brand-logo .logo-spokes {
     transition: transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1);

@@ -3134,6 +3134,8 @@
                         "  topup <сумма>   — тестовое пополнение баланса, например: topup 500",
                         "  dashboard       — личный кабинет",
                         "  home            — главная страница",
+                        "  privacy | contacts — политика конфиденциальности, контакты",
+                        "  404 [путь]      — проверить страницу 404, например: 404 wallet",
                         "  whoami          — текущий пользователь",
                         "  neofetch        — информация о системе браузера",
                         "  date, echo, history, clear",
@@ -3246,6 +3248,23 @@
                     go("projects.html#new", "Открываю конструктор проекта в центре загрузок…");
                 },
                 home() { go("index.html", "Возвращаюсь на главную…"); },
+                privacy() { go("privacy.html", "Открываю политику конфиденциальности…"); },
+                contacts() { go("contacts.html", "Открываю контакты…"); },
+                // Проверка страницы 404: «404» — случайный несуществующий адрес, «404 wallet» — свой путь
+                "404"(args) {
+                    let target = args.join("-").replace(/^\/+/, "").replace(/[\s]+/g, "-");
+                    if (!target) target = "nx-test-" + Math.random().toString(36).slice(2, 7);
+                    if (window.location.protocol === "file:") {
+                        this.print("file:// — сервера нет, открываю 404.html напрямую с параметром ?path=");
+                        go("404.html?path=" + encodeURIComponent("/" + target), `Переход: /${target} …`);
+                        return;
+                    }
+                    // document.baseURI учитывает <base> на самой 404 и подпапку сайта
+                    const url = new URL(target, document.baseURI);
+                    this.print("Запрашиваю несуществующий адрес — сервер должен ответить страницей 404.html.");
+                    this.printHtml('Если вместо неё пустая ошибка сервера, настройте его (README → «Публикация») или откройте <a href="404.html">404.html</a>.');
+                    go(url.href, `GET ${url.pathname} …`);
+                },
                 whoami() {
                     const s = Auth.get();
                     this.print(s ? `${s.callsign} · ${s.id} · ${ROLES[s.role].label} // ${ROLES[s.role].name}` : "guest (не авторизован)");

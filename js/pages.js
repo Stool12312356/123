@@ -3387,10 +3387,18 @@
         // <base> указывает на корень сайта — якоря «#…» должны оставаться на этой странице
         $$('a[href^="#"]').forEach(a => { a.href = window.location.pathname + window.location.search + a.getAttribute("href"); });
 
-        let path = window.location.pathname;
-        try { path = decodeURIComponent(path); } catch (e) { /* ignore */ }
-        if (window.location.protocol === "file:") path = "/" + path.split("/").pop();
-        path = (path + window.location.search).slice(0, 80);
+        // 404.html?path=/foo — проверка страницы без сервера (file://) или команда терминала «404»
+        const askedPath = new URLSearchParams(window.location.search).get("path");
+        let path;
+        if (askedPath) {
+            path = (askedPath.charAt(0) === "/" ? "" : "/") + askedPath;
+        } else {
+            path = window.location.pathname;
+            try { path = decodeURIComponent(path); } catch (e) { /* ignore */ }
+            if (window.location.protocol === "file:") path = "/" + path.split("/").pop();
+            path += window.location.search;
+        }
+        path = path.slice(0, 80);
         setText("nf-path", path);
         setText("nf-path2", path);
         NX.Syslog.add(`http: 404 ${path}`);
