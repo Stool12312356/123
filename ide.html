@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="ru" class="no-js">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>NEXUS IDE — NEXUS//DEV</title>
+    <meta name="description" content="NEXUS IDE: редактор HTML, CSS и JavaScript в браузере с подсветкой, живым превью и консолью.">
+    <meta name="theme-color" content="#090B0A">
+    <link rel="icon" type="image/svg+xml" href="assets/img/logo-icon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+    <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+
+    <!-- Зависимость оригинального eDEX-UI: augmented-ui 1.1.2 (BSD-2-Clause) — скошенные рамки -->
+    <link rel="stylesheet" href="assets/vendor/augmented-ui/augmented.css">
+    <!-- Тема blade, перенесённая из eDEX-UI -->
+    <link rel="stylesheet" href="css/blade-theme.css?v=20261111-1">
+    <!-- Адаптивная сетка: шапка, подвал, модули, терминал -->
+    <link rel="stylesheet" href="css/layout.css?v=20261111-1">
+    <!-- Компоненты страниц: главная, каталог, формы, кабинет, тосты -->
+    <link rel="stylesheet" href="css/pages.css?v=20261111-1">
+    <link rel="stylesheet" href="css/services.css?v=20261111-1">
+
+    <script>
+        /* Ранняя инициализация: класс js и сохранённые настройки HUD (без мигания) */
+        (function () {
+            var d = document.documentElement;
+            d.classList.remove("no-js");
+            d.classList.add("js");
+            try {
+                var s = JSON.parse(localStorage.getItem("nx_settings") || "{}");
+                if (s.grid === false) d.classList.add("hud-no-grid");
+                if (s.glow === false) d.classList.add("hud-no-glow");
+                if (s.motion === false) d.classList.add("hud-reduced");
+                if (s.scale && s.scale !== "normal") d.setAttribute("data-hud-scale", s.scale);
+                /* Цветовая схема (nx_settings.theme): кэш CSS-переменных темы из ui-effects.js */
+                if (s.theme && s.theme !== "blade" && s.themeVars && typeof s.themeVars === "object") {
+                    for (var k in s.themeVars) {
+                        if (k.indexOf("--") === 0) d.style.setProperty(k, s.themeVars[k]);
+                    }
+                    d.style.colorScheme = s.themeVars["color-scheme"] || "dark";
+                    if (s.themeVars["color-scheme"] === "light") d.classList.add("theme-light");
+                    d.setAttribute("data-theme", s.theme);
+                }
+            } catch (e) { /* localStorage недоступен */ }
+        })();
+    </script>
+</head>
+<body data-page="ide">
+    <a class="skip-link" href="#main">Перейти к содержимому</a>
+
+    <!-- ===================== ШАПКА (общая для всех страниц) ===================== -->
+    <header class="site-header" id="top">
+        <div class="container header-inner">
+            <a class="brand" href="index.html" aria-label="NEXUS//DEV — на главную">
+                <svg class="brand-logo logo-header" viewBox="128 128 768 768" width="30" height="30" aria-hidden="true" focusable="false"><path class="logo-frame" d="M634 230.4 512 160 207 336v352l305 176 305-176V336l-122-70.4"/><g class="logo-spokes"><path d="M608 506h106v12H608zM714 486h52v52h-52z"/><g transform="rotate(120 512 512)"><path d="M608 506h106v12H608zM714 486h52v52h-52z"/></g><g transform="rotate(240 512 512)"><path d="M608 506h106v12H608zM714 486h52v52h-52z"/></g></g><circle class="logo-core" cx="512" cy="512" r="72"/></svg>
+                <span class="brand-name">NEXUS<em>//</em>DEV</span>
+            </a>
+
+            <nav class="site-nav" id="site-nav" aria-label="Основная навигация">
+                <ul class="skew-tabs nav-tabs">
+                    <li><a href="index.html" data-nav="home"><img src="assets/icons/home.svg" alt="" width="16" height="16">Главная</a></li>
+                    <li><a href="projects.html" data-nav="projects"><img src="assets/icons/portfolio.svg" alt="" width="16" height="16">Проекты</a></li>
+                    <li class="active"><a href="dashboard.html" data-nav="dashboard" aria-current="page"><img src="assets/icons/user.svg" alt="" width="16" height="16">Кабинет</a></li>
+                    <li><a href="auth.html" data-nav="auth"><img src="assets/icons/sign-in.svg" alt="" width="16" height="16">Вход</a></li>
+                </ul>
+            </nav>
+
+            <div class="header-tools">
+                <button class="tool-btn term-btn" type="button" data-terminal aria-expanded="false" aria-label="Терминал (клавиша ~)" title="Терминал [~]">
+                    <img src="assets/icons/shell.svg" alt="" width="18" height="18">
+                </button>
+                <button class="tool-btn" id="sound-toggle" type="button" aria-pressed="true" title="Звуковые эффекты eDEX-UI">
+                    <img class="icon-off" src="assets/icons/mute.svg" alt="" width="18" height="18">
+                    <img class="icon-on" src="assets/icons/volume.svg" alt="" width="18" height="18">
+                    <span class="tool-label">SFX <b id="sound-state">ON</b></span>
+                </button>
+                <button class="tool-btn menu-toggle" id="menu-toggle" type="button" aria-controls="site-nav" aria-expanded="false" aria-label="Открыть меню">
+                    <img class="icon-menu" src="assets/icons/menu.svg" alt="" width="20" height="20">
+                    <img class="icon-close" src="assets/icons/close.svg" alt="" width="16" height="16">
+                </button>
+            </div>
+        </div>
+
+        <div class="container header-status">
+            <p data-sum-state><span class="dot" id="uplink-dot" aria-hidden="true"></span><b data-sum="state">SYSTEM ONLINE</b></p>
+            <p class="hide-sm">SERVERS <b id="header-servers">-/-</b></p>
+            <p class="hide-sm">RELEASES <b data-sum="releases">3</b></p>
+            <p class="hdr-wallet" id="header-wallet" hidden><a href="dashboard.html#wallet" title="Баланс NEXUS ID"><span class="hw-label">BALANCE </span><b id="header-balance">0&nbsp;₽</b></a></p>
+            <p class="hdr-vpn" id="header-vpn" hidden><a href="vpn.html" title="NEXUS VPN"><span class="dot dot-vpn" aria-hidden="true"></span>VPN <b>—</b></a></p>
+            <p>USER <b id="header-user">GUEST</b></p>
+            <p class="hide-xs"><b id="header-clock">--:--:--</b></p>
+        </div>
+    </header>
+
+    <main id="main">
+        <section class="container page-head ide-page-head" aria-labelledby="page-title">
+            <h2 class="panel-title section-title"><span>Сервисы NEXUS</span><span>/ide</span></h2>
+            <p class="crumbs"><a href="index.html">~</a> / <a href="dashboard.html#services">dashboard</a> / ide <span class="prompt-sign">_</span></p>
+            <h1 class="page-title svc-title" id="page-title">NEXUS IDE <span class="test-badge">BETA · ТЕСТ</span></h1>
+            <p class="page-lead">Редактор кода в браузере: HTML, CSS и JavaScript с подсветкой, живым превью и консолью.
+                Код выполняется в изолированном фрейме на вашем устройстве, проекты хранятся в аккаунте NEXUS ID.</p>
+        </section>
+
+        <!-- ===================== ЗАМОК ДЛЯ ГОСТЯ ===================== -->
+        <section class="container page-section" id="svc-lock" aria-labelledby="lock-title" hidden>
+            <div class="glow">
+                <div class="lock-panel aug-frame" augmented-ui="tr-clip bl-clip exe">
+                    <img class="lock-icon" src="assets/icons/code.svg" alt="" width="64" height="64">
+                    <h2 id="lock-title">ACCESS RESTRICTED</h2>
+                    <p>NEXUS IDE входит в кабинет NEXUS ID: проекты сохраняются в вашем аккаунте. Войдите, зарегистрируйтесь или воспользуйтесь демо-доступом.</p>
+                    <div class="lock-actions">
+                        <a class="btn btn-primary" href="auth.html">
+                            <img src="assets/icons/sign-in.svg" alt="" width="18" height="18">
+                            Вход
+                        </a>
+                        <a class="btn" href="auth.html#register">
+                            <img src="assets/icons/plus.svg" alt="" width="18" height="18">
+                            Регистрация
+                        </a>
+                        <button class="btn" type="button" id="svc-demo">
+                            <img src="assets/icons/unlock.svg" alt="" width="18" height="18">
+                            ТЕСТОВЫЙ ВХОД (DEMO ACCESS)
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================== IDE ===================== -->
+        <section class="container page-section ide-section" id="ide-app" aria-label="NEXUS IDE" hidden>
+            <div class="ide-wrap glow">
+                <div class="ide aug-frame shell-anim" id="ide" augmented-ui="tr-clip bl-clip exe">
+                    <h3 class="panel-title shell-title"><span id="ide-crumb">NEXUS IDE</span><span id="ide-tier">FREE · 0 / 3</span></h3>
+
+                    <!-- Панель инструментов -->
+                    <div class="ide-toolbar">
+                        <div class="ide-tb-group">
+                            <button class="ide-tool ide-explorer-toggle" type="button" id="ide-explorer-toggle" aria-controls="ide-explorer" aria-expanded="true" title="Файлы проекта"><img src="assets/icons/folder.svg" alt="" width="16" height="16"><span class="visually-hidden">Файлы проекта</span></button>
+                            <label class="visually-hidden" for="ide-project">Проект</label>
+                            <select class="input input-sm ide-project" id="ide-project"></select>
+                            <button class="btn btn-sm" type="button" id="ide-new"><img src="assets/icons/plus.svg" alt="" width="14" height="14">Новый</button>
+                            <button class="ide-tool" type="button" id="ide-proj-menu" title="Действия с проектом"><img src="assets/icons/options.svg" alt="" width="16" height="16"><span class="visually-hidden">Действия с проектом</span></button>
+                        </div>
+                        <div class="ide-tb-group ide-tb-run">
+                            <button class="btn btn-sm btn-primary" type="button" id="ide-run" title="Запустить (Ctrl+Enter)"><img src="assets/icons/play.svg" alt="" width="14" height="14">Запустить</button>
+                            <label class="ide-check" title="Перезапускать превью при изменениях"><input type="checkbox" id="ide-autorun"><span>авто</span></label>
+                            <span class="ide-save-state" id="ide-save-state" data-state="saved">сохранено</span>
+                            <button class="ide-tool" type="button" id="ide-download" title="Скачать проект (.zip)"><img src="assets/icons/download.svg" alt="" width="16" height="16"><span class="visually-hidden">Скачать ZIP</span></button>
+                            <button class="ide-tool" type="button" id="ide-settings" title="Настройки редактора"><img src="assets/icons/settings.svg" alt="" width="16" height="16"><span class="visually-hidden">Настройки</span></button>
+                            <button class="ide-tool" type="button" id="ide-help" title="Горячие клавиши"><img src="assets/icons/info.svg" alt="" width="16" height="16"><span class="visually-hidden">Горячие клавиши</span></button>
+                        </div>
+                    </div>
+
+                    <!-- Вкладки для телефона -->
+                    <div class="ide-mtabs" role="tablist" aria-label="Панели IDE" id="ide-mtabs">
+                        <button type="button" role="tab" data-pane="files" aria-selected="false">Файлы</button>
+                        <button type="button" role="tab" data-pane="code" aria-selected="true">Код</button>
+                        <button type="button" role="tab" data-pane="preview" aria-selected="false">Превью</button>
+                        <button type="button" role="tab" data-pane="console" aria-selected="false">Консоль <b id="ide-mtab-errors" hidden>0</b></button>
+                    </div>
+
+                    <div class="ide-body" id="ide-body" data-pane="code">
+                        <!-- Проводник -->
+                        <aside class="ide-explorer" id="ide-explorer" aria-label="Файлы проекта">
+                            <div class="ide-pane-head">
+                                <span>EXPLORER</span>
+                                <span class="ide-pane-tools">
+                                    <button class="ide-tool ide-tool-sm" type="button" id="ide-add-file" title="Новый файл"><img src="assets/icons/plus.svg" alt="" width="14" height="14"><span class="visually-hidden">Новый файл</span></button>
+                                    <button class="ide-tool ide-tool-sm" type="button" id="ide-upload" title="Загрузить файлы"><img src="assets/icons/upload.svg" alt="" width="14" height="14"><span class="visually-hidden">Загрузить файлы</span></button>
+                                    <input type="file" id="ide-upload-input" multiple hidden accept=".html,.htm,.css,.js,.mjs,.json,.md,.txt,.svg,.xml,.csv">
+                                </span>
+                            </div>
+                            <form class="ide-newfile" id="ide-newfile" hidden>
+                                <label class="visually-hidden" for="ide-newfile-input">Имя нового файла</label>
+                                <input class="input input-sm" id="ide-newfile-input" type="text" placeholder="name.js или css/theme.css" autocomplete="off" spellcheck="false">
+                                <p class="ide-newfile-err" id="ide-newfile-err" role="alert"></p>
+                            </form>
+                            <ul class="ide-files" id="ide-files" role="tree" aria-label="Файлы"></ul>
+                            <div class="ide-proj-meta">
+                                <p><span>Размер</span><b id="ide-size">0 Б</b></p>
+                                <div class="meter" aria-hidden="true"><i id="ide-size-bar"></i></div>
+                                <p><span>Точка входа</span><b id="ide-entry">index.html</b></p>
+                            </div>
+                        </aside>
+
+                        <!-- Редактор -->
+                        <div class="ide-editor-col" id="ide-editor-col">
+                            <div class="ide-tabs" id="ide-tabs" role="tablist" aria-label="Открытые файлы"></div>
+                            <div class="ide-find" id="ide-find" hidden>
+                                <label class="visually-hidden" for="ide-find-input">Найти</label>
+                                <input class="input input-sm" id="ide-find-input" type="search" placeholder="Найти" autocomplete="off" spellcheck="false">
+                                <span class="ide-find-count" id="ide-find-count">0 / 0</span>
+                                <button class="ide-tool ide-tool-sm" type="button" id="ide-find-prev" title="Предыдущее (Shift+Enter)">↑</button>
+                                <button class="ide-tool ide-tool-sm" type="button" id="ide-find-next" title="Следующее (Enter)">↓</button>
+                                <label class="visually-hidden" for="ide-replace-input">Заменить на</label>
+                                <input class="input input-sm" id="ide-replace-input" type="text" placeholder="Заменить на" autocomplete="off" spellcheck="false">
+                                <button class="btn btn-sm" type="button" id="ide-replace-one">Заменить</button>
+                                <button class="btn btn-sm" type="button" id="ide-replace-all">Все</button>
+                                <button class="ide-tool ide-tool-sm" type="button" id="ide-find-close" title="Закрыть (Esc)"><img src="assets/icons/close.svg" alt="" width="12" height="12"><span class="visually-hidden">Закрыть поиск</span></button>
+                            </div>
+                            <div class="ide-editor" id="ide-editor">
+                                <div class="ide-gutter" id="ide-gutter" aria-hidden="true"></div>
+                                <div class="ide-code">
+                                    <pre class="ide-hl" id="ide-hl" aria-hidden="true"><code id="ide-hl-code"></code></pre>
+                                    <textarea class="ide-input" id="ide-input" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off" aria-label="Редактор кода" aria-describedby="ide-st-pos"></textarea>
+                                </div>
+                                <div class="ide-empty" id="ide-empty" hidden>
+                                    <img src="assets/icons/file.svg" alt="" width="40" height="40">
+                                    <p>Откройте файл слева или создайте новый</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="ide-split" id="ide-split-v" role="separator" aria-orientation="vertical" aria-label="Ширина превью" tabindex="0"></div>
+
+                        <!-- Превью и консоль -->
+                        <div class="ide-run-col" id="ide-run-col">
+                            <div class="ide-preview-pane" id="ide-preview-pane">
+                                <div class="ide-pane-head">
+                                    <span>PREVIEW <i id="ide-preview-file">index.html</i></span>
+                                    <span class="ide-pane-tools">
+                                        <button class="ide-tool ide-tool-sm" type="button" id="ide-reload" title="Перезапустить"><img src="assets/icons/reload.svg" alt="" width="14" height="14"><span class="visually-hidden">Перезапустить</span></button>
+                                        <button class="ide-tool ide-tool-sm" type="button" id="ide-fullscreen" title="Во весь экран"><img src="assets/icons/external.svg" alt="" width="14" height="14"><span class="visually-hidden">Во весь экран</span></button>
+                                    </span>
+                                </div>
+                                <div class="ide-preview" id="ide-preview">
+                                    <iframe id="ide-frame" title="Превью проекта" sandbox="allow-scripts allow-modals allow-forms allow-pointer-lock"></iframe>
+                                    <div class="ide-preview-idle" id="ide-preview-idle">
+                                        <img src="assets/icons/play.svg" alt="" width="32" height="32">
+                                        <p>Нажмите «Запустить» или Ctrl+Enter</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="ide-split-h" id="ide-split-h" role="separator" aria-orientation="horizontal" aria-label="Высота консоли" tabindex="0"></div>
+                            <div class="ide-console" id="ide-console">
+                                <div class="ide-pane-head">
+                                    <span>CONSOLE <i id="ide-console-count">0</i></span>
+                                    <span class="ide-pane-tools">
+                                        <button class="ide-tool ide-tool-sm" type="button" id="ide-console-clear" title="Очистить консоль"><img src="assets/icons/close.svg" alt="" width="12" height="12"><span class="visually-hidden">Очистить консоль</span></button>
+                                    </span>
+                                </div>
+                                <ol class="ide-console-out" id="ide-console-out" aria-live="polite"></ol>
+                                <form class="ide-console-in" id="ide-console-form">
+                                    <span aria-hidden="true">›</span>
+                                    <label class="visually-hidden" for="ide-console-input">Выражение JavaScript</label>
+                                    <input id="ide-console-input" type="text" placeholder="выражение JS, Enter — выполнить в превью" autocomplete="off" spellcheck="false">
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Строка состояния -->
+                    <div class="ide-status" id="ide-status">
+                        <span class="ide-st-item" id="ide-st-project">—</span>
+                        <button class="ide-st-item ide-st-problems" type="button" id="ide-st-problems" data-count="0">0 ошибок</button>
+                        <span class="ide-st-spacer"></span>
+                        <span class="ide-st-item" id="ide-st-pos">Стр 1, стлб 1</span>
+                        <span class="ide-st-item hide-sm" id="ide-st-indent">Пробелы: 2</span>
+                        <span class="ide-st-item hide-sm">UTF-8</span>
+                        <span class="ide-st-item" id="ide-st-lang">HTML</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- ===================== ПОДВАЛ (общий для всех страниц) ===================== -->
+    <footer class="site-footer">
+        <div class="container">
+            <h2 class="panel-title"><span>NEXUS//DEV</span><span>EOF</span></h2>
+            <div class="footer-grid">
+                <div class="footer-about">
+                    <p class="brand footer-brand">
+                        <svg class="brand-logo logo-footer" viewBox="128 128 768 768" width="26" height="26" aria-hidden="true" focusable="false"><path class="logo-frame" d="M634 230.4 512 160 207 336v352l305 176 305-176V336l-122-70.4"/><g class="logo-spokes"><path d="M608 506h106v12H608zM714 486h52v52h-52z"/><g transform="rotate(120 512 512)"><path d="M608 506h106v12H608zM714 486h52v52h-52z"/></g><g transform="rotate(240 512 512)"><path d="M608 506h106v12H608zM714 486h52v52h-52z"/></g></g><circle class="logo-core" cx="512" cy="512" r="72"/></svg>
+                        <span class="brand-name">NEXUS<em>//</em>DEV</span>
+                    </p>
+                    <p>Ядро некоммерческой экосистемы инди-проектов: один аккаунт, центр загрузок, доступ к тестам и серверам.</p>
+                </div>
+                <nav class="footer-col" aria-label="Навигация в подвале">
+                    <h3>Навигация</h3>
+                    <ul>
+                        <li><a href="index.html">Главная</a></li>
+                        <li><a href="projects.html">Проекты</a></li>
+                        <li><a href="dashboard.html">Кабинет</a></li>
+                        <li><a href="auth.html">Вход</a></li>
+                    </ul>
+                </nav>
+                <div class="footer-col">
+                    <h3>Информация</h3>
+                    <ul>
+                        <li><button class="link-btn" type="button" data-doc="faq">FAQ</button></li>
+                        <li><button class="link-btn" type="button" data-doc="rules">Правила</button></li>
+                        <li><button class="link-btn" type="button" data-doc="license">Лицензия GPL-3.0</button></li>
+                        <li><a href="privacy.html">Конфиденциальность</a></li>
+                        <li><a href="contacts.html">Контакты</a></li>
+                        <li><a href="https://github.com/Stool12312356/123" target="_blank" rel="noopener noreferrer">Исходный код сайта</a></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="footer-bottom">
+                <p>&copy; <span class="js-year">2026</span> NEXUS//DEV. Некоммерческий проект. Код сайта распространяется под лицензией <a href="LICENSE">GPL-3.0</a>.</p>
+                <div class="footer-role" data-role-switch data-compact></div>
+                <p class="credit">
+                    <button class="term-secret" type="button" data-terminal aria-expanded="false" aria-label="Терминал" title="&gt;_">
+                        <img src="assets/icons/terminal.svg" alt="" width="16" height="16">
+                    </button>
+                    <img src="assets/img/edex-logo.svg" alt="" width="18" height="18">
+                    <span>UI inspired by &amp; adapted from <a href="https://github.com/GitSquared/edex-ui" target="_blank" rel="noopener noreferrer">eDEX-UI</a> (GPL-3.0)</span>
+                </p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="js/ui-effects.js?v=20261111-1" defer></script>
+    <script src="js/pages.js?v=20261111-1" defer></script>
+    <script src="js/services.js?v=20261111-1" defer></script>
+</body>
+</html>

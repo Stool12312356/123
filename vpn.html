@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="ru" class="no-js">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>NEXUS VPN — NEXUS//DEV</title>
+    <meta name="description" content="Тестовый VPN-клиент NEXUS: карта серверов, протоколы WireGuard / OpenVPN / IKEv2, kill switch, тест скорости и утечек.">
+    <meta name="theme-color" content="#090B0A">
+    <link rel="icon" type="image/svg+xml" href="assets/img/logo-icon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+    <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+
+    <!-- Зависимость оригинального eDEX-UI: augmented-ui 1.1.2 (BSD-2-Clause) — скошенные рамки -->
+    <link rel="stylesheet" href="assets/vendor/augmented-ui/augmented.css">
+    <!-- Тема blade, перенесённая из eDEX-UI -->
+    <link rel="stylesheet" href="css/blade-theme.css?v=20261111-1">
+    <!-- Адаптивная сетка: шапка, подвал, модули, терминал -->
+    <link rel="stylesheet" href="css/layout.css?v=20261111-1">
+    <!-- Компоненты страниц: главная, каталог, формы, кабинет, тосты -->
+    <link rel="stylesheet" href="css/pages.css?v=20261111-1">
+    <link rel="stylesheet" href="css/services.css?v=20261111-1">
+
+    <script>
+        /* Ранняя инициализация: класс js и сохранённые настройки HUD (без мигания) */
+        (function () {
+            var d = document.documentElement;
+            d.classList.remove("no-js");
+            d.classList.add("js");
+            try {
+                var s = JSON.parse(localStorage.getItem("nx_settings") || "{}");
+                if (s.grid === false) d.classList.add("hud-no-grid");
+                if (s.glow === false) d.classList.add("hud-no-glow");
+                if (s.motion === false) d.classList.add("hud-reduced");
+                if (s.scale && s.scale !== "normal") d.setAttribute("data-hud-scale", s.scale);
+                /* Цветовая схема (nx_settings.theme): кэш CSS-переменных темы из ui-effects.js */
+                if (s.theme && s.theme !== "blade" && s.themeVars && typeof s.themeVars === "object") {
+                    for (var k in s.themeVars) {
+                        if (k.indexOf("--") === 0) d.style.setProperty(k, s.themeVars[k]);
+                    }
+                    d.style.colorScheme = s.themeVars["color-scheme"] || "dark";
+                    if (s.themeVars["color-scheme"] === "light") d.classList.add("theme-light");
+                    d.setAttribute("data-theme", s.theme);
+                }
+            } catch (e) { /* localStorage недоступен */ }
+        })();
+    </script>
+</head>
+<body data-page="vpn">
+    <a class="skip-link" href="#main">Перейти к содержимому</a>
+
+    <!-- ===================== ШАПКА (общая для всех страниц) ===================== -->
+    <header class="site-header" id="top">
+        <div class="container header-inner">
+            <a class="brand" href="index.html" aria-label="NEXUS//DEV — на главную">
+                <svg class="brand-logo logo-header" viewBox="128 128 768 768" width="30" height="30" aria-hidden="true" focusable="false"><path class="logo-frame" d="M634 230.4 512 160 207 336v352l305 176 305-176V336l-122-70.4"/><g class="logo-spokes"><path d="M608 506h106v12H608zM714 486h52v52h-52z"/><g transform="rotate(120 512 512)"><path d="M608 506h106v12H608zM714 486h52v52h-52z"/></g><g transform="rotate(240 512 512)"><path d="M608 506h106v12H608zM714 486h52v52h-52z"/></g></g><circle class="logo-core" cx="512" cy="512" r="72"/></svg>
+                <span class="brand-name">NEXUS<em>//</em>DEV</span>
+            </a>
+
+            <nav class="site-nav" id="site-nav" aria-label="Основная навигация">
+                <ul class="skew-tabs nav-tabs">
+                    <li><a href="index.html" data-nav="home"><img src="assets/icons/home.svg" alt="" width="16" height="16">Главная</a></li>
+                    <li><a href="projects.html" data-nav="projects"><img src="assets/icons/portfolio.svg" alt="" width="16" height="16">Проекты</a></li>
+                    <li class="active"><a href="dashboard.html" data-nav="dashboard" aria-current="page"><img src="assets/icons/user.svg" alt="" width="16" height="16">Кабинет</a></li>
+                    <li><a href="auth.html" data-nav="auth"><img src="assets/icons/sign-in.svg" alt="" width="16" height="16">Вход</a></li>
+                </ul>
+            </nav>
+
+            <div class="header-tools">
+                <button class="tool-btn term-btn" type="button" data-terminal aria-expanded="false" aria-label="Терминал (клавиша ~)" title="Терминал [~]">
+                    <img src="assets/icons/shell.svg" alt="" width="18" height="18">
+                </button>
+                <button class="tool-btn" id="sound-toggle" type="button" aria-pressed="true" title="Звуковые эффекты eDEX-UI">
+                    <img class="icon-off" src="assets/icons/mute.svg" alt="" width="18" height="18">
+                    <img class="icon-on" src="assets/icons/volume.svg" alt="" width="18" height="18">
+                    <span class="tool-label">SFX <b id="sound-state">ON</b></span>
+                </button>
+                <button class="tool-btn menu-toggle" id="menu-toggle" type="button" aria-controls="site-nav" aria-expanded="false" aria-label="Открыть меню">
+                    <img class="icon-menu" src="assets/icons/menu.svg" alt="" width="20" height="20">
+                    <img class="icon-close" src="assets/icons/close.svg" alt="" width="16" height="16">
+                </button>
+            </div>
+        </div>
+
+        <div class="container header-status">
+            <p data-sum-state><span class="dot" id="uplink-dot" aria-hidden="true"></span><b data-sum="state">SYSTEM ONLINE</b></p>
+            <p class="hide-sm">SERVERS <b id="header-servers">-/-</b></p>
+            <p class="hide-sm">RELEASES <b data-sum="releases">3</b></p>
+            <p class="hdr-wallet" id="header-wallet" hidden><a href="dashboard.html#wallet" title="Баланс NEXUS ID"><span class="hw-label">BALANCE </span><b id="header-balance">0&nbsp;₽</b></a></p>
+            <p class="hdr-vpn" id="header-vpn" hidden><a href="vpn.html" title="NEXUS VPN"><span class="dot dot-vpn" aria-hidden="true"></span>VPN <b>—</b></a></p>
+            <p>USER <b id="header-user">GUEST</b></p>
+            <p class="hide-xs"><b id="header-clock">--:--:--</b></p>
+        </div>
+    </header>
+
+    <main id="main">
+        <section class="container page-head" aria-labelledby="page-title">
+            <h2 class="panel-title section-title"><span>Сервисы NEXUS</span><span>/vpn</span></h2>
+            <p class="crumbs"><a href="index.html">~</a> / <a href="dashboard.html#services">dashboard</a> / vpn <span class="prompt-sign">_</span></p>
+            <h1 class="page-title svc-title" id="page-title">NEXUS VPN <span class="test-badge">BETA · ТЕСТ</span></h1>
+            <p class="page-lead">Тестовый VPN-клиент: 20 локаций, WireGuard, OpenVPN и IKEv2, kill switch, Secure Core, тест скорости и утечек.
+                Соединение симулируется: трафик не шифруется и никуда не перенаправляется.</p>
+        </section>
+
+        <!-- ===================== ЗАМОК ДЛЯ ГОСТЯ ===================== -->
+        <section class="container page-section" id="svc-lock" aria-labelledby="lock-title" hidden>
+            <div class="glow">
+                <div class="lock-panel aug-frame" augmented-ui="tr-clip bl-clip exe">
+                    <img class="lock-icon" src="assets/icons/shield.svg" alt="" width="64" height="64">
+                    <h2 id="lock-title">ACCESS RESTRICTED</h2>
+                    <p>NEXUS VPN входит в кабинет NEXUS ID. Войдите, зарегистрируйтесь или воспользуйтесь демо-доступом.</p>
+                    <div class="lock-actions">
+                        <a class="btn btn-primary" href="auth.html">
+                            <img src="assets/icons/sign-in.svg" alt="" width="18" height="18">
+                            Вход
+                        </a>
+                        <a class="btn" href="auth.html#register">
+                            <img src="assets/icons/plus.svg" alt="" width="18" height="18">
+                            Регистрация
+                        </a>
+                        <button class="btn" type="button" id="svc-demo">
+                            <img src="assets/icons/unlock.svg" alt="" width="18" height="18">
+                            ТЕСТОВЫЙ ВХОД (DEMO ACCESS)
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================== КЛИЕНТ ===================== -->
+        <section class="container page-section" id="vpn-app" aria-label="VPN-клиент" hidden>
+            <div class="vpn-grid">
+
+                <!-- Левая колонка: туннель -->
+                <aside class="mod-column vpn-left reveal-fade" aria-label="Подключение">
+                    <h3 class="panel-title"><span>PANEL</span><span>TUNNEL</span></h3>
+                    <div class="column-stack">
+                        <div class="mod vpn-power-mod" id="vpn-power-mod" data-state="off">
+                            <button class="vpn-power" id="vpn-power" type="button" aria-pressed="false" aria-describedby="vpn-sub">
+                                <svg class="vpn-ring" viewBox="0 0 200 200" aria-hidden="true" focusable="false">
+                                    <circle class="vpn-ring-track" cx="100" cy="100" r="88"/>
+                                    <circle class="vpn-ring-spin" cx="100" cy="100" r="88"/>
+                                    <circle class="vpn-ring-ticks" cx="100" cy="100" r="76"/>
+                                </svg>
+                                <img src="assets/icons/power.svg" alt="" width="44" height="44">
+                                <span class="vpn-power-label" id="vpn-power-label">ПОДКЛЮЧИТЬ</span>
+                            </button>
+                            <p class="vpn-state" id="vpn-state" aria-live="polite">НЕ ЗАЩИЩЕНО</p>
+                            <p class="vpn-sub" id="vpn-sub">Нажмите, чтобы подключиться к самому быстрому серверу</p>
+                        </div>
+
+                        <div class="mod">
+                            <h4 class="mod-head">SESSION <i id="vpn-session-label">offline</i></h4>
+                            <div class="netstat-grid vpn-facts">
+                                <div class="kv netstat-wide"><h5 class="k">SERVER</h5><p class="v" id="vpn-f-server">—</p></div>
+                                <div class="kv"><h5 class="k">EXIT IP</h5><p class="v" id="vpn-f-ip">—</p></div>
+                                <div class="kv"><h5 class="k">VIRTUAL IP</h5><p class="v" id="vpn-f-vip">—</p></div>
+                                <div class="kv"><h5 class="k">UPTIME</h5><p class="v" id="vpn-f-uptime">0:00:00</p></div>
+                                <div class="kv"><h5 class="k">PING</h5><p class="v" id="vpn-f-ping">—</p></div>
+                                <div class="kv netstat-wide"><h5 class="k">CIPHER</h5><p class="v" id="vpn-f-cipher">—</p></div>
+                            </div>
+                        </div>
+
+                        <div class="mod">
+                            <h4 class="mod-head">DATA <i id="vpn-quota-label">10 ГБ / месяц</i></h4>
+                            <div class="meter" aria-hidden="true"><i id="vpn-quota-bar"></i></div>
+                            <p class="vpn-quota-text" id="vpn-quota-text">0 Б использовано</p>
+                        </div>
+
+                        <div class="mod">
+                            <h4 class="mod-head">PROTOCOL <i>транспорт туннеля</i></h4>
+                            <div class="vpn-proto" role="radiogroup" aria-label="Протокол" id="vpn-proto">
+                                <label class="vpn-proto-opt"><input type="radio" name="vpn-proto" value="wireguard"><span><b>WireGuard</b><i>быстрый, современный</i></span></label>
+                                <label class="vpn-proto-opt"><input type="radio" name="vpn-proto" value="ikev2"><span><b>IKEv2</b><i>для смены сетей</i></span></label>
+                                <label class="vpn-proto-opt"><input type="radio" name="vpn-proto" value="openvpn-udp"><span><b>OpenVPN UDP</b><i>совместимость</i></span></label>
+                                <label class="vpn-proto-opt"><input type="radio" name="vpn-proto" value="openvpn-tcp"><span><b>OpenVPN TCP</b><i>порт 443, обход фильтров</i></span></label>
+                            </div>
+                        </div>
+
+                        <div class="mod">
+                            <h4 class="mod-head">OPTIONS <i>защита</i></h4>
+                            <div class="vpn-options">
+                                    <label class="toggle"><span class="toggle-text"><b>Kill switch</b><span>блокировать сеть при обрыве туннеля</span></span><input type="checkbox" id="vpn-opt-kill"><span class="switch" aria-hidden="true"></span></label>
+                                    <label class="toggle"><span class="toggle-text"><b>NetShield</b><span>блокировка рекламы и трекеров через DNS</span></span><input type="checkbox" id="vpn-opt-adblock"><span class="switch" aria-hidden="true"></span></label>
+                                    <label class="toggle"><span class="toggle-text"><b>Автоподключение</b><span>при открытии клиента</span></span><input type="checkbox" id="vpn-opt-auto"><span class="switch" aria-hidden="true"></span></label>
+                                    <label class="toggle"><span class="toggle-text"><b>Secure Core <em class="pro-chip">NEXUS+</em></b><span>двойной хоп через CH / IS / SE</span></span><input type="checkbox" id="vpn-opt-multihop"><span class="switch" aria-hidden="true"></span></label>
+                            </div>
+                        </div>
+                    </div>
+                </aside>
+
+                <!-- Центр: карта, трафик, инструменты -->
+                <div class="vpn-shell shell-wrap glow">
+                    <section class="shell aug-frame shell-anim" augmented-ui="bl-clip tr-clip exe" aria-label="Карта и статистика">
+                        <h3 class="panel-title shell-title"><span>NEXUS VPN / WORLD MAP</span><span id="vpn-shell-state">OFFLINE</span></h3>
+                        <div class="shell-inner">
+                            <div class="vpn-map-wrap" id="vpn-map-wrap">
+                                <canvas id="vpn-map" class="vpn-map" role="img" aria-label="Карта серверов VPN"></canvas>
+                                <div class="vpn-map-tip" id="vpn-map-tip" hidden></div>
+                                <ul class="vpn-map-legend" aria-hidden="true">
+                                    <li><i class="lg-home"></i>вы</li>
+                                    <li><i class="lg-free"></i>доступно</li>
+                                    <li><i class="lg-plus"></i>NEXUS+</li>
+                                    <li><i class="lg-active"></i>подключено</li>
+                                </ul>
+                                <p class="vpn-map-coords" id="vpn-map-coords" aria-hidden="true">LAT 0.00 · LON 0.00</p>
+                            </div>
+
+                            <div class="vpn-row">
+                                <div class="mod vpn-traffic-mod">
+                                    <h4 class="mod-head">TRAFFIC <i>download / upload, Мбит/с</i></h4>
+                                    <canvas id="vpn-traffic" class="vpn-traffic" aria-hidden="true"></canvas>
+                                    <div class="vpn-rates">
+                                        <p><span>↓ DOWN</span><b id="vpn-down">0</b></p>
+                                        <p><span>↑ UP</span><b id="vpn-up">0</b></p>
+                                        <p><span>СЕАНС</span><b id="vpn-total">0 Б</b></p>
+                                        <p><span>NETSHIELD</span><b id="vpn-blocked">0</b></p>
+                                    </div>
+                                </div>
+                                <div class="mod vpn-log-mod">
+                                    <h4 class="mod-head">TUNNEL LOG <i id="vpn-log-count">0</i></h4>
+                                    <ol class="vpn-log" id="vpn-log" aria-live="polite" aria-relevant="additions"></ol>
+                                </div>
+                            </div>
+
+                            <div class="vpn-tools">
+                                <div class="mod vpn-speed">
+                                    <h4 class="mod-head">SPEED TEST <i id="vpn-speed-where">без VPN</i></h4>
+                                    <canvas id="vpn-gauge" class="vpn-gauge" width="260" height="150" aria-hidden="true"></canvas>
+                                    <dl class="vpn-speed-res">
+                                        <div><dt>PING</dt><dd id="vpn-st-ping">—</dd></div>
+                                        <div><dt>DOWN</dt><dd id="vpn-st-down">—</dd></div>
+                                        <div><dt>UP</dt><dd id="vpn-st-up">—</dd></div>
+                                    </dl>
+                                    <button class="btn btn-sm" type="button" id="vpn-speed-btn"><img src="assets/icons/gauge.svg" alt="" width="14" height="14"><span>Запустить тест</span></button>
+                                </div>
+                                <div class="mod vpn-leak">
+                                    <h4 class="mod-head">LEAK TEST <i>IP · DNS · WebRTC · IPv6</i></h4>
+                                    <ul class="vpn-checks" id="vpn-checks">
+                                        <li data-check="ip"><span class="ck-dot" aria-hidden="true"></span><b>IP-адрес</b><i>не проверено</i></li>
+                                        <li data-check="dns"><span class="ck-dot" aria-hidden="true"></span><b>DNS</b><i>не проверено</i></li>
+                                        <li data-check="webrtc"><span class="ck-dot" aria-hidden="true"></span><b>WebRTC</b><i>не проверено</i></li>
+                                        <li data-check="ipv6"><span class="ck-dot" aria-hidden="true"></span><b>IPv6</b><i>не проверено</i></li>
+                                        <li data-check="kill"><span class="ck-dot" aria-hidden="true"></span><b>Kill switch</b><i>не проверено</i></li>
+                                    </ul>
+                                    <div class="vpn-tool-actions">
+                                        <button class="btn btn-sm" type="button" id="vpn-leak-btn"><img src="assets/icons/search.svg" alt="" width="14" height="14">Проверить</button>
+                                        <button class="btn btn-sm" type="button" id="vpn-drop-btn" title="Проверить, как сработает kill switch"><img src="assets/icons/lightning.svg" alt="" width="14" height="14">Обрыв связи</button>
+                                    </div>
+                                </div>
+                                <div class="mod vpn-config">
+                                    <h4 class="mod-head">CONFIG <i>WireGuard · тестовый</i></h4>
+                                    <p class="vpn-config-text">Файл конфигурации для выбранного сервера. Ключи сгенерированы в браузере, серверы из зоны <code>.test</code> — к ним нельзя подключиться.</p>
+                                    <p class="vpn-pubkey"><span>PUBLIC KEY</span><code id="vpn-pubkey">—</code></p>
+                                    <div class="vpn-tool-actions">
+                                        <button class="btn btn-sm" type="button" id="vpn-conf-btn"><img src="assets/icons/download.svg" alt="" width="14" height="14">Скачать .conf</button>
+                                        <button class="btn btn-sm" type="button" id="vpn-keys-btn"><img src="assets/icons/key.svg" alt="" width="14" height="14">Новые ключи</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Правая колонка: серверы -->
+                <aside class="mod-column vpn-right reveal-fade" aria-label="Серверы">
+                    <h3 class="panel-title"><span>PANEL</span><span>SERVERS</span></h3>
+                    <div class="column-stack">
+                        <div class="mod vpn-servers-mod">
+                            <button class="btn btn-sm vpn-quick" type="button" id="vpn-quick"><img src="assets/icons/lightning.svg" alt="" width="14" height="14">Самый быстрый сервер</button>
+                            <label class="visually-hidden" for="vpn-search">Поиск сервера</label>
+                            <input class="input input-sm vpn-search" id="vpn-search" type="search" placeholder="Город или страна…" autocomplete="off">
+                            <div class="vpn-filters" role="group" aria-label="Фильтр серверов" id="vpn-filters">
+                                <button type="button" class="cat-chip active" data-vf="all" aria-pressed="true">Все</button>
+                                <button type="button" class="cat-chip" data-vf="fav" aria-pressed="false">★ Избранные</button>
+                                <button type="button" class="cat-chip" data-vf="free" aria-pressed="false">Free</button>
+                                <button type="button" class="cat-chip" data-vf="stream" aria-pressed="false">Стриминг</button>
+                                <button type="button" class="cat-chip" data-vf="p2p" aria-pressed="false">P2P</button>
+                                <button type="button" class="cat-chip" data-vf="secure" aria-pressed="false">Secure Core</button>
+                            </div>
+                            <p class="vpn-sort">
+                                <span id="vpn-count">20 серверов</span>
+                                <label>сортировка
+                                    <select class="input input-sm" id="vpn-sort">
+                                        <option value="ping">пинг</option>
+                                        <option value="load">загрузка</option>
+                                        <option value="name">город</option>
+                                    </select>
+                                </label>
+                            </p>
+                            <ul class="vpn-servers" id="vpn-servers" aria-label="Список серверов"></ul>
+                        </div>
+                        <div class="mod">
+                            <h4 class="mod-head">HISTORY <i>последние сеансы</i></h4>
+                            <ul class="feed vpn-history" id="vpn-history"></ul>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+        </section>
+    </main>
+
+    <!-- ===================== ПОДВАЛ (общий для всех страниц) ===================== -->
+    <footer class="site-footer">
+        <div class="container">
+            <h2 class="panel-title"><span>NEXUS//DEV</span><span>EOF</span></h2>
+            <div class="footer-grid">
+                <div class="footer-about">
+                    <p class="brand footer-brand">
+                        <svg class="brand-logo logo-footer" viewBox="128 128 768 768" width="26" height="26" aria-hidden="true" focusable="false"><path class="logo-frame" d="M634 230.4 512 160 207 336v352l305 176 305-176V336l-122-70.4"/><g class="logo-spokes"><path d="M608 506h106v12H608zM714 486h52v52h-52z"/><g transform="rotate(120 512 512)"><path d="M608 506h106v12H608zM714 486h52v52h-52z"/></g><g transform="rotate(240 512 512)"><path d="M608 506h106v12H608zM714 486h52v52h-52z"/></g></g><circle class="logo-core" cx="512" cy="512" r="72"/></svg>
+                        <span class="brand-name">NEXUS<em>//</em>DEV</span>
+                    </p>
+                    <p>Ядро некоммерческой экосистемы инди-проектов: один аккаунт, центр загрузок, доступ к тестам и серверам.</p>
+                </div>
+                <nav class="footer-col" aria-label="Навигация в подвале">
+                    <h3>Навигация</h3>
+                    <ul>
+                        <li><a href="index.html">Главная</a></li>
+                        <li><a href="projects.html">Проекты</a></li>
+                        <li><a href="dashboard.html">Кабинет</a></li>
+                        <li><a href="auth.html">Вход</a></li>
+                    </ul>
+                </nav>
+                <div class="footer-col">
+                    <h3>Информация</h3>
+                    <ul>
+                        <li><button class="link-btn" type="button" data-doc="faq">FAQ</button></li>
+                        <li><button class="link-btn" type="button" data-doc="rules">Правила</button></li>
+                        <li><button class="link-btn" type="button" data-doc="license">Лицензия GPL-3.0</button></li>
+                        <li><a href="privacy.html">Конфиденциальность</a></li>
+                        <li><a href="contacts.html">Контакты</a></li>
+                        <li><a href="https://github.com/Stool12312356/123" target="_blank" rel="noopener noreferrer">Исходный код сайта</a></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="footer-bottom">
+                <p>&copy; <span class="js-year">2026</span> NEXUS//DEV. Некоммерческий проект. Код сайта распространяется под лицензией <a href="LICENSE">GPL-3.0</a>.</p>
+                <div class="footer-role" data-role-switch data-compact></div>
+                <p class="credit">
+                    <button class="term-secret" type="button" data-terminal aria-expanded="false" aria-label="Терминал" title="&gt;_">
+                        <img src="assets/icons/terminal.svg" alt="" width="16" height="16">
+                    </button>
+                    <img src="assets/img/edex-logo.svg" alt="" width="18" height="18">
+                    <span>UI inspired by &amp; adapted from <a href="https://github.com/GitSquared/edex-ui" target="_blank" rel="noopener noreferrer">eDEX-UI</a> (GPL-3.0)</span>
+                </p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="js/ui-effects.js?v=20261111-1" defer></script>
+    <script src="js/pages.js?v=20261111-1" defer></script>
+    <script src="js/services.js?v=20261111-1" defer></script>
+</body>
+</html>

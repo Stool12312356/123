@@ -535,6 +535,7 @@
                 downloads: (same && prev.downloads) || this.seedDownloads()
             };
             storage.setJSON(this.KEY, session);
+            Account.onLogin(session);
             updateUserUI();
             return session;
         },
@@ -581,6 +582,7 @@
         const prompt = $("#term-prompt");
         if (prompt) prompt.textContent = `${s ? s.callsign.toLowerCase() : "guest"}@nexus:~$`;
         applyPermissions();
+        updateWalletUI();
         document.dispatchEvent(new CustomEvent("nexus:auth"));
     }
 
@@ -638,6 +640,544 @@
         Syslog.add(`auth: роль сессии → ${ROLES[role].label}`);
         if (!opts.quiet) toast(`Роль: ${ROLES[role].label} // ${ROLES[role].name}${created ? " · создана демо-сессия" : ""}`, "ok");
         return { ok: true, role, created };
+    }
+
+    /* ================================================================
+     * Аккаунт NEXUS ID: кошелёк, подписка, поддержка проектов,
+     * уведомления, безопасность и публичный профиль.
+     * Данные лежат в localStorage (ключ nx_accounts) отдельно для каждого
+     * ID пользователя, поэтому переживают выход и повторный вход.
+     * Платёжный шлюз работает в ТЕСТОВОМ режиме: деньги не списываются,
+     * номер карты и CVC не сохраняются (только платёжная система и 4 цифры).
+     * ================================================================ */
+    const MONEY_FMT = (() => {
+        try {
+            return {
+                whole: new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", minimumFractionDigits: 0, maximumFractionDigits: 0 }),
+                frac: new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", minimumFractionDigits: 2, maximumFractionDigits: 2 })
+            };
+        } catch (e) {
+            return null;
+        }
+    })();
+
+    /* Суммы хранятся в копейках (целые числа) — без ошибок округления */
+    function formatMoney(kop, opts) {
+        opts = opts || {};
+        const k = Math.round(Number(kop) || 0);
+        const abs = Math.abs(k) / 100;
+        let s;
+        if (MONEY_FMT) s = (k % 100 === 0 ? MONEY_FMT.whole : MONEY_FMT.frac).format(abs);
+        else s = (k % 100 === 0 ? String(abs) : abs.toFixed(2)) + " ₽";
+        s = s.replace(/\u202f/g, "\u00a0");
+        if (k < 0) return "−" + s;
+        if (opts.sign && k > 0) return "+" + s;
+        return s;
+    }
+
+    const PLANS = {
+        free: {
+            id: "free", label: "FREE", name: "Базовый", price: 0, cashback: 0,
+            desc: "Всё необходимое, чтобы играть и тестировать.",
+            perks: ["Каталог и публичные релизы", "Закрытые тесты после входа", "История загрузок и уведомления о релизах"]
+        },
+        plus: {
+            id: "plus", label: "NEXUS+", name: "Поддержка", price: 14900, cashback: 5,
+            desc: "Помогает оплачивать серверы и билд-ферму.",
+            perks: ["Значок NEXUS+ в профиле и шапке сайта", "Приоритет в очереди на закрытые тесты", "Голосование за roadmap проектов", "Кешбэк 5% на поддержку проектов"]
+        },
+        patron: {
+            id: "patron", label: "PATRON", name: "Меценат", price: 39900, cashback: 10,
+            desc: "Для тех, кто хочет вложиться в развитие экосистемы.",
+            perks: ["Всё из NEXUS+", "Имя в титрах и на странице проекта", "Закрытый канал с разработчиками", "Кешбэк 10% на поддержку проектов"]
+        }
+    };
+
+    /* Промокоды (тестовые): бонус на баланс, каждый — один раз на аккаунт */
+    const PROMO_CODES = {
+        "WELCOME": { amount: 5000, label: "Приветственный бонус" },
+        "NEXUS100": { amount: 10000, label: "Бонус NEXUS100" },
+        "BETA2026": { amount: 25000, label: "Бонус участника беты" }
+    };
+
+    /* Тестовые карты (как в тестовом режиме платёжных шлюзов) */
+    const TEST_CARDS = [
+        { number: "4242 4242 4242 4242", result: "ok", label: "Успешная оплата" },
+        { number: "4000 0000 0000 3220", result: "3ds", label: "Подтверждение 3-D Secure, код 1234" },
+        { number: "4000 0000 0000 0002", result: "declined", label: "Отказ банка" },
+        { number: "4000 0000 0000 9995", result: "funds", label: "Недостаточно средств на карте" }
+    ];
+
+    const WALLET_LIMITS = { min: 5000, max: 5000000, daily: 10000000 };
+
+    /* Бонус к пополнению: от 1 000 ₽ — +5%, от 5 000 ₽ — +10% */
+    function topupBonus(kop) {
+        if (kop >= 500000) return Math.round(kop * 0.10);
+        if (kop >= 100000) return Math.round(kop * 0.05);
+        return 0;
+    }
+
+    /* Цели сбора средств на проекты (база — «пожертвования сообщества») */
+    const FUNDING = {
+        launcher: { goal: 6000000, base: 4170000, purpose: "сервер обновлений и CDN" },
+        fortify: { goal: 2500000, base: 1985000, purpose: "новые модели укреплений" },
+        modpack: { goal: 4000000, base: 1220000, purpose: "аренда игрового сервера на год" },
+        bastion: { goal: 15000000, base: 9630000, purpose: "плейтесты и озвучка" },
+        trenchworks: { goal: 9000000, base: 2340000, purpose: "лицензии ассетов и мокап" },
+        nexustech: { goal: 3000000, base: 640000, purpose: "документация и примеры" }
+    };
+
+    function cardBrand(num) {
+        const n = String(num || "").replace(/\D/g, "");
+        if (/^220[0-4]/.test(n)) return "MIR";
+        if (/^4/.test(n)) return "VISA";
+        if (/^(5[1-5]|2(2[2-9]|[3-6]\d|7[01]|720))/.test(n)) return "MASTERCARD";
+        if (/^3[47]/.test(n)) return "AMEX";
+        if (/^(62|81)/.test(n)) return "UNIONPAY";
+        return "CARD";
+    }
+
+    function luhnOk(num) {
+        const n = String(num || "").replace(/\D/g, "");
+        if (n.length < 13 || n.length > 19) return false;
+        let sum = 0, dbl = false;
+        for (let i = n.length - 1; i >= 0; i--) {
+            let d = +n[i];
+            if (dbl) { d *= 2; if (d > 9) d -= 9; }
+            sum += d;
+            dbl = !dbl;
+        }
+        return sum % 10 === 0;
+    }
+
+    function uid(prefix) {
+        const t = Date.now().toString(36).toUpperCase().slice(-5);
+        const r = Math.random().toString(36).toUpperCase().slice(2, 6).padEnd(4, "0");
+        return `${prefix}-${t}${r}`;
+    }
+
+    function deviceName() {
+        return `${detectOS().full} · ${detectBrowser()}`;
+    }
+
+    function maskedIp(seed) {
+        const h = hashString(String(seed || "nx"));
+        return `${80 + (h % 100)}.${(h >>> 8) % 255}.•••.${(h >>> 16) % 250 + 2}`;
+    }
+
+    const Account = {
+        KEY: "nx_accounts",
+        NOTIF_TYPES: {
+            payment: { label: "Платежи", icon: "portfolio" },
+            release: { label: "Релизы", icon: "download" },
+            security: { label: "Безопасность", icon: "lock" },
+            system: { label: "Система", icon: "info" }
+        },
+
+        readAll() {
+            const map = storage.getJSON(this.KEY, {});
+            return map && typeof map === "object" && !Array.isArray(map) ? map : {};
+        },
+
+        /* Новый аккаунт: приветствие, свежие релизы, текущее и пара прошлых устройств */
+        seed(s) {
+            const now = Date.now(), day = 86400000;
+            const dev = deviceName();
+            const releases = PROJECTS.filter(p => p.status !== "dev").slice(0, 2);
+            const notes = [
+                { id: uid("N"), type: "system", title: "Добро пожаловать в NEXUS ID", text: "Аккаунт активирован. Пополните баланс, чтобы оформить NEXUS+ или поддержать любимый проект.", date: now, read: false, link: "wallet" }
+            ];
+            releases.forEach((p, i) => notes.push({
+                id: uid("N"), type: "release", title: `Вышла сборка ${p.title} ${p.version}`,
+                text: p.summary, date: now - (i + 1) * 2 * day, read: i > 0, link: "projects.html#" + p.id
+            }));
+            return {
+                v: 1,
+                created: now,
+                balance: 0,
+                tx: [],
+                cards: [],
+                promos: [],
+                plan: { id: "free", since: now, until: null, autoRenew: true },
+                donations: {},
+                notifications: notes,
+                prefs: { release: true, payment: true, security: true, system: true, toast: true },
+                security: {
+                    twoFA: false,
+                    backup: [],
+                    pwdChanged: null,
+                    sessions: [
+                        { id: "current", device: dev, place: "Это устройство", ip: maskedIp(s.id + dev), last: now, current: true },
+                        { id: uid("S"), device: "Windows · NEXUS Launcher 1.4.1", place: "Нидерланды", ip: maskedIp(s.id + "launcher"), last: now - 3 * day },
+                        { id: uid("S"), device: "Android · Chromium", place: "Нидерланды", ip: maskedIp(s.id + "phone"), last: now - 8 * day }
+                    ],
+                    log: [
+                        { date: now, event: "Вход в аккаунт", device: dev, ok: true },
+                        { date: now - 3 * day, event: "Вход через NEXUS Launcher", device: "Windows · NEXUS Launcher", ok: true },
+                        { date: now - 8 * day + 3600000, event: "Неверный пароль", device: "Android · Chromium", ok: false }
+                    ]
+                },
+                profile: {
+                    displayName: s.callsign,
+                    bio: "",
+                    country: "NL",
+                    timezone: (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Amsterdam"; } catch (e) { return "Europe/Amsterdam"; } })(),
+                    discord: "",
+                    github: "",
+                    public: true
+                }
+            };
+        },
+
+        /* Защита от битых / старых данных */
+        normalize(a, s) {
+            const base = this.seed(s);
+            if (!a || typeof a !== "object") return base;
+            ["tx", "cards", "promos", "notifications"].forEach(k => { if (!Array.isArray(a[k])) a[k] = base[k]; });
+            a.balance = Math.max(0, Math.round(Number(a.balance) || 0));
+            a.plan = Object.assign({}, base.plan, a.plan);
+            if (!PLANS[a.plan.id]) a.plan.id = "free";
+            a.donations = a.donations && typeof a.donations === "object" ? a.donations : {};
+            a.prefs = Object.assign({}, base.prefs, a.prefs);
+            a.security = Object.assign({}, base.security, a.security);
+            ["sessions", "log", "backup"].forEach(k => { if (!Array.isArray(a.security[k])) a.security[k] = base.security[k]; });
+            a.profile = Object.assign({}, base.profile, a.profile);
+            if (!a.created) a.created = base.created;
+            return a;
+        },
+
+        get() {
+            const s = Auth.get();
+            if (!s) return null;
+            const map = this.readAll();
+            const a = this.normalize(map[s.id], s);
+            // Новый аккаунт сохраняем сразу, чтобы ID уведомлений и сеансов были стабильными
+            if (!map[s.id]) { map[s.id] = a; storage.setJSON(this.KEY, map); }
+            return a;
+        },
+
+        /* Изменение данных аккаунта: fn(account, session). Сохраняет и рассылает nexus:account */
+        mutate(fn, detail) {
+            const s = Auth.get();
+            if (!s) return null;
+            const map = this.readAll();
+            const a = this.normalize(map[s.id], s);
+            const res = fn(a, s);
+            a.tx = a.tx.slice(0, 200);
+            a.notifications = a.notifications.slice(0, 60);
+            a.security.log = a.security.log.slice(0, 40);
+            map[s.id] = a;
+            if (!storage.setJSON(this.KEY, map)) {
+                toast("Не удалось сохранить данные: хранилище браузера недоступно или переполнено", "warn");
+                return null;
+            }
+            this.emit(detail || {});
+            return res === undefined ? a : res;
+        },
+
+        emit(detail) {
+            updateWalletUI();
+            document.dispatchEvent(new CustomEvent("nexus:account", { detail: detail || {} }));
+        },
+
+        /* Вызывается из Auth.login: журнал входов и «текущее устройство» */
+        onLogin(s) {
+            const map = this.readAll();
+            const fresh = !map[s.id];
+            this.mutate(a => {
+                const dev = deviceName();
+                const cur = a.security.sessions.find(x => x.current);
+                if (cur) { cur.last = Date.now(); cur.device = dev; }
+                if (!fresh) a.security.log.unshift({ date: Date.now(), event: "Вход в аккаунт", device: dev, ok: true });
+            }, { action: "login" });
+        },
+
+        /* ----- Уведомления ----- */
+        notify(type, title, text, opts) {
+            opts = opts || {};
+            return this.mutate(a => {
+                if (a.prefs[type] === false && type !== "security") return null;
+                const n = { id: uid("N"), type, title, text: text || "", date: Date.now(), read: false, link: opts.link || "" };
+                a.notifications.unshift(n);
+                if (opts.toast !== false && a.prefs.toast) setTimeout(() => toast(`${title}${text ? " — " + text : ""}`, opts.tone || "info", { ttl: 4200 }), 60);
+                return n;
+            }, { action: "notify" });
+        },
+        unread() {
+            const a = this.get();
+            return a ? a.notifications.filter(n => !n.read).length : 0;
+        },
+        markRead(id) {
+            return this.mutate(a => { a.notifications.forEach(n => { if (!id || n.id === id) n.read = true; }); }, { action: "notif-read" });
+        },
+        removeNotification(id) {
+            return this.mutate(a => { a.notifications = id ? a.notifications.filter(n => n.id !== id) : []; }, { action: "notif-remove" });
+        },
+        setPref(key, value) {
+            return this.mutate(a => { a.prefs[key] = !!value; }, { action: "prefs" });
+        },
+
+        /* ----- Кошелёк ----- */
+        todayTopups(a) {
+            const from = Date.now() - 86400000;
+            return a.tx.filter(t => t.type === "topup" && t.status === "ok" && t.date >= from).reduce((s, t) => s + t.amount, 0);
+        },
+        checkTopup(kop) {
+            const a = this.get();
+            if (!a) return { ok: false, error: "auth", text: "Войдите в аккаунт" };
+            if (!Number.isFinite(kop) || kop < WALLET_LIMITS.min) return { ok: false, error: "min", text: `Минимальная сумма — ${formatMoney(WALLET_LIMITS.min)}` };
+            if (kop > WALLET_LIMITS.max) return { ok: false, error: "max", text: `Максимум за одну операцию — ${formatMoney(WALLET_LIMITS.max)}` };
+            if (this.todayTopups(a) + kop > WALLET_LIMITS.daily) return { ok: false, error: "daily", text: `Суточный лимит пополнений — ${formatMoney(WALLET_LIMITS.daily)}` };
+            return { ok: true };
+        },
+        /* Успешное пополнение (+ бонус, если положен) */
+        topup(kop, method, opts) {
+            opts = opts || {};
+            const chk = this.checkTopup(kop);
+            if (!chk.ok) return chk;
+            const res = this.mutate(a => {
+                const bonus = opts.noBonus ? 0 : topupBonus(kop);
+                const tx = { id: uid("TX"), type: "topup", title: "Пополнение баланса", method, amount: kop, status: "ok", date: Date.now() };
+                a.tx.unshift(tx);
+                a.balance += kop;
+                if (bonus) {
+                    a.tx.unshift({ id: uid("TX"), type: "bonus", title: `Бонус ${kop >= 500000 ? "10" : "5"}% к пополнению`, method: "NEXUS ID", amount: bonus, status: "ok", date: Date.now() + 1 });
+                    a.balance += bonus;
+                }
+                if (opts.card && opts.saveCard) {
+                    const c = opts.card;
+                    if (!a.cards.some(x => x.last4 === c.last4 && x.brand === c.brand && x.exp === c.exp)) {
+                        a.cards.unshift({ id: uid("C"), brand: c.brand, last4: c.last4, exp: c.exp, holder: c.holder || "", added: Date.now() });
+                        a.cards = a.cards.slice(0, 5);
+                    }
+                }
+                if (a.prefs.payment) a.notifications.unshift({ id: uid("N"), type: "payment", title: `Баланс пополнен на ${formatMoney(kop + bonus)}`, text: `${method}${bonus ? ` · бонус ${formatMoney(bonus)}` : ""}`, date: Date.now(), read: false, link: "wallet" });
+                return { ok: true, tx, bonus, balance: a.balance };
+            }, { action: "topup" });
+            if (res && res.ok) Syslog.add(`wallet: +${formatMoney(kop)} (${method})`);
+            return res || { ok: false, error: "storage", text: "Не удалось сохранить операцию" };
+        },
+        /* Неуспешный платёж тоже попадает в историю */
+        failTopup(kop, method, reason) {
+            return this.mutate(a => {
+                a.tx.unshift({ id: uid("TX"), type: "topup", title: "Пополнение баланса", method, amount: kop, status: "failed", reason, date: Date.now() });
+                if (a.prefs.payment) a.notifications.unshift({ id: uid("N"), type: "payment", title: "Платёж отклонён", text: `${formatMoney(kop)} · ${method} · ${reason}`, date: Date.now(), read: false, link: "wallet" });
+            }, { action: "topup-failed" });
+        },
+        spend(kop, title, meta) {
+            meta = meta || {};
+            const a0 = this.get();
+            if (!a0) return { ok: false, error: "auth", text: "Войдите в аккаунт" };
+            if (!(kop > 0)) return { ok: false, error: "amount", text: "Неверная сумма" };
+            if (a0.balance < kop) return { ok: false, error: "funds", text: `Недостаточно средств: нужно ${formatMoney(kop)}, на балансе ${formatMoney(a0.balance)}`, need: kop - a0.balance };
+            return this.mutate(a => {
+                const tx = { id: uid("TX"), type: meta.type || "spend", title, method: "Баланс NEXUS ID", amount: -kop, status: "ok", date: Date.now() };
+                a.tx.unshift(tx);
+                a.balance -= kop;
+                if (typeof meta.apply === "function") meta.apply(a, tx);
+                return { ok: true, tx, balance: a.balance };
+            }, { action: meta.type || "spend" });
+        },
+        applyPromo(raw) {
+            const code = String(raw || "").trim().toUpperCase();
+            const promo = PROMO_CODES[code];
+            const a0 = this.get();
+            if (!a0) return { ok: false, text: "Войдите в аккаунт" };
+            if (!code) return { ok: false, text: "Введите промокод" };
+            if (!promo) return { ok: false, text: "Промокод не найден или истёк" };
+            if (a0.promos.includes(code)) return { ok: false, text: "Этот промокод уже активирован" };
+            return this.mutate(a => {
+                a.promos.push(code);
+                a.balance += promo.amount;
+                a.tx.unshift({ id: uid("TX"), type: "bonus", title: promo.label, method: `Промокод ${code}`, amount: promo.amount, status: "ok", date: Date.now() });
+                if (a.prefs.payment) a.notifications.unshift({ id: uid("N"), type: "payment", title: `Промокод ${code} активирован`, text: `На баланс зачислено ${formatMoney(promo.amount)}`, date: Date.now(), read: false, link: "wallet" });
+                return { ok: true, amount: promo.amount, code };
+            }, { action: "promo" });
+        },
+        removeCard(id) {
+            return this.mutate(a => { a.cards = a.cards.filter(c => c.id !== id); }, { action: "card-remove" });
+        },
+
+        /* ----- Подписка ----- */
+        subscribe(planId) {
+            const plan = PLANS[planId];
+            const a0 = this.get();
+            if (!plan || !a0) return { ok: false, text: "Тариф недоступен" };
+            if (planId === "free") return this.cancelPlan(true);
+            if (a0.plan.id === planId && a0.plan.until > Date.now()) return { ok: false, text: `Тариф ${plan.label} уже активен` };
+            // Переход с NEXUS+ на PATRON: неиспользованные дни засчитываются
+            let credit = 0;
+            const cur = PLANS[a0.plan.id];
+            if (cur.price && a0.plan.until > Date.now()) credit = Math.round(cur.price * (a0.plan.until - Date.now()) / (30 * 86400000));
+            const price = Math.max(0, plan.price - credit);
+            if (a0.balance < price) return { ok: false, error: "funds", text: `Недостаточно средств: нужно ${formatMoney(price)}`, need: price - a0.balance };
+            return this.mutate(a => {
+                if (price > 0) {
+                    a.tx.unshift({ id: uid("TX"), type: "plan", title: `Подписка ${plan.label} · 30 дней${credit ? " (с учётом остатка)" : ""}`, method: "Баланс NEXUS ID", amount: -price, status: "ok", date: Date.now() });
+                    a.balance -= price;
+                }
+                a.plan = { id: planId, since: Date.now(), until: Date.now() + 30 * 86400000, autoRenew: true };
+                a.notifications.unshift({ id: uid("N"), type: "payment", title: `Подписка ${plan.label} активна`, text: `Списано ${formatMoney(price)} · до ${dateStr(new Date(a.plan.until))}`, date: Date.now(), read: false, link: "plus" });
+                return { ok: true, price, plan };
+            }, { action: "plan" });
+        },
+        setAutoRenew(on) {
+            return this.mutate(a => { a.plan.autoRenew = !!on; }, { action: "plan-renew" });
+        },
+        cancelPlan(now) {
+            return this.mutate(a => {
+                if (now || !a.plan.until) a.plan = { id: "free", since: Date.now(), until: null, autoRenew: true };
+                else a.plan.autoRenew = false;
+                return { ok: true };
+            }, { action: "plan-cancel" });
+        },
+        /* Продление / окончание подписки (при загрузке страницы и раз в минуту) */
+        checkRenewal() {
+            const a0 = this.get();
+            if (!a0 || a0.plan.id === "free" || !a0.plan.until || a0.plan.until > Date.now()) return;
+            const plan = PLANS[a0.plan.id];
+            this.mutate(a => {
+                if (a.plan.autoRenew && a.balance >= plan.price) {
+                    a.balance -= plan.price;
+                    a.plan.until = Math.max(a.plan.until, Date.now()) + 30 * 86400000;
+                    a.tx.unshift({ id: uid("TX"), type: "plan", title: `Продление ${plan.label} · 30 дней`, method: "Баланс NEXUS ID", amount: -plan.price, status: "ok", date: Date.now() });
+                    a.notifications.unshift({ id: uid("N"), type: "payment", title: `Подписка ${plan.label} продлена`, text: `Списано ${formatMoney(plan.price)}`, date: Date.now(), read: false, link: "plus" });
+                } else {
+                    a.notifications.unshift({ id: uid("N"), type: "payment", title: `Подписка ${plan.label} закончилась`, text: a.plan.autoRenew ? "Не хватило средств для продления — пополните баланс" : "Автопродление было выключено", date: Date.now(), read: false, link: "plus" });
+                    a.plan = { id: "free", since: Date.now(), until: null, autoRenew: true };
+                }
+            }, { action: "plan-renewal" });
+        },
+        planInfo(a) {
+            a = a || this.get();
+            const p = a ? PLANS[a.plan.id] : PLANS.free;
+            return Object.assign({}, p, { until: a ? a.plan.until : null, autoRenew: a ? a.plan.autoRenew : false });
+        },
+
+        /* ----- Поддержка проектов ----- */
+        funding(pid) {
+            const f = FUNDING[pid] || { goal: 2000000, base: 0, purpose: "развитие проекта" };
+            const a = this.get();
+            const mine = a ? (a.donations[pid] || 0) : 0;
+            return { goal: f.goal, raised: f.base + mine, mine, purpose: f.purpose };
+        },
+        donate(pid, kop, comment) {
+            const p = PROJECTS.find(x => x.id === pid);
+            if (!p) return { ok: false, text: "Проект не найден" };
+            const cashPct = this.planInfo().cashback || 0;
+            const res = this.spend(kop, `Поддержка проекта ${p.title}`, {
+                type: "donate",
+                apply: (a, tx) => {
+                    if (comment) tx.comment = String(comment).slice(0, 140);
+                    a.donations[pid] = (a.donations[pid] || 0) + kop;
+                    const cash = cashPct ? Math.round(kop * cashPct / 100) : 0;
+                    if (cash) {
+                        a.balance += cash;
+                        a.tx.unshift({ id: uid("TX"), type: "cashback", title: `Кешбэк ${cashPct}% · ${PLANS[a.plan.id].label}`, method: "NEXUS ID", amount: cash, status: "ok", date: Date.now() + 1 });
+                    }
+                    a.notifications.unshift({ id: uid("N"), type: "payment", title: `Спасибо за поддержку ${p.title}!`, text: `${formatMoney(kop)}${cash ? ` · кешбэк ${formatMoney(cash)}` : ""}`, date: Date.now(), read: false, link: "plus" });
+                }
+            });
+            if (res && res.ok) Syslog.add(`wallet: поддержка ${p.id} ${formatMoney(kop)}`);
+            return res;
+        },
+
+        /* ----- Безопасность ----- */
+        logEvent(event, ok) {
+            return this.mutate(a => { a.security.log.unshift({ date: Date.now(), event, device: deviceName(), ok: ok !== false }); }, { action: "security-log" });
+        },
+        changePassword() {
+            return this.mutate(a => {
+                a.security.pwdChanged = Date.now();
+                a.security.log.unshift({ date: Date.now(), event: "Пароль изменён", device: deviceName(), ok: true });
+                a.notifications.unshift({ id: uid("N"), type: "security", title: "Пароль изменён", text: `${deviceName()} · если это были не вы, завершите все сеансы`, date: Date.now(), read: false, link: "security" });
+            }, { action: "password" });
+        },
+        makeBackupCodes() {
+            const out = [];
+            for (let i = 0; i < 8; i++) out.push(`${randInt(1000, 9999)}-${randInt(1000, 9999)}`);
+            return out;
+        },
+        setTwoFA(on) {
+            return this.mutate(a => {
+                a.security.twoFA = !!on;
+                a.security.backup = on ? this.makeBackupCodes() : [];
+                a.security.log.unshift({ date: Date.now(), event: on ? "Включена двухфакторная защита" : "Двухфакторная защита выключена", device: deviceName(), ok: true });
+                a.notifications.unshift({ id: uid("N"), type: "security", title: on ? "2FA включена" : "2FA выключена", text: on ? "Сохраните резервные коды в надёжном месте" : "Рекомендуем снова включить двухфакторную защиту", date: Date.now(), read: false, link: "security" });
+                return a.security.backup.slice();
+            }, { action: "2fa" });
+        },
+        regenBackup() {
+            return this.mutate(a => {
+                a.security.backup = this.makeBackupCodes();
+                a.security.log.unshift({ date: Date.now(), event: "Созданы новые резервные коды", device: deviceName(), ok: true });
+                return a.security.backup.slice();
+            }, { action: "2fa-codes" });
+        },
+        endSession(id) {
+            return this.mutate(a => {
+                const before = a.security.sessions.length;
+                a.security.sessions = a.security.sessions.filter(x => x.current || (id && x.id !== id));
+                const n = before - a.security.sessions.length;
+                if (n) a.security.log.unshift({ date: Date.now(), event: id ? "Сеанс завершён" : `Завершены другие сеансы (${n})`, device: deviceName(), ok: true });
+                return n;
+            }, { action: "sessions" });
+        },
+        /* Оценка защиты аккаунта для «Обзора» и «Безопасности» */
+        securityScore(a, s) {
+            a = a || this.get();
+            s = s || Auth.get();
+            if (!a || !s) return { score: 0, items: [] };
+            const items = [
+                { id: "email", label: "Email указан", done: !!(s.email && !/\.example$/.test(s.email)), tab: "profile", action: "Указать email" },
+                { id: "2fa", label: "Двухфакторная защита", done: a.security.twoFA, tab: "security", action: "Включить" },
+                { id: "pwd", label: "Пароль менялся за последние 180 дней", done: !!(a.security.pwdChanged && Date.now() - a.security.pwdChanged < 180 * 86400000), tab: "security", action: "Сменить" },
+                { id: "sessions", label: "Нет лишних активных сеансов", done: a.security.sessions.length <= 1, tab: "security", action: "Проверить" }
+            ];
+            const done = items.filter(x => x.done).length;
+            return { score: Math.round(done / items.length * 100), items };
+        },
+
+        /* ----- Профиль и данные ----- */
+        updateProfile(patch) {
+            return this.mutate(a => {
+                Object.keys(patch).forEach(k => { if (k in a.profile) a.profile[k] = patch[k]; });
+            }, { action: "profile" });
+        },
+        exportData() {
+            const s = Auth.get();
+            const a = this.get();
+            if (!s || !a) return null;
+            return { exported: new Date().toISOString(), session: { callsign: s.callsign, email: s.email, id: s.id, role: s.role, registered: s.registered, downloads: s.downloads }, account: a };
+        },
+        /* Удаление аккаунта: данные кошелька и профиля стираются, сессия завершается */
+        destroy() {
+            const s = Auth.get();
+            if (!s) return false;
+            const map = this.readAll();
+            delete map[s.id];
+            storage.setJSON(this.KEY, map);
+            // Данные тестовых сервисов принадлежат аккаунту — удаляем вместе с ним
+            VPN.drop(s.id);
+            IDEStore.drop(s.id);
+            Auth.logout();
+            return true;
+        }
+    };
+
+    /* Баланс в шапке (все страницы): [#header-wallet] + бейдж подписки */
+    function updateWalletUI() {
+        const box = $("#header-wallet");
+        const s = Auth.get();
+        if (!box) return;
+        if (!s) { box.hidden = true; return; }
+        const a = Account.get();
+        box.hidden = false;
+        const val = $("#header-balance", box);
+        if (val) val.textContent = formatMoney(a ? a.balance : 0);
+        const plan = a ? PLANS[a.plan.id] : PLANS.free;
+        box.setAttribute("data-plan", plan.id);
+        box.title = `Баланс NEXUS ID · тариф ${plan.label}`;
     }
 
     /* ================================================================
@@ -1672,8 +2212,9 @@
                     });
                     tab.addEventListener("keydown", e => {
                         let idx = null;
-                        if (e.key === "ArrowRight") idx = (i + 1) % tabs.length;
-                        else if (e.key === "ArrowLeft") idx = (i - 1 + tabs.length) % tabs.length;
+                        const vertical = list.getAttribute("aria-orientation") === "vertical";
+                        if (e.key === (vertical ? "ArrowDown" : "ArrowRight")) idx = (i + 1) % tabs.length;
+                        else if (e.key === (vertical ? "ArrowUp" : "ArrowLeft")) idx = (i - 1 + tabs.length) % tabs.length;
                         else if (e.key === "Home") idx = 0;
                         else if (e.key === "End") idx = tabs.length - 1;
                         if (idx !== null) {
@@ -2182,6 +2723,500 @@
     };
 
     /* ================================================================
+     * Тестовые сервисы NEXUS: VPN и IDE
+     * Это демонстрация: VPN-клиент симулирует туннель (трафик не шифруется
+     * и никуда не перенаправляется), IDE выполняет код только в изолированном
+     * iframe на странице. Данные хранятся в localStorage отдельно для
+     * каждого аккаунта: nx_vpn и nx_ide.
+     * ================================================================ */
+    const GiB = 1024 * 1024 * 1024;
+    const SERVICE_LIMITS = {
+        free: { label: "FREE", vpnData: 10 * GiB, vpnTiers: ["free"], secureCore: false, ideProjects: 3, ideProjectSize: 256 * 1024 },
+        pro: { label: "NEXUS+", vpnData: Infinity, vpnTiers: ["free", "plus"], secureCore: true, ideProjects: 25, ideProjectSize: 1024 * 1024 }
+    };
+    /* «pro» — подписка NEXUS+ / PATRON или роль CREATOR (у владельца есть все права) */
+    function serviceTier() {
+        const s = Auth.get();
+        if (!s) return null;
+        if (s.role === "creator") return "pro";
+        const a = Account.get();
+        return a && a.plan && a.plan.id !== "free" ? "pro" : "free";
+    }
+    function serviceLimits() {
+        return SERVICE_LIMITS[serviceTier() || "free"];
+    }
+    function monthKey(d) {
+        d = d || new Date();
+        return d.getFullYear() + "-" + pad(d.getMonth() + 1);
+    }
+    function formatBytes(b) {
+        if (!isFinite(b)) return "∞";
+        if (b < 1024) return Math.round(b) + " Б";
+        const u = ["КБ", "МБ", "ГБ", "ТБ"];
+        let i = -1;
+        do { b /= 1024; i++; } while (b >= 1024 && i < u.length - 1);
+        return (b >= 100 ? Math.round(b) : b.toFixed(1).replace(".", ",")) + " " + u[i];
+    }
+    function formatDuration(ms) {
+        const t = Math.max(0, Math.floor(ms / 1000));
+        const h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = t % 60;
+        return `${h}:${pad(m)}:${pad(s)}`;
+    }
+
+    /* Серверы VPN. Адреса выхода берутся из диапазона 198.18.0.0/15 (RFC 2544, для тестов),
+       домены — из зоны .test (RFC 2606): ни один из них не принадлежит реальным хостам. */
+    const VPN_SERVERS = [
+        { id: "nl-ams", cc: "NL", country: "Нидерланды", city: "Амстердам", lat: 52.37, lon: 4.9, tier: "free", tags: ["p2p", "stream"] },
+        { id: "de-fra", cc: "DE", country: "Германия", city: "Франкфурт", lat: 50.11, lon: 8.68, tier: "free", tags: ["p2p"] },
+        { id: "us-nyc", cc: "US", country: "США", city: "Нью-Йорк", lat: 40.71, lon: -74.0, tier: "free", tags: ["stream"] },
+        { id: "ch-zrh", cc: "CH", country: "Швейцария", city: "Цюрих", lat: 47.37, lon: 8.54, tier: "plus", tags: ["secure"] },
+        { id: "is-rkv", cc: "IS", country: "Исландия", city: "Рейкьявик", lat: 64.15, lon: -21.94, tier: "plus", tags: ["secure"] },
+        { id: "se-sto", cc: "SE", country: "Швеция", city: "Стокгольм", lat: 59.33, lon: 18.07, tier: "plus", tags: ["secure", "p2p"] },
+        { id: "fi-hel", cc: "FI", country: "Финляндия", city: "Хельсинки", lat: 60.17, lon: 24.94, tier: "plus", tags: ["p2p"] },
+        { id: "gb-lon", cc: "GB", country: "Великобритания", city: "Лондон", lat: 51.51, lon: -0.13, tier: "plus", tags: ["stream"] },
+        { id: "fr-par", cc: "FR", country: "Франция", city: "Париж", lat: 48.86, lon: 2.35, tier: "plus", tags: ["stream"] },
+        { id: "pl-waw", cc: "PL", country: "Польша", city: "Варшава", lat: 52.23, lon: 21.01, tier: "plus", tags: ["p2p"] },
+        { id: "tr-ist", cc: "TR", country: "Турция", city: "Стамбул", lat: 41.01, lon: 28.98, tier: "plus", tags: [] },
+        { id: "kz-ala", cc: "KZ", country: "Казахстан", city: "Алматы", lat: 43.24, lon: 76.89, tier: "plus", tags: [] },
+        { id: "ae-dxb", cc: "AE", country: "ОАЭ", city: "Дубай", lat: 25.2, lon: 55.27, tier: "plus", tags: [] },
+        { id: "sg-sin", cc: "SG", country: "Сингапур", city: "Сингапур", lat: 1.35, lon: 103.82, tier: "plus", tags: ["stream"] },
+        { id: "jp-tyo", cc: "JP", country: "Япония", city: "Токио", lat: 35.68, lon: 139.69, tier: "plus", tags: ["stream"] },
+        { id: "us-lax", cc: "US", country: "США", city: "Лос-Анджелес", lat: 34.05, lon: -118.24, tier: "plus", tags: ["stream", "p2p"] },
+        { id: "ca-tor", cc: "CA", country: "Канада", city: "Торонто", lat: 43.65, lon: -79.38, tier: "plus", tags: ["p2p"] },
+        { id: "br-sao", cc: "BR", country: "Бразилия", city: "Сан-Паулу", lat: -23.55, lon: -46.63, tier: "plus", tags: [] },
+        { id: "za-jnb", cc: "ZA", country: "ЮАР", city: "Йоханнесбург", lat: -26.2, lon: 28.05, tier: "plus", tags: [] },
+        { id: "au-syd", cc: "AU", country: "Австралия", city: "Сидней", lat: -33.87, lon: 151.21, tier: "plus", tags: ["stream"] }
+    ];
+    const VPN_TAGS = { p2p: "P2P", stream: "Стриминг", secure: "Secure Core" };
+    const VPN_PROTOCOLS = {
+        wireguard: { id: "wireguard", label: "WireGuard", port: 51820, transport: "UDP", speed: 1, handshake: 1, cipher: "ChaCha20-Poly1305 · Curve25519" },
+        "openvpn-udp": { id: "openvpn-udp", label: "OpenVPN UDP", port: 1194, transport: "UDP", speed: 0.74, handshake: 2.2, cipher: "AES-256-GCM · TLS 1.3" },
+        "openvpn-tcp": { id: "openvpn-tcp", label: "OpenVPN TCP", port: 443, transport: "TCP", speed: 0.58, handshake: 2.6, cipher: "AES-256-GCM · TLS 1.3" },
+        ikev2: { id: "ikev2", label: "IKEv2", port: 500, transport: "UDP", speed: 0.86, handshake: 1.5, cipher: "AES-256-GCM · ECP-384" }
+    };
+    /* Примерное местоположение пользователя по часовому поясу (без запросов в сеть) */
+    const TZ_GEO = {
+        "Europe/Amsterdam": [52.37, 4.9], "Europe/Brussels": [50.85, 4.35], "Europe/Berlin": [52.52, 13.4],
+        "Europe/Paris": [48.86, 2.35], "Europe/London": [51.51, -0.13], "Europe/Warsaw": [52.23, 21.01],
+        "Europe/Moscow": [55.75, 37.62], "Europe/Kiev": [50.45, 30.52], "Europe/Kyiv": [50.45, 30.52],
+        "Europe/Minsk": [53.9, 27.56], "Europe/Riga": [56.95, 24.11], "Europe/Helsinki": [60.17, 24.94],
+        "Europe/Istanbul": [41.01, 28.98], "Asia/Almaty": [43.24, 76.89], "Asia/Tashkent": [41.3, 69.24],
+        "Asia/Tbilisi": [41.72, 44.79], "Asia/Yerevan": [40.18, 44.51], "Asia/Yekaterinburg": [56.84, 60.6],
+        "Asia/Novosibirsk": [55.03, 82.92], "Asia/Vladivostok": [43.12, 131.89], "Asia/Tokyo": [35.68, 139.69],
+        "Asia/Dubai": [25.2, 55.27], "Asia/Singapore": [1.35, 103.82], "America/New_York": [40.71, -74.0],
+        "America/Chicago": [41.88, -87.63], "America/Los_Angeles": [34.05, -118.24], "America/Toronto": [43.65, -79.38],
+        "America/Sao_Paulo": [-23.55, -46.63], "Australia/Sydney": [-33.87, 151.21]
+    };
+    function homeGeo() {
+        let tz = "";
+        try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e) { /* ignore */ }
+        if (TZ_GEO[tz]) return { lat: TZ_GEO[tz][0], lon: TZ_GEO[tz][1], tz };
+        const zone = tz.split("/")[0];
+        const byZone = { Europe: [50.9, 6.0], America: [40.71, -74.0], Asia: [43.24, 76.89], Australia: [-33.87, 151.21], Africa: [-26.2, 28.05] };
+        const g = byZone[zone] || [52.37, 4.9];
+        return { lat: g[0], lon: g[1], tz: tz || "UTC" };
+    }
+    function geoDistance(a, b) {
+        const R = 6371, rad = Math.PI / 180;
+        const dLat = (b.lat - a.lat) * rad, dLon = (b.lon - a.lon) * rad;
+        const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLon / 2) ** 2;
+        return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+    }
+    function randomKey() {
+        const bytes = new Uint8Array(32);
+        if (window.crypto && window.crypto.getRandomValues) window.crypto.getRandomValues(bytes);
+        else for (let i = 0; i < 32; i++) bytes[i] = Math.floor(Math.random() * 256);
+        let s = "";
+        bytes.forEach(b => { s += String.fromCharCode(b); });
+        return window.btoa(s);
+    }
+
+    const VPN = {
+        KEY: "nx_vpn",
+        SERVERS: VPN_SERVERS,
+        TAGS: VPN_TAGS,
+        PROTOCOLS: VPN_PROTOCOLS,
+        /* Средний трафик подключённого устройства (байт/с) — для счётчика лимита FREE */
+        RATE: 150 * 1024,
+        home: homeGeo(),
+
+        defaults() {
+            return {
+                connected: false, server: null, since: 0, entry: null, protocol: "wireguard",
+                killSwitch: true, adblock: true, autoConnect: false, multihop: false,
+                favorites: ["nl-ams"], history: [], blocked: 0,
+                usage: { month: monthKey(), bytes: 0 }, keys: null, lastServer: null
+            };
+        },
+        readAll() {
+            const m = storage.getJSON(this.KEY, {});
+            return m && typeof m === "object" ? m : {};
+        },
+        normalize(st) {
+            const d = this.defaults();
+            st = Object.assign(d, st && typeof st === "object" ? st : {});
+            if (!Array.isArray(st.favorites)) st.favorites = [];
+            if (!Array.isArray(st.history)) st.history = [];
+            if (!VPN_PROTOCOLS[st.protocol]) st.protocol = "wireguard";
+            if (!st.usage || st.usage.month !== monthKey()) st.usage = { month: monthKey(), bytes: 0 };
+            if (st.connected && !this.find(st.server)) { st.connected = false; st.server = null; }
+            return st;
+        },
+        get() {
+            const s = Auth.get();
+            if (!s) return null;
+            return this.normalize(this.readAll()[s.id]);
+        },
+        mutate(fn, detail) {
+            const s = Auth.get();
+            if (!s) return null;
+            const map = this.readAll();
+            const st = this.normalize(map[s.id]);
+            const res = fn(st, s);
+            st.history = st.history.slice(0, 30);
+            map[s.id] = st;
+            if (!storage.setJSON(this.KEY, map)) {
+                toast("Не удалось сохранить состояние VPN: хранилище браузера недоступно", "warn");
+                return null;
+            }
+            this.emit(detail);
+            return res === undefined ? st : res;
+        },
+        emit(detail) {
+            updateVpnUI();
+            document.dispatchEvent(new CustomEvent("nexus:vpn", { detail: detail || {} }));
+        },
+        drop(userId) {
+            const map = this.readAll();
+            if (map[userId]) { delete map[userId]; storage.setJSON(this.KEY, map); }
+        },
+
+        find(id) { return VPN_SERVERS.find(s => s.id === id) || null; },
+        limits() { return serviceLimits(); },
+        isPro() { return serviceTier() === "pro"; },
+        canUse(srv) {
+            if (!srv) return { ok: false, reason: "missing", text: "Сервер не найден" };
+            if (!Auth.get()) return { ok: false, reason: "auth", text: "Войдите в NEXUS ID" };
+            if (this.limits().vpnTiers.indexOf(srv.tier) < 0) return { ok: false, reason: "plan", text: `${srv.city} доступен с подпиской NEXUS+` };
+            return { ok: true };
+        },
+        /* Пинг: расстояние до сервера + накладные расходы протокола и небольшой джиттер */
+        ping(srv, protocol, jitter) {
+            const p = VPN_PROTOCOLS[protocol] || VPN_PROTOCOLS.wireguard;
+            const base = geoDistance(this.home, srv) / 62 + 6 + (p.handshake - 1) * 3;
+            return Math.max(3, Math.round(base + (jitter ? (Math.random() - 0.5) * Math.min(12, base * 0.15) : 0)));
+        },
+        /* Загрузка сервера (%): медленно «дышит» во времени, одинакова во всех вкладках */
+        load(srv, t) {
+            t = t || Date.now();
+            const h = hashString(srv.id);
+            const base = 22 + (h % 46);
+            const wave = 14 * Math.sin(t / 900000 + (h % 628) / 100) + 6 * Math.sin(t / 170000 + (h % 314) / 50);
+            return Math.round(clamp(base + wave, 4, 97));
+        },
+        score(srv) { return this.ping(srv) * (1 + this.load(srv) / 90); },
+        best(filter) {
+            const ok = VPN_SERVERS.filter(s => this.canUse(s).ok && (!filter || filter(s)));
+            ok.sort((a, b) => this.score(a) - this.score(b));
+            return ok[0] || null;
+        },
+        entryFor(srv) {
+            // Secure Core: вход через защищённый узел (CH / IS / SE), выход — выбранный сервер
+            const cores = VPN_SERVERS.filter(s => s.tags.indexOf("secure") >= 0 && s.id !== srv.id);
+            cores.sort((a, b) => geoDistance(this.home, a) - geoDistance(this.home, b));
+            return cores[0] || null;
+        },
+        exitIp(srv, st) {
+            const i = Math.max(0, VPN_SERVERS.indexOf(srv));
+            const h = hashString(srv.id + ":" + ((st && st.since) || 0));
+            return `198.${18 + (i >= 10 ? 1 : 0)}.${(i % 10) * 24 + (h % 24)}.${2 + (h >>> 8) % 250}`;
+        },
+        virtualIp(userId) {
+            const h = hashString("vip:" + (userId || "guest"));
+            return `10.64.${h % 250 + 2}.${(h >>> 8) % 250 + 2}`;
+        },
+        hostname(srv) { return `${srv.id}.vpn.nexus.test`; },
+
+        sessionBytes(st, now) {
+            if (!st || !st.connected) return 0;
+            const sec = Math.min(((now || Date.now()) - st.since) / 1000, 6 * 3600);
+            return Math.max(0, Math.round(sec * this.RATE));
+        },
+        quota(st) {
+            st = st || this.get();
+            const limit = this.limits().vpnData;
+            const used = st ? st.usage.bytes + this.sessionBytes(st) : 0;
+            return { used, limit, left: Math.max(0, limit - used), pct: isFinite(limit) ? clamp(used / limit * 100, 0, 100) : 0, over: used >= limit };
+        },
+
+        /* Подключение (анимация — на странице клиента; здесь только смена состояния) */
+        connect(serverId, opts) {
+            opts = opts || {};
+            const srv = this.find(serverId) || this.best();
+            const can = this.canUse(srv);
+            if (!can.ok) return can;
+            const cur = this.get();
+            if (this.quota(cur).over) return { ok: false, reason: "quota", text: `Лимит ${formatBytes(this.limits().vpnData)} в этом месяце исчерпан` };
+            const pro = this.isPro();
+            return this.mutate(st => {
+                if (st.connected) this.closeSession(st, "switch");
+                st.connected = true;
+                st.server = srv.id;
+                st.lastServer = srv.id;
+                st.since = Date.now();
+                st.blocked = 0;
+                st.entry = st.multihop && pro ? ((this.entryFor(srv) || {}).id || null) : null;
+                if (opts.protocol && VPN_PROTOCOLS[opts.protocol]) st.protocol = opts.protocol;
+                return { ok: true, server: srv, entry: this.find(st.entry) };
+            }, { action: "connect", server: srv.id });
+        },
+        closeSession(st, reason) {
+            const bytes = this.sessionBytes(st);
+            st.usage.bytes += bytes;
+            st.history.unshift({ server: st.server, entry: st.entry, protocol: st.protocol, start: st.since, end: Date.now(), bytes, blocked: st.blocked || 0, reason: reason || "user" });
+            st.connected = false;
+            st.server = null;
+            st.entry = null;
+            st.since = 0;
+        },
+        disconnect(reason) {
+            const cur = this.get();
+            if (!cur || !cur.connected) return { ok: false };
+            return this.mutate(st => { this.closeSession(st, reason); return { ok: true }; }, { action: "disconnect", reason: reason || "user" });
+        },
+        set(patch) {
+            return this.mutate(st => {
+                Object.keys(patch).forEach(k => { if (k in st) st[k] = patch[k]; });
+            }, { action: "settings", keys: Object.keys(patch) });
+        },
+        toggleFavorite(id) {
+            return this.mutate(st => {
+                const i = st.favorites.indexOf(id);
+                if (i >= 0) st.favorites.splice(i, 1); else st.favorites.push(id);
+                return i < 0;
+            }, { action: "favorite", id });
+        },
+        addBlocked(n) {
+            // Счётчик NetShield сохраняем без события, чтобы не перерисовывать всё каждую секунду
+            const s = Auth.get();
+            if (!s) return;
+            const map = this.readAll();
+            if (!map[s.id] || !map[s.id].connected) return;
+            map[s.id].blocked = (map[s.id].blocked || 0) + n;
+            storage.setJSON(this.KEY, map);
+        },
+        ensureKeys() {
+            const st = this.get();
+            if (st && st.keys) return st.keys;
+            const keys = { priv: randomKey(), pub: randomKey(), created: Date.now() };
+            this.mutate(x => { x.keys = keys; }, { action: "keys" });
+            return keys;
+        },
+        /* Лимит FREE исчерпан — отключаемся (проверка раз в минуту и при открытии страниц) */
+        enforce() {
+            const st = this.get();
+            if (!st || !st.connected) return;
+            const srv = this.find(st.server);
+            if (this.quota(st).over) {
+                this.disconnect("quota");
+                Account.notify("system", "VPN отключён: лимит трафика", `${formatBytes(this.limits().vpnData)} на тарифе FREE в этом месяце. Безлимит — в NEXUS+`, { link: "plus", tone: "warn" });
+            } else if (srv && !this.canUse(srv).ok) {
+                this.disconnect("plan");
+                toast(`VPN отключён: ${srv.city} доступен только с NEXUS+`, "warn", { ttl: 5000 });
+            }
+        }
+    };
+
+    /* NEXUS IDE: проекты пользователя (файлы — текст) */
+    const IDEStore = {
+        KEY: "nx_ide",
+        readAll() {
+            const m = storage.getJSON(this.KEY, {});
+            return m && typeof m === "object" ? m : {};
+        },
+        normalize(d) {
+            d = Object.assign({ projects: [], current: null, settings: {} }, d && typeof d === "object" ? d : {});
+            if (!Array.isArray(d.projects)) d.projects = [];
+            d.projects = d.projects.filter(p => p && p.id && p.files && typeof p.files === "object");
+            d.settings = Object.assign({ fontSize: 14, tabSize: 2, autoRun: true, split: 46, consoleH: 32, explorer: true }, d.settings || {});
+            if (d.current && !d.projects.some(p => p.id === d.current)) d.current = null;
+            return d;
+        },
+        get() {
+            const s = Auth.get();
+            if (!s) return null;
+            return this.normalize(this.readAll()[s.id]);
+        },
+        /* fn(data) — изменить; возвращает { ok } или { ok:false, error:"quota" } */
+        mutate(fn, detail) {
+            const s = Auth.get();
+            if (!s) return { ok: false, error: "auth" };
+            const map = this.readAll();
+            const d = this.normalize(map[s.id]);
+            const res = fn(d, s);
+            map[s.id] = d;
+            if (!storage.setJSON(this.KEY, map)) return { ok: false, error: "storage" };
+            document.dispatchEvent(new CustomEvent("nexus:ide", { detail: detail || {} }));
+            return Object.assign({ ok: true }, res && typeof res === "object" ? res : {});
+        },
+        drop(userId) {
+            const map = this.readAll();
+            if (map[userId]) { delete map[userId]; storage.setJSON(this.KEY, map); }
+        },
+        limits() { return serviceLimits(); },
+        utf8Len(str) {
+            let n = 0;
+            for (let i = 0; i < str.length; i++) {
+                const c = str.charCodeAt(i);
+                n += c < 0x80 ? 1 : c < 0x800 ? 2 : (c >= 0xD800 && c <= 0xDBFF) ? (i++, 4) : 3;
+            }
+            return n;
+        },
+        projectSize(p) {
+            return Object.keys(p.files).reduce((n, k) => n + this.utf8Len(k) + this.utf8Len(p.files[k] || ""), 0);
+        },
+        summary() {
+            const d = this.get();
+            if (!d) return null;
+            const list = d.projects.slice().sort((a, b) => (b.updated || 0) - (a.updated || 0));
+            return { count: list.length, limit: this.limits().ideProjects, recent: list.slice(0, 3), last: list[0] || null };
+        }
+    };
+
+    /* Индикатор VPN в строке статуса шапки (все страницы) */
+    function updateVpnUI() {
+        const el = document.getElementById("header-vpn");
+        if (!el) return;
+        const st = VPN.get();
+        const srv = st && st.connected ? VPN.find(st.server) : null;
+        el.hidden = !srv;
+        if (!srv) return;
+        const b = el.querySelector("b");
+        if (b) b.textContent = srv.cc;
+        const a = el.querySelector("a");
+        if (a) a.title = `NEXUS VPN: ${srv.city}, ${srv.country}${st.entry ? " · Secure Core" : ""}`;
+    }
+
+    /* ================================================================
+     * Данные сайта: контакты команды и уведомление о хранилище
+     * ================================================================ */
+    /* Каналы связи для страницы «Контакты». Пустые значения скрываются.
+       email   — адрес поддержки (например, "support@example.org"), откроется почтовый клиент;
+       discord — ссылка-приглашение https://discord.gg/…;
+       telegram — ссылка https://t.me/…;
+       github  — репозиторий: туда открываются баг-репорты (issues). */
+    const SITE = {
+        name: "NEXUS//DEV",
+        privacyVersion: "1.0",
+        contacts: {
+            email: "",
+            discord: "",
+            telegram: "",
+            github: "https://github.com/Stool12312356/123"
+        }
+    };
+
+    /* Все ключи, которые сайт пишет в хранилище браузера (для политики и кнопки «удалить всё») */
+    const STORAGE_KEYS = {
+        local: ["nx_session", "nx_accounts", "nx_settings", "nx_custom_projects", "nx_hidden_projects", "nx_custom_categories", "nx_tickets", "nx_consent", "nx_pending_dl", "nx_vpn", "nx_ide"],
+        session: ["nx_booted", "nx_welcome"]
+    };
+
+    const SiteData = {
+        /* Снимок всех данных сайта: [{ area, key, bytes, value }] */
+        list() {
+            const out = [];
+            const scan = (area, store) => {
+                try {
+                    const keys = [];
+                    for (let i = 0; i < store.length; i++) {
+                        const k = store.key(i);
+                        if (k && k.indexOf("nx_") === 0) keys.push(k);
+                    }
+                    keys.sort().forEach(k => {
+                        const v = store.getItem(k) || "";
+                        out.push({ area, key: k, bytes: (k.length + v.length) * 2, value: v });
+                    });
+                } catch (e) { /* хранилище недоступно */ }
+            };
+            try { scan("localStorage", window.localStorage); } catch (e) { /* ignore */ }
+            try { scan("sessionStorage", window.sessionStorage); } catch (e) { /* ignore */ }
+            return out;
+        },
+        exportJSON() {
+            const data = { site: SITE.name, exported: new Date().toISOString(), localStorage: {}, sessionStorage: {} };
+            this.list().forEach(r => {
+                let v = r.value;
+                try { v = JSON.parse(r.value); } catch (e) { /* строка */ }
+                data[r.area][r.key] = v;
+            });
+            return data;
+        },
+        /* Удаляет все ключи nx_* (включая неизвестные будущие версии) */
+        clearAll() {
+            this.list().forEach(r => {
+                try { (r.area === "localStorage" ? window.localStorage : window.sessionStorage).removeItem(r.key); } catch (e) { /* ignore */ }
+            });
+            Syslog.add("privacy: данные сайта удалены");
+        }
+    };
+
+    /* Уведомление о хранилище (сайт не использует cookie; localStorage — функциональный) */
+    const Consent = {
+        KEY: "nx_consent",
+        el: null,
+        accepted() {
+            const c = storage.getJSON(this.KEY, null);
+            return !!(c && c.v === SITE.privacyVersion);
+        },
+        init() {
+            if (this.accepted() || PAGE === "privacy") return;
+            // На главной ждём окончания заставки, чтобы баннер не перекрывал загрузку
+            document.addEventListener("nexus:ready", () => setTimeout(() => this.show(), 700), { once: true });
+        },
+        show() {
+            if (this.el || this.accepted()) return;
+            const el = document.createElement("section");
+            el.className = "consent-banner";
+            el.setAttribute("role", "region");
+            el.setAttribute("aria-label", "Уведомление о хранении данных");
+            el.setAttribute("augmented-ui", "tr-clip exe");
+            el.innerHTML = `
+                <div class="consent-icon" aria-hidden="true"><img src="assets/icons/disk.svg" alt="" width="22" height="22"></div>
+                <div class="consent-text">
+                    <p class="consent-title">Без cookie и трекеров</p>
+                    <p>Настройки, вход и данные кабинета хранятся только в вашем браузере (localStorage) — мы их не получаем.
+                        <a href="privacy.html">Подробнее</a></p>
+                </div>
+                <div class="consent-actions">
+                    <button class="btn btn-sm btn-primary" type="button" data-consent-ok>Понятно</button>
+                </div>`;
+            document.body.appendChild(el);
+            this.el = el;
+            const sync = () => document.documentElement.style.setProperty("--consent-h", el.offsetHeight + 12 + "px");
+            requestAnimationFrame(() => { el.classList.add("is-visible"); sync(); });
+            window.addEventListener("resize", sync);
+            this.onResize = sync;
+            el.querySelector("[data-consent-ok]").addEventListener("click", () => this.accept());
+        },
+        accept() {
+            storage.setJSON(this.KEY, { v: SITE.privacyVersion, date: Date.now() });
+            this.hide();
+            Sound.play("granted");
+        },
+        hide() {
+            const el = this.el;
+            if (!el) return;
+            this.el = null;
+            window.removeEventListener("resize", this.onResize);
+            document.documentElement.style.removeProperty("--consent-h");
+            el.classList.remove("is-visible");
+            el.classList.add("is-hiding");
+            setTimeout(() => el.remove(), reducedMotion() ? 0 : 260);
+        }
+    };
+
+    /* ================================================================
      * Документы (FAQ, правила, лицензия) — открываются в модальном окне
      * по кнопкам с атрибутом data-doc
      * ================================================================ */
@@ -2211,7 +3246,7 @@
                     <li>Уважайте других игроков: никаких оскорблений и спама.</li>
                     <li>Не распространяйте сборки закрытых тестов за пределами экосистемы.</li>
                     <li>Проект некоммерческий: торговля внутриигровыми вещами за реальные деньги запрещена.</li>
-                    <li>Нашли баг — сообщите через кабинет: это лучший способ помочь проекту.</li>
+                    <li>Нашли баг — сообщите через страницу <a href="contacts.html#bug">«Контакты»</a>: это лучший способ помочь проекту.</li>
                 </ol>`
         },
         license: {
@@ -2473,8 +3508,15 @@
                         "  login | register | logout — вход, регистрация, выход",
                         "  role [user|admin|creator] — текущая роль / сменить роль (тест)",
                         "  create          — создать проект (ADMIN, CREATOR)",
+                        "  balance         — баланс и последние операции",
+                        "  topup <сумма>   — тестовое пополнение баланса, например: topup 500",
                         "  dashboard       — личный кабинет",
                         "  home            — главная страница",
+                        "  privacy | contacts — политика конфиденциальности, контакты",
+                        "  services        — тестовые сервисы в кабинете",
+                        "  vpn [on|off|servers] — тестовый VPN, например: vpn on амстердам",
+                        "  ide             — NEXUS IDE (редактор кода в браузере)",
+                        "  404 [путь]      — проверить страницу 404, например: 404 wallet",
                         "  whoami          — текущий пользователь",
                         "  neofetch        — информация о системе браузера",
                         "  date, echo, history, clear",
@@ -2552,6 +3594,26 @@
                     if (res.created) this.print("role: вы были гостем — создана демо-сессия demo_operator.");
                     this.print(`role: роль переключена на ${ROLES[res.role].label} // ${ROLES[res.role].name}. Интерфейс обновлён.`);
                 },
+                balance() {
+                    const a = Account.get();
+                    if (!a) { this.print("balance: войдите в аккаунт — команда login", "err"); return; }
+                    const plan = PLANS[a.plan.id];
+                    this.printHtml(`Баланс: <span class="hl">${escapeHtml(formatMoney(a.balance))}</span> · тариф ${escapeHtml(plan.label)}${a.plan.until ? " до " + escapeHtml(dateStr(new Date(a.plan.until))) : ""}`);
+                    const last = a.tx.slice(0, 5);
+                    if (!last.length) this.print("Операций пока нет. Пополнить: topup 500");
+                    last.forEach(t => this.print(`  ${dateStr(new Date(t.date))}  ${formatMoney(t.amount, { sign: true }).padStart(12)}  ${t.status === "ok" ? "OK    " : "FAILED"}  ${t.title}`));
+                    this.printHtml('Кошелёк: <a href="dashboard.html#wallet">dashboard.html#wallet</a>');
+                },
+                topup(args) {
+                    if (!Auth.get()) { this.print("topup: войдите в аккаунт — команда login", "err"); Sound.play("denied"); return; }
+                    const rub = parseFloat(String(args[0] || "").replace(",", "."));
+                    if (!Number.isFinite(rub)) { this.print("topup: укажите сумму в рублях, например: topup 500", "err"); return; }
+                    const res = Account.topup(Math.round(rub * 100), "Тестовый платёж · терминал");
+                    if (!res.ok) { this.print(`topup: ${res.text}`, "err"); Sound.play("denied"); return; }
+                    Sound.play("granted");
+                    this.printHtml(`topup: зачислено <span class="hl">${escapeHtml(formatMoney(res.tx.amount + res.bonus))}</span>${res.bonus ? ` (в т.ч. бонус ${escapeHtml(formatMoney(res.bonus))})` : ""}. Баланс: ${escapeHtml(formatMoney(res.balance))}`);
+                    toast(`Баланс пополнен на ${formatMoney(res.tx.amount + res.bonus)}`, "ok");
+                },
                 create() {
                     if (!Auth.can("create")) {
                         this.print("create: нужна роль ADMIN или CREATOR. Подсказка: role admin", "err");
@@ -2567,6 +3629,72 @@
                     go("projects.html#new", "Открываю конструктор проекта в центре загрузок…");
                 },
                 home() { go("index.html", "Возвращаюсь на главную…"); },
+                privacy() { go("privacy.html", "Открываю политику конфиденциальности…"); },
+                contacts() { go("contacts.html", "Открываю контакты…"); },
+                // Тестовый VPN: «vpn» — статус, «vpn on [город|код]», «vpn off», «vpn servers»
+                vpn(args) {
+                    const sub = (args[0] || "status").toLowerCase();
+                    if (!Auth.get()) { this.print("vpn: сервисы доступны после входа. Введите «login».", "err"); return; }
+                    const st = VPN.get();
+                    if (sub === "status") {
+                        const srv = st.connected ? VPN.find(st.server) : null;
+                        if (!srv) { this.print("NEXUS VPN: отключено · не защищено"); }
+                        else {
+                            this.print(`NEXUS VPN: подключено · ${srv.city}, ${srv.country} (${srv.cc})${st.entry ? " через Secure Core " + VPN.find(st.entry).city : ""}`);
+                            this.print(`  протокол ${VPN_PROTOCOLS[st.protocol].label} · IP ${VPN.exitIp(srv, st)} · аптайм ${formatDuration(Date.now() - st.since)}`);
+                        }
+                        const q = VPN.quota(st);
+                        this.print(`  трафик за месяц: ${formatBytes(q.used)} из ${formatBytes(q.limit)}`);
+                        this.printHtml('Клиент: <a href="vpn.html">vpn.html</a> · команды: <span class="hl">vpn on [город]</span>, <span class="hl">vpn off</span>, <span class="hl">vpn servers</span>');
+                        return;
+                    }
+                    if (sub === "servers" || sub === "ls") {
+                        this.print("CODE  ГОРОД            LOAD  PING   ДОСТУП");
+                        VPN_SERVERS.forEach(s => {
+                            const ok = VPN.canUse(s).ok;
+                            this.print(`${s.cc.padEnd(5)} ${s.city.padEnd(16)} ${String(VPN.load(s)).padStart(3)}%  ${String(VPN.ping(s)).padStart(3)}ms  ${ok ? "открыт" : "NEXUS+"}`);
+                        });
+                        return;
+                    }
+                    if (sub === "off" || sub === "disconnect") {
+                        if (!st.connected) { this.print("vpn: уже отключено"); return; }
+                        VPN.disconnect("terminal");
+                        Sound.play("panels");
+                        this.print("NEXUS VPN: туннель закрыт");
+                        return;
+                    }
+                    if (sub === "on" || sub === "connect") {
+                        const q = (args.slice(1).join(" ") || "").toLowerCase();
+                        let srv = null;
+                        if (q) {
+                            srv = VPN_SERVERS.find(s => s.id === q || s.cc.toLowerCase() === q || s.city.toLowerCase().indexOf(q) === 0 || s.country.toLowerCase().indexOf(q) === 0);
+                            if (!srv) { this.print(`vpn: сервер «${q}» не найден. Список: vpn servers`, "err"); return; }
+                        }
+                        const res = VPN.connect(srv ? srv.id : null);
+                        if (!res || !res.ok) { this.print(`vpn: ${res ? res.text : "ошибка"}`, "err"); Sound.play("denied"); return; }
+                        Sound.play("granted");
+                        this.print(`NEXUS VPN: подключено · ${res.server.city}, ${res.server.country} · ${VPN_PROTOCOLS[VPN.get().protocol].label}`);
+                        return;
+                    }
+                    this.print("vpn: неизвестная команда. Используйте: vpn [status|on [город]|off|servers]", "err");
+                },
+                ide() { go("ide.html", "Запускаю NEXUS IDE…"); },
+                services() { go("dashboard.html#services", "Открываю сервисы в кабинете…"); },
+                // Проверка страницы 404: «404» — случайный несуществующий адрес, «404 wallet» — свой путь
+                "404"(args) {
+                    let target = args.join("-").replace(/^\/+/, "").replace(/[\s]+/g, "-");
+                    if (!target) target = "nx-test-" + Math.random().toString(36).slice(2, 7);
+                    if (window.location.protocol === "file:") {
+                        this.print("file:// — сервера нет, открываю 404.html напрямую с параметром ?path=");
+                        go("404.html?path=" + encodeURIComponent("/" + target), `Переход: /${target} …`);
+                        return;
+                    }
+                    // document.baseURI учитывает <base> на самой 404 и подпапку сайта
+                    const url = new URL(target, document.baseURI);
+                    this.print("Запрашиваю несуществующий адрес — сервер должен ответить страницей 404.html.");
+                    this.printHtml('Если вместо неё пустая ошибка сервера, настройте его (README → «Публикация») или откройте <a href="404.html">404.html</a>.');
+                    go(url.href, `GET ${url.pathname} …`);
+                },
                 whoami() {
                     const s = Auth.get();
                     this.print(s ? `${s.callsign} · ${s.id} · ${ROLES[s.role].label} // ${ROLES[s.role].name}` : "guest (не авторизован)");
@@ -2779,16 +3907,35 @@
         Tabs.init();
         Terminal.init();
         Docs.init();
+        Consent.init();
         initNav();
         observeReveal();
         initGlitch();
 
         setInterval(tickTelemetry, 2000);
+        Account.checkRenewal();
+        setInterval(() => Account.checkRenewal(), 60000);
+        // VPN: индикатор в шапке и контроль лимита FREE / доступа к серверам
+        updateVpnUI();
+        VPN.enforce();
+        setInterval(() => VPN.enforce(), 60000);
+        document.addEventListener("nexus:auth", updateVpnUI);
+        document.addEventListener("nexus:account", () => { updateVpnUI(); });
+        // Новый проект в каталоге → уведомление о релизе
+        document.addEventListener("nexus:catalog", e => {
+            if (!e.detail || e.detail.action !== "create" || !Auth.get()) return;
+            const p = PROJECTS.find(x => x.id === e.detail.id);
+            if (p) Account.notify("release", `Новый проект: ${p.title}`, `${STATUSES[p.status].label} · ${p.version}`, { link: "projects.html#" + p.id, toast: false });
+        });
 
         // Синхронизация входа/выхода и настроек между вкладками браузера
         window.addEventListener("storage", e => {
             if (e.key === Auth.KEY) updateUserUI();
+            if (e.key === Account.KEY) Account.emit({ action: "sync" });
             if (e.key === Settings.KEY) { Settings.load(); Settings.apply(); Sound.syncUI(); }
+            if (e.key === Consent.KEY && Consent.accepted()) Consent.hide();
+            if (e.key === VPN.KEY || e.key === Auth.KEY) VPN.emit({ action: "sync" });
+            if (e.key === IDEStore.KEY) document.dispatchEvent(new CustomEvent("nexus:ide", { detail: { action: "sync" } }));
             if (e.key === Catalog.KEY || e.key === Catalog.HIDDEN_KEY || e.key === Catalog.CAT_KEY) {
                 Catalog.load();
                 applyPermissions();
@@ -2807,7 +3954,8 @@
     /* Публичное API для js/pages.js */
     window.NEXUS = {
         PAGE, $, $$, clamp, rand, randInt, pick, pad, delay, escapeHtml, timeStr, dateStr, hashString, rgba,
-        storage, Settings, Sound, Auth, ROLES, ROLE_IDS, PERMISSIONS, ACCESS, ACCESS_CODES, switchRole, applyPermissions,
+        storage, Settings, Sound, Auth, Account, VPN, IDEStore, SERVICE_LIMITS, serviceTier, serviceLimits, formatBytes, formatDuration, monthKey, SITE, STORAGE_KEYS, SiteData, Consent, PLANS, PROMO_CODES, TEST_CARDS, WALLET_LIMITS, FUNDING,
+        formatMoney, cardBrand, luhnOk, topupBonus, deviceName, uid, detectOS, detectBrowser, ROLES, ROLE_IDS, PERMISSIONS, ACCESS, ACCESS_CODES, switchRole, applyPermissions,
         Catalog, BUILTIN_PROJECTS, BASE_CATEGORIES, PROJECT_ICONS, formatMiB, dateISO, toast, showBanner, Modal, Tabs, Syslog, Terminal,
         SERVERS, Telemetry, statusBadge, formatPlayers, PROJECTS, CATEGORIES, STATUSES, Docs,
         observeReveal, reducedMotion, copyText, updateUserUI, NICKS, THEMES, Theme

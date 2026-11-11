@@ -1,0 +1,2048 @@
+/*
+ * services.css — тестовые сервисы NEXUS: VPN-клиент (vpn.html) и IDE (ide.html)
+ * ------------------------------------------------------------------
+ * Подключается после blade-theme.css, layout.css и pages.css. Все цвета —
+ * от переменных темы (--c, --c-10…--c-90), поэтому 21 тема из меню
+ * перекрашивает и сервисы. Карточки сервисов в кабинете и индикатор VPN
+ * в шапке описаны в pages.css (они нужны на всех страницах).
+ */
+
+/* ================================================================
+ * Общее
+ * ================================================================ */
+.svc-title .test-badge {
+    vertical-align: middle;
+    margin-left: 10px;
+}
+.pro-chip {
+    display: inline-block;
+    padding: 0 5px 1px;
+    margin-left: 4px;
+    border: 1px solid var(--c-60);
+    font-family: var(--font_main);
+    font-style: normal;
+    font-weight: normal;
+    font-size: 10px;
+    line-height: 15px;
+    letter-spacing: 1px;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+.svc-muted {
+    font-size: 13px;
+    opacity: 0.65;
+}
+.svc-perks {
+    list-style: none;
+    margin: 12px 0;
+    padding: 0;
+    display: grid;
+    gap: 6px;
+}
+.svc-perks li {
+    position: relative;
+    padding-left: 22px;
+}
+.svc-perks li::before {
+    content: "[+]";
+    position: absolute;
+    left: 0;
+    font-family: var(--font_mono), monospace;
+    font-size: 11px;
+    line-height: 1.9;
+    opacity: 0.7;
+}
+.svc-modal .modal_body p:first-child b {
+    text-shadow: var(--glow-text);
+}
+
+/* Скрытые панели не должны растягивать сетку */
+#vpn-app[hidden],
+#ide-app[hidden],
+#svc-lock[hidden] {
+    display: none !important;
+}
+
+/* ================================================================
+ * NEXUS VPN — сетка «туннель / карта / серверы»
+ * ================================================================ */
+.vpn-grid {
+    display: grid;
+    grid-template-columns: minmax(250px, 20%) minmax(0, 1fr) minmax(270px, 22%);
+    grid-template-areas: "left shell right";
+    gap: clamp(16px, 1.6vw, 28px);
+    align-items: start;
+}
+.vpn-left { grid-area: left; }
+.vpn-right { grid-area: right; }
+.vpn-grid > .vpn-shell {
+    grid-area: shell;
+    min-width: 0;
+}
+.vpn-shell .shell {
+    min-height: 0;
+}
+.vpn-shell .shell-inner {
+    gap: 22px;
+    padding-bottom: 6px;
+}
+
+/* ----- Кнопка питания ----- */
+.vpn-power-mod {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding-bottom: 6px;
+}
+.vpn-power {
+    position: relative;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: 6px;
+    width: min(196px, 100%);
+    aspect-ratio: 1;
+    margin: 6px auto 12px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(var(--black_rgb), 0.55) 52%, transparent 53%);
+    color: var(--c);
+    font-family: var(--font_main);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.vpn-power:focus-visible {
+    outline: 2px solid var(--c);
+    outline-offset: 4px;
+}
+.vpn-power img {
+    position: relative;
+    filter: var(--icon_filter);
+    opacity: 0.7;
+    transition: opacity 0.2s linear, transform 0.2s var(--ease-edex);
+}
+.vpn-power:hover img {
+    opacity: 1;
+    transform: scale(1.06);
+}
+.vpn-power:active img {
+    transform: scale(0.94);
+}
+.vpn-power-label {
+    position: relative;
+    font-size: 12px;
+    letter-spacing: 2px;
+}
+.vpn-ring {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    transform: rotate(-90deg);
+}
+.vpn-ring circle {
+    fill: none;
+}
+.vpn-ring-track {
+    stroke: var(--c-20);
+    stroke-width: 3;
+}
+.vpn-ring-spin {
+    stroke: var(--c);
+    stroke-width: 3;
+    stroke-linecap: square;
+    stroke-dasharray: 0 553;
+    transition: stroke-dasharray 0.6s var(--ease-edex);
+    transform-origin: 100px 100px;
+    transform-box: view-box;
+}
+.vpn-ring-ticks {
+    stroke: var(--c-30);
+    stroke-width: 6;
+    stroke-dasharray: 1.5 6.46;
+}
+.vpn-state {
+    margin: 0;
+    font-family: var(--font_main);
+    font-size: 20px;
+    letter-spacing: 3px;
+}
+.vpn-sub {
+    margin: 4px 0 0;
+    min-height: 2.9em;
+    font-size: 13px;
+    line-height: 1.45;
+    opacity: 0.7;
+}
+.vpn-power-mod[data-state="off"] .vpn-state {
+    opacity: 0.75;
+}
+.vpn-power-mod[data-state="connecting"] .vpn-ring-spin,
+.vpn-power-mod[data-state="drop"] .vpn-ring-spin {
+    stroke-dasharray: 120 433;
+    animation: vpnSpin 1.1s linear infinite;
+}
+.vpn-power-mod[data-state="drop"] .vpn-ring-spin {
+    animation-duration: 0.5s;
+}
+.vpn-power-mod[data-state="connecting"] .vpn-state,
+.vpn-power-mod[data-state="drop"] .vpn-state {
+    animation: vpnBlink 1s steps(2) infinite;
+}
+.vpn-power-mod[data-state="on"] .vpn-ring-spin {
+    stroke-dasharray: 553 0;
+    filter: drop-shadow(0 0 6px var(--c));
+}
+.vpn-power-mod[data-state="on"] .vpn-ring-ticks {
+    stroke: var(--c-60);
+    animation: vpnSpinRev 24s linear infinite;
+    transform-origin: 100px 100px;
+    transform-box: view-box;
+}
+.vpn-power-mod[data-state="on"] .vpn-power {
+    background: radial-gradient(circle, var(--c-20) 0, rgba(var(--black_rgb), 0.5) 52%, transparent 53%);
+}
+.vpn-power-mod[data-state="on"] .vpn-power img {
+    opacity: 1;
+    filter: var(--icon_filter) drop-shadow(0 0 6px var(--c));
+}
+.vpn-power-mod[data-state="on"] .vpn-state {
+    text-shadow: var(--glow-text);
+}
+@keyframes vpnSpin {
+    to { transform: rotate(360deg); }
+}
+@keyframes vpnSpinRev {
+    to { transform: rotate(-360deg); }
+}
+@keyframes vpnBlink {
+    50% { opacity: 0.35; }
+}
+
+/* ----- Сеанс, трафик, протокол ----- */
+.vpn-facts .v {
+    font-family: var(--font_mono), monospace;
+    font-weight: normal;
+}
+.vpn-quota-text {
+    margin: 6px 0 0;
+    font-family: var(--font_mono), monospace;
+    font-size: 12px;
+    opacity: 0.75;
+}
+.meter > i.is-free {
+    background: repeating-linear-gradient(90deg, var(--c-60) 0 4px, transparent 4px 7px);
+    box-shadow: none;
+}
+.vpn-proto {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+}
+.vpn-proto-opt {
+    position: relative;
+    cursor: pointer;
+}
+.vpn-proto-opt input {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+}
+.vpn-proto-opt span {
+    display: grid;
+    gap: 1px;
+    height: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--c-30);
+    transition: border-color 0.15s linear, background-color 0.15s linear;
+}
+.vpn-proto-opt b {
+    font-family: var(--font_main);
+    font-weight: normal;
+    font-size: 13px;
+    letter-spacing: 0.5px;
+}
+.vpn-proto-opt i {
+    font-style: normal;
+    font-size: 11px;
+    opacity: 0.6;
+}
+.vpn-proto-opt:hover span {
+    border-color: var(--c-60);
+}
+.vpn-proto-opt input:checked + span {
+    border-color: var(--c);
+    background: var(--c-20);
+    box-shadow: inset 3px 0 0 var(--c);
+}
+.vpn-proto-opt input:focus-visible + span {
+    outline: 2px solid var(--c);
+    outline-offset: 2px;
+}
+.vpn-options .toggle {
+    padding: 9px 0;
+    gap: 10px;
+}
+.vpn-options .toggle-text b {
+    font-size: 14px;
+}
+.vpn-options .toggle-text span {
+    font-size: 12px;
+}
+.vpn-options .toggle .switch {
+    width: 56px;
+}
+
+/* ----- Карта ----- */
+.vpn-map-wrap {
+    position: relative;
+    border: 1px solid var(--c-20);
+    background:
+        linear-gradient(var(--c-10) 1px, transparent 1px) 0 0 / 100% 25%,
+        linear-gradient(90deg, var(--c-10) 1px, transparent 1px) 0 0 / 12.5% 100%,
+        rgba(var(--black_rgb), 0.35);
+    overflow: hidden;
+}
+.vpn-map {
+    display: block;
+    width: 100%;
+    cursor: crosshair;
+    touch-action: manipulation;
+}
+.vpn-map-tip {
+    position: absolute;
+    z-index: 2;
+    display: grid;
+    gap: 2px;
+    max-width: 230px;
+    padding: 6px 9px;
+    border: 1px solid var(--c);
+    background: rgba(var(--bg_rgb), 0.94);
+    box-shadow: var(--glow-soft);
+    font-size: 12px;
+    pointer-events: none;
+}
+.vpn-map-tip[hidden] {
+    display: none;
+}
+.vpn-map-tip b {
+    font-family: var(--font_main);
+    font-weight: normal;
+    font-size: 13px;
+}
+.vpn-map-tip span {
+    font-family: var(--font_mono), monospace;
+    font-size: 11px;
+}
+.vpn-map-tip i {
+    font-style: normal;
+    font-size: 11px;
+    opacity: 0.7;
+}
+.vpn-map-legend {
+    position: absolute;
+    left: 8px;
+    bottom: 6px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    opacity: 0.8;
+    pointer-events: none;
+}
+.vpn-map-legend li {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.vpn-map-legend i {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+}
+.lg-home {
+    border: 1px solid var(--c);
+    border-radius: 50%;
+}
+.lg-free {
+    background: var(--c);
+}
+.lg-plus {
+    border: 1px solid var(--c-60);
+    background: var(--c-20);
+}
+.lg-active {
+    background: var(--c);
+    box-shadow: 0 0 0 2px var(--bg, #000), 0 0 0 3px var(--c), 0 0 8px var(--c);
+}
+.vpn-map-coords {
+    position: absolute;
+    right: 8px;
+    top: 6px;
+    margin: 0;
+    font-family: var(--font_mono), monospace;
+    font-size: 11px;
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+/* ----- Трафик и журнал ----- */
+.vpn-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    gap: 22px;
+}
+.vpn-traffic {
+    display: block;
+    width: 100%;
+    height: 110px;
+    border-bottom: 1px solid var(--c-20);
+}
+.vpn-rates {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 8px;
+}
+.vpn-rates p {
+    display: grid;
+    gap: 2px;
+    margin: 0;
+    min-width: 0;
+}
+.vpn-rates span {
+    font-size: 10.5px;
+    letter-spacing: 1px;
+    opacity: 0.55;
+    white-space: nowrap;
+}
+.vpn-rates b {
+    font-family: var(--font_mono), monospace;
+    font-weight: normal;
+    font-size: 15px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.vpn-log {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    height: 168px;
+    overflow-y: auto;
+    font-family: var(--font_mono), monospace;
+    font-size: 11.5px;
+    line-height: 1.5;
+    overscroll-behavior: contain;
+}
+.vpn-log li {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 8px;
+    padding: 1px 0;
+    animation: vpnLogIn 0.25s var(--ease-edex) both;
+}
+.vpn-log time {
+    opacity: 0.45;
+}
+.vpn-log span {
+    overflow-wrap: anywhere;
+}
+.vpn-log .is-ok span::before {
+    content: "[ OK ] ";
+}
+.vpn-log .is-warn span::before {
+    content: "[WARN] ";
+}
+.vpn-log .is-err span {
+    color: var(--color_err, #ff6b4a);
+}
+.vpn-log .is-err span::before {
+    content: "[FAIL] ";
+}
+.vpn-log .is-quiet {
+    opacity: 0.55;
+}
+@keyframes vpnLogIn {
+    from { opacity: 0; transform: translateX(-6px); }
+}
+
+/* ----- Инструменты: скорость, утечки, конфиг ----- */
+.vpn-tools {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 22px;
+}
+.vpn-tools .mod {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.vpn-tools .mod-head {
+    margin-bottom: 0;
+}
+.vpn-gauge {
+    display: block;
+    width: 100%;
+    max-width: 260px;
+    height: auto;
+    margin: 0 auto;
+}
+.vpn-speed-res {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin: 0;
+    text-align: center;
+}
+.vpn-speed-res dt {
+    font-size: 10.5px;
+    letter-spacing: 1px;
+    opacity: 0.55;
+}
+.vpn-speed-res dd {
+    margin: 2px 0 0;
+    font-family: var(--font_mono), monospace;
+    font-size: 13px;
+    white-space: nowrap;
+}
+.vpn-tools .btn[disabled] {
+    opacity: 0.55;
+    cursor: progress;
+}
+.vpn-checks {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 6px;
+}
+.vpn-checks li {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr);
+    align-items: baseline;
+    gap: 4px 8px;
+    font-size: 13px;
+}
+.vpn-checks b {
+    font-weight: normal;
+    font-family: var(--font_main);
+    white-space: nowrap;
+}
+.vpn-checks i {
+    font-style: normal;
+    font-size: 11.5px;
+    opacity: 0.65;
+    overflow-wrap: anywhere;
+}
+.ck-dot {
+    align-self: center;
+    width: 9px;
+    height: 9px;
+    border: 1px solid var(--c-50);
+    transform: rotate(45deg);
+}
+.vpn-checks li[data-state="run"] .ck-dot {
+    border-color: var(--c);
+    animation: vpnBlink 0.5s steps(2) infinite;
+}
+.vpn-checks li[data-state="ok"] .ck-dot {
+    background: var(--c);
+    border-color: var(--c);
+    box-shadow: 0 0 6px var(--c);
+}
+.vpn-checks li[data-state="ok"] i {
+    opacity: 0.9;
+}
+.vpn-checks li[data-state="warn"] .ck-dot {
+    border-color: var(--c);
+    background: repeating-linear-gradient(45deg, var(--c) 0 2px, transparent 2px 4px);
+}
+.vpn-checks li[data-state="fail"] .ck-dot {
+    border-color: var(--color_err, #ff6b4a);
+    background: var(--color_err, #ff6b4a);
+}
+.vpn-checks li[data-state="fail"] i {
+    color: var(--color_err, #ff6b4a);
+    opacity: 1;
+}
+.vpn-tool-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: auto;
+}
+.vpn-config-text {
+    margin: 0;
+    font-size: 12.5px;
+    line-height: 1.5;
+    opacity: 0.75;
+}
+.vpn-pubkey {
+    display: grid;
+    gap: 3px;
+    margin: 0;
+}
+.vpn-pubkey span {
+    font-size: 10.5px;
+    letter-spacing: 1px;
+    opacity: 0.55;
+}
+.vpn-pubkey code {
+    padding: 5px 7px;
+    border: 1px dashed var(--c-30);
+    font-family: var(--font_mono), monospace;
+    font-size: 11.5px;
+    overflow-wrap: anywhere;
+    user-select: all;
+}
+
+/* ----- Список серверов ----- */
+.vpn-servers-mod {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.vpn-quick {
+    width: 100%;
+    justify-content: center;
+}
+.vpn-search {
+    width: 100%;
+}
+.vpn-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+.vpn-filters .cat-chip {
+    padding: 3px 8px 4px;
+    font-size: 11.5px;
+}
+.vpn-sort {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: 12px;
+}
+.vpn-sort > span {
+    opacity: 0.65;
+}
+.vpn-sort label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    opacity: 0.85;
+}
+.vpn-sort select {
+    width: auto;
+    padding-block: 3px;
+}
+.vpn-servers {
+    list-style: none;
+    margin: 0 -4px 0 0;
+    padding: 0 4px 0 0;
+    max-height: 540px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+.vpn-srv {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    border-bottom: 1px dashed var(--c-20);
+}
+.vpn-srv-main {
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr) 34px 52px;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 4px 7px 6px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.15s linear;
+}
+.vpn-srv-main:hover,
+.vpn-srv-main:focus-visible {
+    background: var(--c-10);
+}
+.vpn-srv-main:focus-visible,
+.vpn-fav:focus-visible {
+    outline: 1px solid var(--c);
+    outline-offset: -1px;
+}
+.vpn-cc {
+    display: grid;
+    place-items: center;
+    height: 20px;
+    border: 1px solid var(--c-50);
+    font-family: var(--font_main);
+    font-size: 11px;
+    letter-spacing: 1px;
+}
+.vpn-srv-name {
+    display: grid;
+    min-width: 0;
+}
+.vpn-srv-name b {
+    font-family: var(--font_main);
+    font-weight: normal;
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.vpn-srv-name i {
+    font-style: normal;
+    font-size: 11px;
+    opacity: 0.6;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.vpn-srv-load {
+    position: relative;
+    height: 4px;
+    background: var(--c-20);
+}
+.vpn-srv-load i {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: var(--c-70);
+}
+.vpn-srv-load i.is-high {
+    background: repeating-linear-gradient(90deg, var(--c) 0 3px, var(--c-40) 3px 5px);
+}
+.vpn-srv-ping {
+    font-family: var(--font_mono), monospace;
+    font-size: 11.5px;
+    text-align: right;
+    white-space: nowrap;
+}
+.vpn-srv-ping .pro-chip {
+    margin: 0;
+}
+.vpn-fav {
+    width: 30px;
+    border: 0;
+    background: transparent;
+    color: var(--c);
+    font-size: 15px;
+    opacity: 0.3;
+    cursor: pointer;
+    transition: opacity 0.15s linear, transform 0.15s var(--ease-edex);
+}
+.vpn-fav:hover {
+    opacity: 0.8;
+    transform: scale(1.15);
+}
+.vpn-fav.is-on {
+    opacity: 1;
+    text-shadow: var(--glow-text);
+}
+.vpn-srv.is-locked .vpn-srv-name,
+.vpn-srv.is-locked .vpn-cc,
+.vpn-srv.is-locked .vpn-srv-load {
+    opacity: 0.45;
+}
+.vpn-srv.is-selected .vpn-srv-main {
+    box-shadow: inset 2px 0 0 var(--c-60);
+}
+.vpn-srv.is-active {
+    background: var(--c-20);
+}
+.vpn-srv.is-active .vpn-srv-main {
+    box-shadow: inset 3px 0 0 var(--c);
+}
+.vpn-srv.is-active .vpn-cc {
+    background: var(--c);
+    color: var(--color_light_black, #000);
+    border-color: var(--c);
+}
+.vpn-srv.is-connecting .vpn-srv-main {
+    animation: vpnBlink 0.8s steps(2) infinite;
+}
+.vpn-empty {
+    padding: 16px 4px;
+    font-size: 13px;
+    opacity: 0.6;
+    text-align: center;
+}
+.vpn-history .feed-text i {
+    white-space: normal;
+}
+
+/* Подложка страницы при включённом VPN — лёгкая рамка-«щит» */
+body[data-vpn="on"] .vpn-shell .shell {
+    box-shadow: inset 0 0 40px var(--c-10);
+}
+
+/* ----- Адаптив VPN ----- */
+@media (max-width: 1279px) {
+    .vpn-grid {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-areas:
+            "shell shell"
+            "left right";
+    }
+    .vpn-servers {
+        max-height: 460px;
+    }
+}
+@media (max-width: 1023px) {
+    .vpn-tools {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .vpn-tools .vpn-config {
+        grid-column: 1 / -1;
+    }
+}
+@media (max-width: 767px) {
+    .vpn-grid {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas:
+            "left"
+            "shell"
+            "right";
+    }
+    .vpn-row,
+    .vpn-tools {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .vpn-rates {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .vpn-map-legend {
+        position: static;
+        padding: 6px 8px;
+        border-top: 1px solid var(--c-20);
+    }
+    .vpn-map-coords {
+        display: none;
+    }
+    .vpn-power {
+        width: 170px;
+    }
+    .vpn-log {
+        height: 140px;
+    }
+}
+
+/* ================================================================
+ * NEXUS IDE
+ * ================================================================ */
+.ide-page-head .page-lead {
+    max-width: 880px;
+}
+.ide-section {
+    padding-top: 0;
+}
+.ide {
+    display: flex;
+    flex-direction: column;
+    height: clamp(560px, calc(100vh - 150px), 960px);
+    height: clamp(560px, calc(100dvh - 150px), 960px);
+    padding: calc(0.74 * var(--u));
+    padding-bottom: calc(1.4 * var(--u));
+    overflow: hidden;
+}
+.ide > .shell-title {
+    margin-inline: calc(-0.74 * var(--u));
+    margin-top: calc(-0.2 * var(--u));
+}
+#ide-crumb {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ----- Панель инструментов ----- */
+.ide-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px 16px;
+    padding: 8px 2px 10px;
+    border-bottom: 1px solid var(--c-20);
+}
+.ide-tb-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+.ide-project {
+    width: auto;
+    min-width: 150px;
+    max-width: 240px;
+}
+.ide-tool {
+    display: inline-grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid var(--c-30);
+    background: transparent;
+    color: var(--c);
+    font-family: var(--font_mono), monospace;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background-color 0.15s linear, border-color 0.15s linear;
+}
+.ide-tool img {
+    filter: var(--icon_filter);
+}
+.ide-tool:hover {
+    border-color: var(--c);
+    background: var(--c-20);
+}
+.ide-tool:focus-visible {
+    outline: 2px solid var(--c);
+    outline-offset: 2px;
+}
+.ide-tool[aria-expanded="true"],
+.ide-tool[aria-pressed="true"] {
+    background: var(--c-20);
+    border-color: var(--c-60);
+}
+.ide-tool.ide-tool-sm {
+    width: 24px;
+    height: 24px;
+    font-size: 12px;
+    border-color: transparent;
+}
+.ide-tool.ide-tool-sm:hover {
+    border-color: var(--c-50);
+}
+.ide-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    user-select: none;
+}
+.ide-check input {
+    accent-color: var(--c);
+    margin: 0;
+}
+.ide-save-state {
+    min-width: 108px;
+    font-family: var(--font_mono), monospace;
+    font-size: 11px;
+    opacity: 0.6;
+    white-space: nowrap;
+}
+.ide-save-state::before {
+    content: "● ";
+}
+.ide-save-state[data-state="saved"]::before {
+    content: "✓ ";
+}
+.ide-save-state[data-state="dirty"],
+.ide-save-state[data-state="saving"] {
+    opacity: 0.9;
+}
+.ide-save-state[data-state="over"],
+.ide-save-state[data-state="error"] {
+    color: var(--color_err, #ff6b4a);
+    opacity: 1;
+}
+.ide-save-state[data-state="over"]::before,
+.ide-save-state[data-state="error"]::before {
+    content: "! ";
+}
+
+/* ----- Вкладки панелей (телефон) ----- */
+.ide-mtabs {
+    display: none;
+}
+
+/* ----- Тело: проводник / редактор / превью ----- */
+.ide-body {
+    --ide-run-w: 46%;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 210px minmax(0, 1fr) 7px minmax(220px, var(--ide-run-w));
+    grid-template-areas: "explorer editor split run";
+}
+.ide-body.no-explorer {
+    grid-template-columns: 0 minmax(0, 1fr) 7px minmax(220px, var(--ide-run-w));
+}
+.ide-body.no-explorer .ide-explorer {
+    visibility: hidden;
+    border: 0;
+}
+.ide-explorer { grid-area: explorer; }
+.ide-editor-col { grid-area: editor; }
+.ide-split { grid-area: split; }
+.ide-run-col { grid-area: run; }
+
+.ide-pane-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    min-height: 30px;
+    padding: 2px 4px 2px 8px;
+    border-bottom: 1px solid var(--c-20);
+    background: var(--c-10);
+    font-family: var(--font_main);
+    font-size: 11px;
+    letter-spacing: 1.5px;
+}
+.ide-pane-head > span:first-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ide-pane-head i {
+    margin-left: 6px;
+    font-family: var(--font_mono), monospace;
+    font-style: normal;
+    letter-spacing: 0;
+    opacity: 0.6;
+}
+.ide-pane-tools {
+    display: flex;
+    gap: 2px;
+    flex: none;
+}
+
+/* ----- Проводник ----- */
+.ide-explorer {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border-right: 1px solid var(--c-20);
+}
+.ide-newfile {
+    padding: 6px;
+    border-bottom: 1px dashed var(--c-20);
+}
+.ide-newfile[hidden] {
+    display: none;
+}
+.ide-newfile .input {
+    width: 100%;
+    font-family: var(--font_mono), monospace;
+    font-size: 12px;
+}
+.ide-newfile-err {
+    margin: 4px 0 0;
+    font-size: 11px;
+    color: var(--color_err, #ff6b4a);
+}
+.ide-newfile-err:empty {
+    display: none;
+}
+.ide-files,
+.ide-files ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.ide-files {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 4px 0;
+    font-size: 13px;
+}
+.ide-files ul {
+    padding-left: 12px;
+}
+.ide-files ul[hidden] {
+    display: none;
+}
+.ide-file {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.ide-file-btn,
+.ide-dir-btn {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    padding: 4px 8px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.ide-dir-btn {
+    gap: 5px;
+    font-family: var(--font_main);
+    font-size: 12.5px;
+    letter-spacing: 0.5px;
+}
+.ide-dir-btn img {
+    filter: var(--icon_filter);
+    opacity: 0.8;
+}
+.ide-caret {
+    width: 10px;
+    font-size: 10px;
+    opacity: 0.7;
+}
+.ide-file-btn:hover,
+.ide-dir-btn:hover {
+    background: var(--c-10);
+}
+.ide-file-btn:focus-visible,
+.ide-dir-btn:focus-visible {
+    outline: 1px solid var(--c);
+    outline-offset: -1px;
+}
+.ide-file.is-active > .ide-file-btn {
+    background: var(--c-20);
+    box-shadow: inset 2px 0 0 var(--c);
+}
+.ide-fname {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ide-entry-mark {
+    margin-left: auto;
+    font-style: normal;
+    font-size: 9px;
+    opacity: 0.6;
+}
+.ide-file-acts {
+    position: absolute;
+    right: 2px;
+    top: 50%;
+    display: none;
+    gap: 1px;
+    transform: translateY(-50%);
+    background: rgba(var(--bg_rgb), 0.92);
+}
+.ide-file:hover .ide-file-acts,
+.ide-file:focus-within .ide-file-acts {
+    display: flex;
+}
+.ide-file-acts button {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--c);
+    font-size: 12px;
+    cursor: pointer;
+}
+.ide-file-acts button:hover,
+.ide-file-acts button:focus-visible {
+    border-color: var(--c-60);
+    background: var(--c-20);
+    outline: 0;
+}
+.ide-files-empty {
+    padding: 14px 10px;
+    font-size: 12px;
+    opacity: 0.6;
+}
+.ide-ext {
+    flex: none;
+    display: inline-grid;
+    place-items: center;
+    min-width: 24px;
+    height: 14px;
+    padding: 0 2px;
+    border: 1px solid var(--c-40);
+    font-family: var(--font_mono), monospace;
+    font-size: 8.5px;
+    font-weight: bold;
+    letter-spacing: 0;
+    line-height: 1;
+}
+.ide-ext.ext-html { background: var(--c-20); }
+.ide-ext.ext-css { border-style: dashed; }
+.ide-ext.ext-js { background: var(--c); color: var(--color_light_black, #000); border-color: var(--c); }
+.ide-ext.ext-json,
+.ide-ext.ext-md { opacity: 0.8; }
+.ide-ext.ext-text { opacity: 0.55; }
+.ide-proj-meta {
+    display: grid;
+    gap: 5px;
+    padding: 8px;
+    border-top: 1px solid var(--c-20);
+    font-size: 11.5px;
+}
+.ide-proj-meta p {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 0;
+}
+.ide-proj-meta span {
+    opacity: 0.6;
+}
+.ide-proj-meta b {
+    font-family: var(--font_mono), monospace;
+    font-weight: normal;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ide-proj-meta .meter {
+    height: 4px;
+}
+
+/* ----- Вкладки файлов ----- */
+.ide-editor-col {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}
+.ide-tabs {
+    flex: none;
+    display: flex;
+    min-height: 31px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-bottom: 1px solid var(--c-20);
+    background: rgba(var(--black_rgb), 0.25);
+    scrollbar-width: thin;
+}
+.ide-tab {
+    position: relative;
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 200px;
+    padding: 0 4px 0 10px;
+    border-right: 1px solid var(--c-20);
+    font-size: 12.5px;
+    cursor: pointer;
+    opacity: 0.7;
+    user-select: none;
+}
+.ide-tab:hover {
+    opacity: 1;
+    background: var(--c-10);
+}
+.ide-tab:focus-visible {
+    outline: 1px solid var(--c);
+    outline-offset: -1px;
+}
+.ide-tab.is-active {
+    opacity: 1;
+    background: var(--c-10);
+}
+.ide-tab.is-active::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 2px;
+    background: var(--c);
+    box-shadow: var(--glow-soft);
+}
+.ide-tab-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ide-tab-close {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--c);
+    font-size: 15px;
+    line-height: 1;
+    opacity: 0.5;
+    cursor: pointer;
+}
+.ide-tab-close:hover {
+    opacity: 1;
+    background: var(--c-20);
+}
+
+/* ----- Поиск ----- */
+.ide-find {
+    position: absolute;
+    z-index: 5;
+    top: 36px;
+    right: 14px;
+    display: grid;
+    grid-template-columns: minmax(120px, 190px) auto auto auto;
+    align-items: center;
+    gap: 5px;
+    padding: 6px;
+    border: 1px solid var(--c-60);
+    background: rgba(var(--bg_rgb), 0.97);
+    box-shadow: var(--glow-soft);
+}
+.ide-find[hidden] {
+    display: none;
+}
+.ide-find #ide-find-close {
+    grid-column: 5;
+    grid-row: 1;
+}
+.ide-find #ide-replace-input,
+.ide-find #ide-replace-one,
+.ide-find #ide-replace-all {
+    display: none;
+}
+.ide-find.with-replace #ide-replace-input {
+    display: block;
+    grid-column: 1;
+}
+.ide-find.with-replace #ide-replace-one,
+.ide-find.with-replace #ide-replace-all {
+    display: inline-flex;
+}
+.ide-find.with-replace #ide-replace-one {
+    grid-column: 2 / 4;
+}
+.ide-find .input {
+    width: 100%;
+    font-family: var(--font_mono), monospace;
+    font-size: 12px;
+}
+.ide-find .btn.btn-sm {
+    padding: 3px 8px;
+    font-size: 12px;
+}
+.ide-find-count {
+    min-width: 46px;
+    font-family: var(--font_mono), monospace;
+    font-size: 11px;
+    text-align: center;
+    opacity: 0.7;
+}
+
+/* ----- Редактор: textarea поверх подсветки ----- */
+.ide-editor {
+    --ide-fs: 14px;
+    --ide-lh: 22px;
+    --ide-tab: 2;
+    --ide-pad: 10px;
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    background: rgba(var(--black_rgb), 0.35);
+}
+.ide-gutter {
+    overflow: hidden;
+    min-width: 42px;
+    padding: var(--ide-pad) 8px 60px 6px;
+    border-right: 1px solid var(--c-20);
+    font-family: "Fira Mono", monospace;
+    font-size: calc(var(--ide-fs) * 0.86);
+    line-height: var(--ide-lh);
+    text-align: right;
+    user-select: none;
+}
+.ide-gutter span {
+    display: block;
+    height: var(--ide-lh);
+    opacity: 0.35;
+}
+.ide-gutter span.is-cur {
+    opacity: 1;
+    text-shadow: var(--glow-text);
+}
+.ide-code {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+.ide-curline {
+    position: absolute;
+    z-index: 0;
+    left: 0;
+    right: 0;
+    top: var(--ide-pad);
+    height: var(--ide-lh);
+    background: var(--c-10);
+    pointer-events: none;
+}
+.ide-curline[hidden] {
+    display: none;
+}
+.ide-hl,
+.ide-input {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    padding: var(--ide-pad) 14px 60px;
+    border: 0;
+    font-family: "Fira Mono", monospace;
+    font-size: var(--ide-fs);
+    font-weight: normal;
+    line-height: var(--ide-lh);
+    letter-spacing: 0;
+    font-variant-ligatures: none;
+    font-kerning: none;
+    tab-size: var(--ide-tab);
+    -moz-tab-size: var(--ide-tab);
+    white-space: pre;
+    word-wrap: normal;
+    overflow-wrap: normal;
+    text-align: left;
+    text-transform: none;
+    box-sizing: border-box;
+}
+.ide-hl {
+    z-index: 1;
+    overflow: hidden;
+    pointer-events: none;
+    color: color-mix(in srgb, var(--c) 30%, #e8e2dc);
+}
+.ide-hl code {
+    font: inherit;
+    background: none;
+    padding: 0;
+    border: 0;
+    color: inherit;
+    white-space: inherit;
+}
+.ide-input {
+    z-index: 2;
+    width: 100%;
+    height: 100%;
+    resize: none;
+    overflow: auto;
+    outline: 0;
+    background: transparent;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    caret-color: var(--c);
+    scrollbar-width: thin;
+}
+.ide-input::selection {
+    background: var(--c-40);
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+}
+.ide-input:disabled {
+    cursor: default;
+}
+.ide-empty {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 10px;
+    background: rgba(var(--bg_rgb), 0.92);
+    font-size: 13px;
+    opacity: 0.85;
+}
+.ide-empty[hidden] {
+    display: none;
+}
+.ide-empty img,
+.ide-preview-idle img {
+    filter: var(--icon_filter);
+    opacity: 0.6;
+}
+
+/* Цвета токенов подсветки — производные от цвета темы */
+.t-com { color: var(--c-50); font-style: italic; }
+.t-str { color: color-mix(in srgb, var(--c) 45%, #f3efe0); }
+.t-num { color: color-mix(in srgb, var(--c) 60%, #ffffff); }
+.t-kw { color: var(--c); font-weight: bold; }
+.t-fn { color: color-mix(in srgb, var(--c) 75%, #ffffff); }
+.t-prop { color: color-mix(in srgb, var(--c) 40%, #d9d2cc); }
+.t-type { color: var(--c); text-decoration: underline dotted var(--c-40); text-underline-offset: 3px; }
+.t-punc { color: var(--c-60); }
+.t-sel { color: var(--c); }
+.t-val { color: color-mix(in srgb, var(--c) 45%, #f3efe0); }
+.t-tag { color: var(--c); }
+.t-attr { color: color-mix(in srgb, var(--c) 55%, #ffffff); font-style: italic; }
+.t-kw,
+.t-com,
+.t-attr {
+    /* жирный и курсив не должны менять ширину символов в моноширинном шрифте */
+    letter-spacing: 0;
+}
+
+/* ----- Разделители ----- */
+.ide-split,
+.ide-split-h {
+    position: relative;
+    background: transparent;
+    touch-action: none;
+}
+.ide-split {
+    cursor: col-resize;
+    border-left: 1px solid var(--c-20);
+}
+.ide-split-h {
+    flex: none;
+    height: 7px;
+    cursor: row-resize;
+    border-top: 1px solid var(--c-20);
+}
+.ide-split::after,
+.ide-split-h::after {
+    content: "";
+    position: absolute;
+    background: var(--c-40);
+    transition: background-color 0.15s linear;
+}
+.ide-split::after {
+    left: 2px;
+    top: 50%;
+    width: 2px;
+    height: 34px;
+    transform: translateY(-50%);
+}
+.ide-split-h::after {
+    top: 2px;
+    left: 50%;
+    width: 34px;
+    height: 2px;
+    transform: translateX(-50%);
+}
+.ide-split:hover::after,
+.ide-split:focus-visible::after,
+.ide-split-h:hover::after,
+.ide-split-h:focus-visible::after {
+    background: var(--c);
+    box-shadow: 0 0 6px var(--c);
+}
+.ide-split:focus-visible,
+.ide-split-h:focus-visible {
+    outline: 0;
+    background: var(--c-10);
+}
+.ide-dragging,
+.ide-dragging * {
+    user-select: none !important;
+}
+.ide-dragging iframe {
+    pointer-events: none;
+}
+
+/* ----- Превью и консоль ----- */
+.ide-run-col {
+    --ide-console-h: 32%;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}
+.ide-preview-pane {
+    flex: 1 1 auto;
+    min-height: 80px;
+    display: flex;
+    flex-direction: column;
+}
+.ide-preview {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    background: #fff;
+}
+#ide-frame {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: #fff;
+}
+.ide-preview-idle {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 10px;
+    background: var(--color_light_black, #0b0c0c);
+    background: rgb(var(--bg_rgb));
+    color: var(--c);
+    font-size: 13px;
+    text-align: center;
+    padding: 12px;
+}
+.ide-preview-idle[hidden] {
+    display: none;
+}
+.ide-preview-idle p {
+    margin: 0;
+    opacity: 0.75;
+}
+.ide-preview-pane.is-max {
+    position: fixed;
+    z-index: 950;
+    inset: 0;
+    background: rgb(var(--bg_rgb));
+    border: 1px solid var(--c);
+}
+html.ide-max-open {
+    overflow: hidden;
+}
+.ide-console {
+    flex: none;
+    height: var(--ide-console-h);
+    min-height: 72px;
+    display: flex;
+    flex-direction: column;
+    background: rgba(var(--black_rgb), 0.35);
+}
+.ide-console-out {
+    flex: 1 1 auto;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    font-family: var(--font_mono), monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    overscroll-behavior: contain;
+}
+.ide-console-out li {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 2px 8px;
+    border-bottom: 1px solid var(--c-10);
+}
+.cl-msg {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.cl-count {
+    flex: none;
+    min-width: 18px;
+    padding: 0 4px;
+    background: var(--c-30);
+    border-radius: 8px;
+    font-size: 10px;
+    text-align: center;
+}
+.cl-src {
+    flex: none;
+    margin-left: auto;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: 11px;
+    text-decoration: underline dotted;
+    opacity: 0.6;
+    cursor: pointer;
+}
+.cl-src:hover,
+.cl-src:focus-visible {
+    opacity: 1;
+}
+.cl-log .cl-msg {
+    color: color-mix(in srgb, var(--c) 30%, #e8e2dc);
+}
+.cl-info .cl-msg::before {
+    content: "ℹ ";
+    color: var(--c);
+}
+.cl-warn {
+    background: var(--c-10);
+}
+.cl-warn .cl-msg::before {
+    content: "▲ ";
+}
+.cl-warn .cl-msg {
+    color: var(--c);
+}
+.cl-error {
+    background: rgba(255, 60, 40, 0.08);
+}
+.cl-error .cl-msg {
+    color: var(--color_err, #ff6b4a);
+}
+.cl-error .cl-msg::before {
+    content: "✖ ";
+}
+.cl-result .cl-msg {
+    color: var(--c-80);
+}
+.cl-input .cl-msg {
+    opacity: 0.8;
+}
+.cl-sys {
+    border-bottom-style: dashed;
+}
+.cl-sys .cl-msg {
+    font-size: 11px;
+    opacity: 0.5;
+}
+.ide-console-in {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px;
+    border-top: 1px solid var(--c-20);
+    font-family: var(--font_mono), monospace;
+}
+.ide-console-in input {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--c);
+    font: inherit;
+    font-size: 12px;
+}
+.ide-console-in input::placeholder {
+    color: var(--c-40);
+}
+
+/* ----- Строка состояния ----- */
+.ide-status {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-height: 24px;
+    margin: 0 calc(-0.74 * var(--u)) calc(-1.4 * var(--u));
+    padding: 0 calc(0.74 * var(--u));
+    background: var(--c-20);
+    font-family: var(--font_mono), monospace;
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+}
+.ide-st-item {
+    padding: 3px 8px;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+button.ide-st-item {
+    cursor: pointer;
+}
+button.ide-st-item:hover {
+    background: var(--c-20);
+}
+.ide-st-problems::before {
+    content: "✓ ";
+}
+.ide-st-problems:not([data-count="0"]) {
+    color: var(--color_err, #ff6b4a);
+}
+.ide-st-problems:not([data-count="0"])::before {
+    content: "✖ ";
+}
+.ide-st-spacer {
+    flex: 1 1 auto;
+}
+
+/* ----- Модальные окна IDE ----- */
+.tpl-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 8px;
+}
+.tpl-card {
+    position: relative;
+    cursor: pointer;
+}
+.tpl-card input {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+}
+.tpl-card > span {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 3px 10px;
+    height: 100%;
+    padding: 10px;
+    border: 1px solid var(--c-30);
+    transition: border-color 0.15s linear, background-color 0.15s linear;
+}
+.tpl-card img {
+    grid-row: span 2;
+    filter: var(--icon_filter);
+}
+.tpl-card b {
+    font-family: var(--font_main);
+    font-weight: normal;
+    font-size: 14px;
+}
+.tpl-card i {
+    font-style: normal;
+    font-size: 12px;
+    opacity: 0.65;
+}
+.tpl-card:hover > span {
+    border-color: var(--c-60);
+}
+.tpl-card input:checked + span {
+    border-color: var(--c);
+    background: var(--c-20);
+    box-shadow: inset 3px 0 0 var(--c);
+}
+.tpl-card input:focus-visible + span {
+    outline: 2px solid var(--c);
+    outline-offset: 2px;
+}
+.ide-modal .field-label {
+    margin: 14px 0 8px;
+    font-size: 13px;
+    letter-spacing: 1px;
+    opacity: 0.75;
+}
+.ide-modal select.input {
+    width: 100%;
+}
+.ide-modal .toggle {
+    margin-top: 6px;
+}
+.ide-pm-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 16px;
+    margin: 14px 0;
+}
+.ide-pm-facts div {
+    padding-left: 8px;
+    border-left: 1px solid var(--c-30);
+}
+.ide-pm-facts dt {
+    font-size: 11px;
+    letter-spacing: 1px;
+    opacity: 0.55;
+}
+.ide-pm-facts dd {
+    margin: 2px 0 0;
+    font-family: var(--font_mono), monospace;
+    font-size: 12.5px;
+}
+.ide-pm-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--c-30);
+}
+.ide-keys td:first-child {
+    white-space: nowrap;
+}
+.ide-keys kbd {
+    padding: 1px 6px;
+    border: 1px solid var(--c-50);
+    font-family: var(--font_mono), monospace;
+    font-size: 12px;
+}
+
+/* ----- Адаптив IDE ----- */
+@media (max-width: 1100px) {
+    .ide-body {
+        grid-template-columns: 180px minmax(0, 1fr) 7px minmax(200px, var(--ide-run-w));
+    }
+    .ide-save-state {
+        min-width: 0;
+    }
+}
+@media (max-width: 767px) {
+    .ide-page-head .page-lead {
+        display: none;
+    }
+    .ide {
+        height: calc(100vh - 120px);
+        height: calc(100svh - 120px);
+        min-height: 480px;
+        padding-inline: 6px;
+    }
+    .ide > .shell-title,
+    .ide-status {
+        margin-inline: -6px;
+    }
+    .ide-status {
+        padding-inline: 6px;
+    }
+    .ide-toolbar {
+        gap: 6px;
+        padding: 6px 0;
+    }
+    .ide-tb-group {
+        gap: 6px;
+        flex-wrap: nowrap;
+    }
+    .ide-toolbar > .ide-tb-group:first-child {
+        flex: 1 1 100%;
+    }
+    .ide-project {
+        flex: 1 1 auto;
+        min-width: 0;
+        max-width: none;
+    }
+    .ide-tb-run {
+        flex: 1 1 100%;
+        justify-content: space-between;
+    }
+    .ide-save-state {
+        display: none;
+    }
+    .ide-mtabs {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        border-bottom: 1px solid var(--c-30);
+    }
+    .ide-mtabs button {
+        position: relative;
+        padding: 8px 2px;
+        border: 0;
+        background: transparent;
+        color: var(--c);
+        font-family: var(--font_main);
+        font-size: 12.5px;
+        letter-spacing: 1px;
+        opacity: 0.65;
+    }
+    .ide-mtabs button[aria-selected="true"] {
+        opacity: 1;
+        background: var(--c-10);
+        box-shadow: inset 0 -2px 0 var(--c);
+    }
+    .ide-mtabs b {
+        display: inline-block;
+        min-width: 16px;
+        padding: 0 4px;
+        background: var(--color_err, #ff6b4a);
+        color: #000;
+        font-size: 10px;
+        line-height: 15px;
+    }
+    .ide-mtabs b[hidden] {
+        display: none;
+    }
+    .ide-body,
+    .ide-body.no-explorer {
+        display: flex;
+        flex-direction: column;
+    }
+    .ide-body > * {
+        display: none !important;
+    }
+    .ide-body .ide-split,
+    .ide-body .ide-split-h {
+        display: none !important;
+    }
+    .ide-body[data-pane="files"] > .ide-explorer,
+    .ide-body[data-pane="code"] > .ide-editor-col,
+    .ide-body[data-pane="preview"] > .ide-run-col,
+    .ide-body[data-pane="console"] > .ide-run-col {
+        display: flex !important;
+        flex: 1 1 auto;
+        visibility: visible;
+        border-right: 0;
+    }
+    .ide-body[data-pane="preview"] .ide-console,
+    .ide-body[data-pane="console"] .ide-preview-pane {
+        display: none;
+    }
+    .ide-body[data-pane="console"] .ide-console {
+        flex: 1 1 auto;
+        height: auto;
+    }
+    .ide-body[data-pane="preview"] .ide-preview-pane.is-max {
+        display: flex;
+    }
+    .ide-file-acts {
+        position: static;
+        display: flex;
+        transform: none;
+        background: none;
+    }
+    .ide-file-btn,
+    .ide-dir-btn {
+        padding-block: 8px;
+    }
+    .ide-tab {
+        padding-block: 4px;
+    }
+    .ide-find {
+        left: 6px;
+        right: 6px;
+        grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+    }
+    .ide-find.with-replace #ide-replace-input {
+        grid-column: 1 / 2;
+    }
+    .ide-gutter {
+        min-width: 34px;
+        padding-inline: 4px;
+    }
+    .ide-hl,
+    .ide-input {
+        padding-inline: 8px;
+    }
+    .ide-pm-facts {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .vpn-ring-spin,
+    .vpn-ring-ticks,
+    .vpn-state,
+    .vpn-log li,
+    .vpn-srv-main,
+    .vpn-checks .ck-dot {
+        animation: none !important;
+        transition: none !important;
+    }
+}
+
+/* Узкая колонка: сеанс VPN в две колонки, чтобы IP и пинг не обрезались */
+.netstat-grid.vpn-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.netstat-grid.vpn-facts .netstat-wide {
+    grid-column: 1 / -1;
+}
