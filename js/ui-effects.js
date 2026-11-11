@@ -1157,6 +1157,9 @@
             const map = this.readAll();
             delete map[s.id];
             storage.setJSON(this.KEY, map);
+            // Данные тестовых сервисов принадлежат аккаунту — удаляем вместе с ним
+            VPN.drop(s.id);
+            IDEStore.drop(s.id);
             Auth.logout();
             return true;
         }
@@ -2720,6 +2723,381 @@
     };
 
     /* ================================================================
+     * Тестовые сервисы NEXUS: VPN и IDE
+     * Это демонстрация: VPN-клиент симулирует туннель (трафик не шифруется
+     * и никуда не перенаправляется), IDE выполняет код только в изолированном
+     * iframe на странице. Данные хранятся в localStorage отдельно для
+     * каждого аккаунта: nx_vpn и nx_ide.
+     * ================================================================ */
+    const GiB = 1024 * 1024 * 1024;
+    const SERVICE_LIMITS = {
+        free: { label: "FREE", vpnData: 10 * GiB, vpnTiers: ["free"], secureCore: false, ideProjects: 3, ideProjectSize: 256 * 1024 },
+        pro: { label: "NEXUS+", vpnData: Infinity, vpnTiers: ["free", "plus"], secureCore: true, ideProjects: 25, ideProjectSize: 1024 * 1024 }
+    };
+    /* «pro» — подписка NEXUS+ / PATRON или роль CREATOR (у владельца есть все права) */
+    function serviceTier() {
+        const s = Auth.get();
+        if (!s) return null;
+        if (s.role === "creator") return "pro";
+        const a = Account.get();
+        return a && a.plan && a.plan.id !== "free" ? "pro" : "free";
+    }
+    function serviceLimits() {
+        return SERVICE_LIMITS[serviceTier() || "free"];
+    }
+    function monthKey(d) {
+        d = d || new Date();
+        return d.getFullYear() + "-" + pad(d.getMonth() + 1);
+    }
+    function formatBytes(b) {
+        if (!isFinite(b)) return "∞";
+        if (b < 1024) return Math.round(b) + " Б";
+        const u = ["КБ", "МБ", "ГБ", "ТБ"];
+        let i = -1;
+        do { b /= 1024; i++; } while (b >= 1024 && i < u.length - 1);
+        return (b >= 100 ? Math.round(b) : b.toFixed(1).replace(".", ",")) + " " + u[i];
+    }
+    function formatDuration(ms) {
+        const t = Math.max(0, Math.floor(ms / 1000));
+        const h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = t % 60;
+        return `${h}:${pad(m)}:${pad(s)}`;
+    }
+
+    /* Серверы VPN. Адреса выхода берутся из диапазона 198.18.0.0/15 (RFC 2544, для тестов),
+       домены — из зоны .test (RFC 2606): ни один из них не принадлежит реальным хостам. */
+    const VPN_SERVERS = [
+        { id: "nl-ams", cc: "NL", country: "Нидерланды", city: "Амстердам", lat: 52.37, lon: 4.9, tier: "free", tags: ["p2p", "stream"] },
+        { id: "de-fra", cc: "DE", country: "Германия", city: "Франкфурт", lat: 50.11, lon: 8.68, tier: "free", tags: ["p2p"] },
+        { id: "us-nyc", cc: "US", country: "США", city: "Нью-Йорк", lat: 40.71, lon: -74.0, tier: "free", tags: ["stream"] },
+        { id: "ch-zrh", cc: "CH", country: "Швейцария", city: "Цюрих", lat: 47.37, lon: 8.54, tier: "plus", tags: ["secure"] },
+        { id: "is-rkv", cc: "IS", country: "Исландия", city: "Рейкьявик", lat: 64.15, lon: -21.94, tier: "plus", tags: ["secure"] },
+        { id: "se-sto", cc: "SE", country: "Швеция", city: "Стокгольм", lat: 59.33, lon: 18.07, tier: "plus", tags: ["secure", "p2p"] },
+        { id: "fi-hel", cc: "FI", country: "Финляндия", city: "Хельсинки", lat: 60.17, lon: 24.94, tier: "plus", tags: ["p2p"] },
+        { id: "gb-lon", cc: "GB", country: "Великобритания", city: "Лондон", lat: 51.51, lon: -0.13, tier: "plus", tags: ["stream"] },
+        { id: "fr-par", cc: "FR", country: "Франция", city: "Париж", lat: 48.86, lon: 2.35, tier: "plus", tags: ["stream"] },
+        { id: "pl-waw", cc: "PL", country: "Польша", city: "Варшава", lat: 52.23, lon: 21.01, tier: "plus", tags: ["p2p"] },
+        { id: "tr-ist", cc: "TR", country: "Турция", city: "Стамбул", lat: 41.01, lon: 28.98, tier: "plus", tags: [] },
+        { id: "kz-ala", cc: "KZ", country: "Казахстан", city: "Алматы", lat: 43.24, lon: 76.89, tier: "plus", tags: [] },
+        { id: "ae-dxb", cc: "AE", country: "ОАЭ", city: "Дубай", lat: 25.2, lon: 55.27, tier: "plus", tags: [] },
+        { id: "sg-sin", cc: "SG", country: "Сингапур", city: "Сингапур", lat: 1.35, lon: 103.82, tier: "plus", tags: ["stream"] },
+        { id: "jp-tyo", cc: "JP", country: "Япония", city: "Токио", lat: 35.68, lon: 139.69, tier: "plus", tags: ["stream"] },
+        { id: "us-lax", cc: "US", country: "США", city: "Лос-Анджелес", lat: 34.05, lon: -118.24, tier: "plus", tags: ["stream", "p2p"] },
+        { id: "ca-tor", cc: "CA", country: "Канада", city: "Торонто", lat: 43.65, lon: -79.38, tier: "plus", tags: ["p2p"] },
+        { id: "br-sao", cc: "BR", country: "Бразилия", city: "Сан-Паулу", lat: -23.55, lon: -46.63, tier: "plus", tags: [] },
+        { id: "za-jnb", cc: "ZA", country: "ЮАР", city: "Йоханнесбург", lat: -26.2, lon: 28.05, tier: "plus", tags: [] },
+        { id: "au-syd", cc: "AU", country: "Австралия", city: "Сидней", lat: -33.87, lon: 151.21, tier: "plus", tags: ["stream"] }
+    ];
+    const VPN_TAGS = { p2p: "P2P", stream: "Стриминг", secure: "Secure Core" };
+    const VPN_PROTOCOLS = {
+        wireguard: { id: "wireguard", label: "WireGuard", port: 51820, transport: "UDP", speed: 1, handshake: 1, cipher: "ChaCha20-Poly1305 · Curve25519" },
+        "openvpn-udp": { id: "openvpn-udp", label: "OpenVPN UDP", port: 1194, transport: "UDP", speed: 0.74, handshake: 2.2, cipher: "AES-256-GCM · TLS 1.3" },
+        "openvpn-tcp": { id: "openvpn-tcp", label: "OpenVPN TCP", port: 443, transport: "TCP", speed: 0.58, handshake: 2.6, cipher: "AES-256-GCM · TLS 1.3" },
+        ikev2: { id: "ikev2", label: "IKEv2", port: 500, transport: "UDP", speed: 0.86, handshake: 1.5, cipher: "AES-256-GCM · ECP-384" }
+    };
+    /* Примерное местоположение пользователя по часовому поясу (без запросов в сеть) */
+    const TZ_GEO = {
+        "Europe/Amsterdam": [52.37, 4.9], "Europe/Brussels": [50.85, 4.35], "Europe/Berlin": [52.52, 13.4],
+        "Europe/Paris": [48.86, 2.35], "Europe/London": [51.51, -0.13], "Europe/Warsaw": [52.23, 21.01],
+        "Europe/Moscow": [55.75, 37.62], "Europe/Kiev": [50.45, 30.52], "Europe/Kyiv": [50.45, 30.52],
+        "Europe/Minsk": [53.9, 27.56], "Europe/Riga": [56.95, 24.11], "Europe/Helsinki": [60.17, 24.94],
+        "Europe/Istanbul": [41.01, 28.98], "Asia/Almaty": [43.24, 76.89], "Asia/Tashkent": [41.3, 69.24],
+        "Asia/Tbilisi": [41.72, 44.79], "Asia/Yerevan": [40.18, 44.51], "Asia/Yekaterinburg": [56.84, 60.6],
+        "Asia/Novosibirsk": [55.03, 82.92], "Asia/Vladivostok": [43.12, 131.89], "Asia/Tokyo": [35.68, 139.69],
+        "Asia/Dubai": [25.2, 55.27], "Asia/Singapore": [1.35, 103.82], "America/New_York": [40.71, -74.0],
+        "America/Chicago": [41.88, -87.63], "America/Los_Angeles": [34.05, -118.24], "America/Toronto": [43.65, -79.38],
+        "America/Sao_Paulo": [-23.55, -46.63], "Australia/Sydney": [-33.87, 151.21]
+    };
+    function homeGeo() {
+        let tz = "";
+        try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e) { /* ignore */ }
+        if (TZ_GEO[tz]) return { lat: TZ_GEO[tz][0], lon: TZ_GEO[tz][1], tz };
+        const zone = tz.split("/")[0];
+        const byZone = { Europe: [50.9, 6.0], America: [40.71, -74.0], Asia: [43.24, 76.89], Australia: [-33.87, 151.21], Africa: [-26.2, 28.05] };
+        const g = byZone[zone] || [52.37, 4.9];
+        return { lat: g[0], lon: g[1], tz: tz || "UTC" };
+    }
+    function geoDistance(a, b) {
+        const R = 6371, rad = Math.PI / 180;
+        const dLat = (b.lat - a.lat) * rad, dLon = (b.lon - a.lon) * rad;
+        const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLon / 2) ** 2;
+        return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+    }
+    function randomKey() {
+        const bytes = new Uint8Array(32);
+        if (window.crypto && window.crypto.getRandomValues) window.crypto.getRandomValues(bytes);
+        else for (let i = 0; i < 32; i++) bytes[i] = Math.floor(Math.random() * 256);
+        let s = "";
+        bytes.forEach(b => { s += String.fromCharCode(b); });
+        return window.btoa(s);
+    }
+
+    const VPN = {
+        KEY: "nx_vpn",
+        SERVERS: VPN_SERVERS,
+        TAGS: VPN_TAGS,
+        PROTOCOLS: VPN_PROTOCOLS,
+        /* Средний трафик подключённого устройства (байт/с) — для счётчика лимита FREE */
+        RATE: 150 * 1024,
+        home: homeGeo(),
+
+        defaults() {
+            return {
+                connected: false, server: null, since: 0, entry: null, protocol: "wireguard",
+                killSwitch: true, adblock: true, autoConnect: false, multihop: false,
+                favorites: ["nl-ams"], history: [], blocked: 0,
+                usage: { month: monthKey(), bytes: 0 }, keys: null, lastServer: null
+            };
+        },
+        readAll() {
+            const m = storage.getJSON(this.KEY, {});
+            return m && typeof m === "object" ? m : {};
+        },
+        normalize(st) {
+            const d = this.defaults();
+            st = Object.assign(d, st && typeof st === "object" ? st : {});
+            if (!Array.isArray(st.favorites)) st.favorites = [];
+            if (!Array.isArray(st.history)) st.history = [];
+            if (!VPN_PROTOCOLS[st.protocol]) st.protocol = "wireguard";
+            if (!st.usage || st.usage.month !== monthKey()) st.usage = { month: monthKey(), bytes: 0 };
+            if (st.connected && !this.find(st.server)) { st.connected = false; st.server = null; }
+            return st;
+        },
+        get() {
+            const s = Auth.get();
+            if (!s) return null;
+            return this.normalize(this.readAll()[s.id]);
+        },
+        mutate(fn, detail) {
+            const s = Auth.get();
+            if (!s) return null;
+            const map = this.readAll();
+            const st = this.normalize(map[s.id]);
+            const res = fn(st, s);
+            st.history = st.history.slice(0, 30);
+            map[s.id] = st;
+            if (!storage.setJSON(this.KEY, map)) {
+                toast("Не удалось сохранить состояние VPN: хранилище браузера недоступно", "warn");
+                return null;
+            }
+            this.emit(detail);
+            return res === undefined ? st : res;
+        },
+        emit(detail) {
+            updateVpnUI();
+            document.dispatchEvent(new CustomEvent("nexus:vpn", { detail: detail || {} }));
+        },
+        drop(userId) {
+            const map = this.readAll();
+            if (map[userId]) { delete map[userId]; storage.setJSON(this.KEY, map); }
+        },
+
+        find(id) { return VPN_SERVERS.find(s => s.id === id) || null; },
+        limits() { return serviceLimits(); },
+        isPro() { return serviceTier() === "pro"; },
+        canUse(srv) {
+            if (!srv) return { ok: false, reason: "missing", text: "Сервер не найден" };
+            if (!Auth.get()) return { ok: false, reason: "auth", text: "Войдите в NEXUS ID" };
+            if (this.limits().vpnTiers.indexOf(srv.tier) < 0) return { ok: false, reason: "plan", text: `${srv.city} доступен с подпиской NEXUS+` };
+            return { ok: true };
+        },
+        /* Пинг: расстояние до сервера + накладные расходы протокола и небольшой джиттер */
+        ping(srv, protocol, jitter) {
+            const p = VPN_PROTOCOLS[protocol] || VPN_PROTOCOLS.wireguard;
+            const base = geoDistance(this.home, srv) / 62 + 6 + (p.handshake - 1) * 3;
+            return Math.max(3, Math.round(base + (jitter ? (Math.random() - 0.5) * Math.min(12, base * 0.15) : 0)));
+        },
+        /* Загрузка сервера (%): медленно «дышит» во времени, одинакова во всех вкладках */
+        load(srv, t) {
+            t = t || Date.now();
+            const h = hashString(srv.id);
+            const base = 22 + (h % 46);
+            const wave = 14 * Math.sin(t / 900000 + (h % 628) / 100) + 6 * Math.sin(t / 170000 + (h % 314) / 50);
+            return Math.round(clamp(base + wave, 4, 97));
+        },
+        score(srv) { return this.ping(srv) * (1 + this.load(srv) / 90); },
+        best(filter) {
+            const ok = VPN_SERVERS.filter(s => this.canUse(s).ok && (!filter || filter(s)));
+            ok.sort((a, b) => this.score(a) - this.score(b));
+            return ok[0] || null;
+        },
+        entryFor(srv) {
+            // Secure Core: вход через защищённый узел (CH / IS / SE), выход — выбранный сервер
+            const cores = VPN_SERVERS.filter(s => s.tags.indexOf("secure") >= 0 && s.id !== srv.id);
+            cores.sort((a, b) => geoDistance(this.home, a) - geoDistance(this.home, b));
+            return cores[0] || null;
+        },
+        exitIp(srv, st) {
+            const i = Math.max(0, VPN_SERVERS.indexOf(srv));
+            const h = hashString(srv.id + ":" + ((st && st.since) || 0));
+            return `198.${18 + (i >= 10 ? 1 : 0)}.${(i % 10) * 24 + (h % 24)}.${2 + (h >>> 8) % 250}`;
+        },
+        virtualIp(userId) {
+            const h = hashString("vip:" + (userId || "guest"));
+            return `10.64.${h % 250 + 2}.${(h >>> 8) % 250 + 2}`;
+        },
+        hostname(srv) { return `${srv.id}.vpn.nexus.test`; },
+
+        sessionBytes(st, now) {
+            if (!st || !st.connected) return 0;
+            const sec = Math.min(((now || Date.now()) - st.since) / 1000, 6 * 3600);
+            return Math.max(0, Math.round(sec * this.RATE));
+        },
+        quota(st) {
+            st = st || this.get();
+            const limit = this.limits().vpnData;
+            const used = st ? st.usage.bytes + this.sessionBytes(st) : 0;
+            return { used, limit, left: Math.max(0, limit - used), pct: isFinite(limit) ? clamp(used / limit * 100, 0, 100) : 0, over: used >= limit };
+        },
+
+        /* Подключение (анимация — на странице клиента; здесь только смена состояния) */
+        connect(serverId, opts) {
+            opts = opts || {};
+            const srv = this.find(serverId) || this.best();
+            const can = this.canUse(srv);
+            if (!can.ok) return can;
+            const cur = this.get();
+            if (this.quota(cur).over) return { ok: false, reason: "quota", text: `Лимит ${formatBytes(this.limits().vpnData)} в этом месяце исчерпан` };
+            const pro = this.isPro();
+            return this.mutate(st => {
+                if (st.connected) this.closeSession(st, "switch");
+                st.connected = true;
+                st.server = srv.id;
+                st.lastServer = srv.id;
+                st.since = Date.now();
+                st.blocked = 0;
+                st.entry = st.multihop && pro ? ((this.entryFor(srv) || {}).id || null) : null;
+                if (opts.protocol && VPN_PROTOCOLS[opts.protocol]) st.protocol = opts.protocol;
+                return { ok: true, server: srv, entry: this.find(st.entry) };
+            }, { action: "connect", server: srv.id });
+        },
+        closeSession(st, reason) {
+            const bytes = this.sessionBytes(st);
+            st.usage.bytes += bytes;
+            st.history.unshift({ server: st.server, entry: st.entry, protocol: st.protocol, start: st.since, end: Date.now(), bytes, blocked: st.blocked || 0, reason: reason || "user" });
+            st.connected = false;
+            st.server = null;
+            st.entry = null;
+            st.since = 0;
+        },
+        disconnect(reason) {
+            const cur = this.get();
+            if (!cur || !cur.connected) return { ok: false };
+            return this.mutate(st => { this.closeSession(st, reason); return { ok: true }; }, { action: "disconnect", reason: reason || "user" });
+        },
+        set(patch) {
+            return this.mutate(st => {
+                Object.keys(patch).forEach(k => { if (k in st) st[k] = patch[k]; });
+            }, { action: "settings", keys: Object.keys(patch) });
+        },
+        toggleFavorite(id) {
+            return this.mutate(st => {
+                const i = st.favorites.indexOf(id);
+                if (i >= 0) st.favorites.splice(i, 1); else st.favorites.push(id);
+                return i < 0;
+            }, { action: "favorite", id });
+        },
+        addBlocked(n) {
+            // Счётчик NetShield сохраняем без события, чтобы не перерисовывать всё каждую секунду
+            const s = Auth.get();
+            if (!s) return;
+            const map = this.readAll();
+            if (!map[s.id] || !map[s.id].connected) return;
+            map[s.id].blocked = (map[s.id].blocked || 0) + n;
+            storage.setJSON(this.KEY, map);
+        },
+        ensureKeys() {
+            const st = this.get();
+            if (st && st.keys) return st.keys;
+            const keys = { priv: randomKey(), pub: randomKey(), created: Date.now() };
+            this.mutate(x => { x.keys = keys; }, { action: "keys" });
+            return keys;
+        },
+        /* Лимит FREE исчерпан — отключаемся (проверка раз в минуту и при открытии страниц) */
+        enforce() {
+            const st = this.get();
+            if (!st || !st.connected) return;
+            const srv = this.find(st.server);
+            if (this.quota(st).over) {
+                this.disconnect("quota");
+                Account.notify("system", "VPN отключён: лимит трафика", `${formatBytes(this.limits().vpnData)} на тарифе FREE в этом месяце. Безлимит — в NEXUS+`, { link: "plus", tone: "warn" });
+            } else if (srv && !this.canUse(srv).ok) {
+                this.disconnect("plan");
+                toast(`VPN отключён: ${srv.city} доступен только с NEXUS+`, "warn", { ttl: 5000 });
+            }
+        }
+    };
+
+    /* NEXUS IDE: проекты пользователя (файлы — текст) */
+    const IDEStore = {
+        KEY: "nx_ide",
+        readAll() {
+            const m = storage.getJSON(this.KEY, {});
+            return m && typeof m === "object" ? m : {};
+        },
+        normalize(d) {
+            d = Object.assign({ projects: [], current: null, settings: {} }, d && typeof d === "object" ? d : {});
+            if (!Array.isArray(d.projects)) d.projects = [];
+            d.projects = d.projects.filter(p => p && p.id && p.files && typeof p.files === "object");
+            d.settings = Object.assign({ fontSize: 14, tabSize: 2, autoRun: true, split: 46, consoleH: 32, explorer: true }, d.settings || {});
+            if (d.current && !d.projects.some(p => p.id === d.current)) d.current = null;
+            return d;
+        },
+        get() {
+            const s = Auth.get();
+            if (!s) return null;
+            return this.normalize(this.readAll()[s.id]);
+        },
+        /* fn(data) — изменить; возвращает { ok } или { ok:false, error:"quota" } */
+        mutate(fn, detail) {
+            const s = Auth.get();
+            if (!s) return { ok: false, error: "auth" };
+            const map = this.readAll();
+            const d = this.normalize(map[s.id]);
+            const res = fn(d, s);
+            map[s.id] = d;
+            if (!storage.setJSON(this.KEY, map)) return { ok: false, error: "storage" };
+            document.dispatchEvent(new CustomEvent("nexus:ide", { detail: detail || {} }));
+            return Object.assign({ ok: true }, res && typeof res === "object" ? res : {});
+        },
+        drop(userId) {
+            const map = this.readAll();
+            if (map[userId]) { delete map[userId]; storage.setJSON(this.KEY, map); }
+        },
+        limits() { return serviceLimits(); },
+        utf8Len(str) {
+            let n = 0;
+            for (let i = 0; i < str.length; i++) {
+                const c = str.charCodeAt(i);
+                n += c < 0x80 ? 1 : c < 0x800 ? 2 : (c >= 0xD800 && c <= 0xDBFF) ? (i++, 4) : 3;
+            }
+            return n;
+        },
+        projectSize(p) {
+            return Object.keys(p.files).reduce((n, k) => n + this.utf8Len(k) + this.utf8Len(p.files[k] || ""), 0);
+        },
+        summary() {
+            const d = this.get();
+            if (!d) return null;
+            const list = d.projects.slice().sort((a, b) => (b.updated || 0) - (a.updated || 0));
+            return { count: list.length, limit: this.limits().ideProjects, recent: list.slice(0, 3), last: list[0] || null };
+        }
+    };
+
+    /* Индикатор VPN в строке статуса шапки (все страницы) */
+    function updateVpnUI() {
+        const el = document.getElementById("header-vpn");
+        if (!el) return;
+        const st = VPN.get();
+        const srv = st && st.connected ? VPN.find(st.server) : null;
+        el.hidden = !srv;
+        if (!srv) return;
+        const b = el.querySelector("b");
+        if (b) b.textContent = srv.cc;
+        const a = el.querySelector("a");
+        if (a) a.title = `NEXUS VPN: ${srv.city}, ${srv.country}${st.entry ? " · Secure Core" : ""}`;
+    }
+
+    /* ================================================================
      * Данные сайта: контакты команды и уведомление о хранилище
      * ================================================================ */
     /* Каналы связи для страницы «Контакты». Пустые значения скрываются.
@@ -2740,7 +3118,7 @@
 
     /* Все ключи, которые сайт пишет в хранилище браузера (для политики и кнопки «удалить всё») */
     const STORAGE_KEYS = {
-        local: ["nx_session", "nx_accounts", "nx_settings", "nx_custom_projects", "nx_hidden_projects", "nx_custom_categories", "nx_tickets", "nx_consent", "nx_pending_dl"],
+        local: ["nx_session", "nx_accounts", "nx_settings", "nx_custom_projects", "nx_hidden_projects", "nx_custom_categories", "nx_tickets", "nx_consent", "nx_pending_dl", "nx_vpn", "nx_ide"],
         session: ["nx_booted", "nx_welcome"]
     };
 
@@ -3135,6 +3513,9 @@
                         "  dashboard       — личный кабинет",
                         "  home            — главная страница",
                         "  privacy | contacts — политика конфиденциальности, контакты",
+                        "  services        — тестовые сервисы в кабинете",
+                        "  vpn [on|off|servers] — тестовый VPN, например: vpn on амстердам",
+                        "  ide             — NEXUS IDE (редактор кода в браузере)",
                         "  404 [путь]      — проверить страницу 404, например: 404 wallet",
                         "  whoami          — текущий пользователь",
                         "  neofetch        — информация о системе браузера",
@@ -3250,6 +3631,55 @@
                 home() { go("index.html", "Возвращаюсь на главную…"); },
                 privacy() { go("privacy.html", "Открываю политику конфиденциальности…"); },
                 contacts() { go("contacts.html", "Открываю контакты…"); },
+                // Тестовый VPN: «vpn» — статус, «vpn on [город|код]», «vpn off», «vpn servers»
+                vpn(args) {
+                    const sub = (args[0] || "status").toLowerCase();
+                    if (!Auth.get()) { this.print("vpn: сервисы доступны после входа. Введите «login».", "err"); return; }
+                    const st = VPN.get();
+                    if (sub === "status") {
+                        const srv = st.connected ? VPN.find(st.server) : null;
+                        if (!srv) { this.print("NEXUS VPN: отключено · не защищено"); }
+                        else {
+                            this.print(`NEXUS VPN: подключено · ${srv.city}, ${srv.country} (${srv.cc})${st.entry ? " через Secure Core " + VPN.find(st.entry).city : ""}`);
+                            this.print(`  протокол ${VPN_PROTOCOLS[st.protocol].label} · IP ${VPN.exitIp(srv, st)} · аптайм ${formatDuration(Date.now() - st.since)}`);
+                        }
+                        const q = VPN.quota(st);
+                        this.print(`  трафик за месяц: ${formatBytes(q.used)} из ${formatBytes(q.limit)}`);
+                        this.printHtml('Клиент: <a href="vpn.html">vpn.html</a> · команды: <span class="hl">vpn on [город]</span>, <span class="hl">vpn off</span>, <span class="hl">vpn servers</span>');
+                        return;
+                    }
+                    if (sub === "servers" || sub === "ls") {
+                        this.print("CODE  ГОРОД            LOAD  PING   ДОСТУП");
+                        VPN_SERVERS.forEach(s => {
+                            const ok = VPN.canUse(s).ok;
+                            this.print(`${s.cc.padEnd(5)} ${s.city.padEnd(16)} ${String(VPN.load(s)).padStart(3)}%  ${String(VPN.ping(s)).padStart(3)}ms  ${ok ? "открыт" : "NEXUS+"}`);
+                        });
+                        return;
+                    }
+                    if (sub === "off" || sub === "disconnect") {
+                        if (!st.connected) { this.print("vpn: уже отключено"); return; }
+                        VPN.disconnect("terminal");
+                        Sound.play("panels");
+                        this.print("NEXUS VPN: туннель закрыт");
+                        return;
+                    }
+                    if (sub === "on" || sub === "connect") {
+                        const q = (args.slice(1).join(" ") || "").toLowerCase();
+                        let srv = null;
+                        if (q) {
+                            srv = VPN_SERVERS.find(s => s.id === q || s.cc.toLowerCase() === q || s.city.toLowerCase().indexOf(q) === 0 || s.country.toLowerCase().indexOf(q) === 0);
+                            if (!srv) { this.print(`vpn: сервер «${q}» не найден. Список: vpn servers`, "err"); return; }
+                        }
+                        const res = VPN.connect(srv ? srv.id : null);
+                        if (!res || !res.ok) { this.print(`vpn: ${res ? res.text : "ошибка"}`, "err"); Sound.play("denied"); return; }
+                        Sound.play("granted");
+                        this.print(`NEXUS VPN: подключено · ${res.server.city}, ${res.server.country} · ${VPN_PROTOCOLS[VPN.get().protocol].label}`);
+                        return;
+                    }
+                    this.print("vpn: неизвестная команда. Используйте: vpn [status|on [город]|off|servers]", "err");
+                },
+                ide() { go("ide.html", "Запускаю NEXUS IDE…"); },
+                services() { go("dashboard.html#services", "Открываю сервисы в кабинете…"); },
                 // Проверка страницы 404: «404» — случайный несуществующий адрес, «404 wallet» — свой путь
                 "404"(args) {
                     let target = args.join("-").replace(/^\/+/, "").replace(/[\s]+/g, "-");
@@ -3485,6 +3915,12 @@
         setInterval(tickTelemetry, 2000);
         Account.checkRenewal();
         setInterval(() => Account.checkRenewal(), 60000);
+        // VPN: индикатор в шапке и контроль лимита FREE / доступа к серверам
+        updateVpnUI();
+        VPN.enforce();
+        setInterval(() => VPN.enforce(), 60000);
+        document.addEventListener("nexus:auth", updateVpnUI);
+        document.addEventListener("nexus:account", () => { updateVpnUI(); });
         // Новый проект в каталоге → уведомление о релизе
         document.addEventListener("nexus:catalog", e => {
             if (!e.detail || e.detail.action !== "create" || !Auth.get()) return;
@@ -3498,6 +3934,8 @@
             if (e.key === Account.KEY) Account.emit({ action: "sync" });
             if (e.key === Settings.KEY) { Settings.load(); Settings.apply(); Sound.syncUI(); }
             if (e.key === Consent.KEY && Consent.accepted()) Consent.hide();
+            if (e.key === VPN.KEY || e.key === Auth.KEY) VPN.emit({ action: "sync" });
+            if (e.key === IDEStore.KEY) document.dispatchEvent(new CustomEvent("nexus:ide", { detail: { action: "sync" } }));
             if (e.key === Catalog.KEY || e.key === Catalog.HIDDEN_KEY || e.key === Catalog.CAT_KEY) {
                 Catalog.load();
                 applyPermissions();
@@ -3516,7 +3954,7 @@
     /* Публичное API для js/pages.js */
     window.NEXUS = {
         PAGE, $, $$, clamp, rand, randInt, pick, pad, delay, escapeHtml, timeStr, dateStr, hashString, rgba,
-        storage, Settings, Sound, Auth, Account, SITE, STORAGE_KEYS, SiteData, Consent, PLANS, PROMO_CODES, TEST_CARDS, WALLET_LIMITS, FUNDING,
+        storage, Settings, Sound, Auth, Account, VPN, IDEStore, SERVICE_LIMITS, serviceTier, serviceLimits, formatBytes, formatDuration, monthKey, SITE, STORAGE_KEYS, SiteData, Consent, PLANS, PROMO_CODES, TEST_CARDS, WALLET_LIMITS, FUNDING,
         formatMoney, cardBrand, luhnOk, topupBonus, deviceName, uid, detectOS, detectBrowser, ROLES, ROLE_IDS, PERMISSIONS, ACCESS, ACCESS_CODES, switchRole, applyPermissions,
         Catalog, BUILTIN_PROJECTS, BASE_CATEGORIES, PROJECT_ICONS, formatMiB, dateISO, toast, showBanner, Modal, Tabs, Syslog, Terminal,
         SERVERS, Telemetry, statusBadge, formatPlayers, PROJECTS, CATEGORIES, STATUSES, Docs,

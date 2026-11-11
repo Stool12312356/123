@@ -5386,3 +5386,275 @@ html[data-hud-scale="large"] body {
     }
 }
 
+
+/* ================================================================
+ * Сервисы NEXUS (VPN / IDE): шапка и вкладка кабинета — нужны на всех страницах
+ * ================================================================ */
+.hdr-vpn[hidden] {
+    display: none;
+}
+.hdr-vpn a {
+    color: inherit;
+    text-decoration: none;
+}
+.hdr-vpn a:hover b {
+    text-shadow: var(--glow-text);
+}
+.dot.dot-vpn {
+    width: 7px;
+    height: 7px;
+    margin-right: 6px;
+    animation: vpnDot 2.4s ease-in-out infinite;
+}
+@keyframes vpnDot {
+    50% { box-shadow: 0 0 2px var(--c); opacity: 0.55; }
+}
+.nav-badge.nav-badge-ok {
+    background: transparent;
+    color: var(--c);
+    border: 1px solid var(--c-60);
+}
+
+.svc-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 24px;
+    margin-bottom: 22px;
+}
+.svc-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px 16px 18px;
+    border: 1px solid var(--c-30);
+    background: linear-gradient(180deg, var(--c-10), transparent 60%);
+    transition: border-color 0.2s linear, box-shadow 0.2s linear;
+}
+.svc-card::before {
+    content: "";
+    position: absolute;
+    left: -1px;
+    top: -1px;
+    width: 38%;
+    height: 2px;
+    background: var(--c);
+    box-shadow: var(--glow-soft);
+}
+.svc-card[data-state="on"] {
+    border-color: var(--c-60);
+    box-shadow: inset 0 0 26px var(--c-10), var(--glow-soft);
+}
+.svc-card-head {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+}
+.svc-card-head h3 {
+    margin: 0;
+    font-family: var(--font_main);
+    font-weight: normal;
+    font-size: 20px;
+    letter-spacing: 1px;
+}
+.svc-icon {
+    display: grid;
+    place-items: center;
+    width: 46px;
+    height: 46px;
+    border: 1px solid var(--c-50);
+    transform: skewX(-10deg);
+}
+.svc-icon img {
+    filter: var(--icon_filter);
+    transform: skewX(10deg);
+}
+.svc-card[data-state="on"] .svc-icon {
+    background: var(--c-20);
+    box-shadow: var(--glow-soft);
+}
+.svc-kind {
+    margin: 2px 0 0;
+    font-size: 13px;
+    opacity: 0.65;
+}
+.svc-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 3px 8px;
+    border: 1px solid var(--c-30);
+    font-family: var(--font_main);
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    white-space: nowrap;
+}
+.svc-status b {
+    font-weight: normal;
+}
+.svc-status i {
+    width: 7px;
+    height: 7px;
+    border: 1px solid var(--c);
+}
+.svc-card[data-state="on"] .svc-status,
+.svc-status.svc-status-ready {
+    border-color: var(--c);
+}
+.svc-card[data-state="on"] .svc-status i,
+.svc-status.svc-status-ready i {
+    background: var(--c);
+    box-shadow: 0 0 6px var(--c);
+}
+.svc-card[data-state="on"] .svc-status i {
+    animation: vpnDot 2.4s ease-in-out infinite;
+}
+.svc-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 16px;
+    margin: 0;
+}
+.svc-facts div {
+    min-width: 0;
+    padding-left: 8px;
+    border-left: 1px solid var(--c-30);
+}
+.svc-facts dt {
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.55;
+}
+.svc-facts dd {
+    margin: 2px 0 0;
+    font-family: var(--font_mono), monospace;
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.svc-quota-text {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 0 0 6px;
+    font-size: 13px;
+}
+.svc-quota-text span {
+    opacity: 0.65;
+}
+.svc-quota-text b {
+    font-family: var(--font_mono), monospace;
+    font-weight: normal;
+}
+.meter > i.is-warn {
+    background: repeating-linear-gradient(-45deg, var(--c) 0 6px, var(--c-40) 6px 12px);
+}
+.svc-recent {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 4px;
+}
+.svc-recent[hidden] {
+    display: none;
+}
+.svc-recent a {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border: 1px dashed var(--c-30);
+    color: inherit;
+    text-decoration: none;
+    font-size: 13px;
+    transition: background-color 0.15s linear, border-color 0.15s linear;
+}
+.svc-recent a:hover,
+.svc-recent a:focus-visible {
+    border-style: solid;
+    border-color: var(--c-60);
+    background: var(--c-10);
+}
+.svc-recent img {
+    filter: var(--icon_filter);
+}
+.svc-recent b {
+    font-weight: normal;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.svc-recent span {
+    font-family: var(--font_mono), monospace;
+    font-size: 11px;
+    opacity: 0.6;
+    white-space: nowrap;
+}
+.svc-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: auto;
+}
+.svc-blocks .svc-table td:nth-child(n+2),
+.svc-blocks .svc-table th:nth-child(n+2) {
+    text-align: center;
+    white-space: nowrap;
+}
+.svc-upgrade {
+    margin-top: 12px;
+}
+.svc-upgrade[hidden] {
+    display: none !important;
+}
+.svc-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin: 18px 0 4px;
+    font-size: 13px;
+    line-height: 1.5;
+    opacity: 0.7;
+}
+.svc-note img {
+    flex: none;
+    margin-top: 3px;
+    filter: var(--icon_filter);
+}
+@media (max-width: 1100px) {
+    .svc-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+@media (max-width: 480px) {
+    .svc-card-head {
+        grid-template-columns: auto minmax(0, 1fr);
+    }
+    .svc-card-head .svc-status {
+        grid-column: 1 / -1;
+        justify-self: start;
+    }
+    .svc-actions .btn {
+        flex: 1 1 100%;
+        justify-content: center;
+    }
+}
+/* Узкие экраны: баланс + VPN + пользователь не должны раздвигать страницу */
+@media (max-width: 767px) {
+    .header-status {
+        overflow: hidden;
+    }
+    .header-status p {
+        min-width: 0;
+    }
+    .header-status p:has(#header-user) {
+        flex: 0 1 auto;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+}

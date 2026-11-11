@@ -13,11 +13,11 @@
     <!-- Зависимость оригинального eDEX-UI: augmented-ui 1.1.2 (BSD-2-Clause) — скошенные рамки -->
     <link rel="stylesheet" href="assets/vendor/augmented-ui/augmented.css">
     <!-- Тема blade, перенесённая из eDEX-UI -->
-    <link rel="stylesheet" href="css/blade-theme.css?v=20261110-2">
+    <link rel="stylesheet" href="css/blade-theme.css?v=20261111-1">
     <!-- Адаптивная сетка: шапка, подвал, модули, терминал -->
-    <link rel="stylesheet" href="css/layout.css?v=20261110-2">
+    <link rel="stylesheet" href="css/layout.css?v=20261111-1">
     <!-- Компоненты страниц: главная, каталог, формы, кабинет, тосты -->
-    <link rel="stylesheet" href="css/pages.css?v=20261110-2">
+    <link rel="stylesheet" href="css/pages.css?v=20261111-1">
 
     <script>
         /* Ранняя инициализация: класс js и сохранённые настройки HUD (без мигания) */
@@ -85,6 +85,7 @@
             <p class="hide-sm">SERVERS <b id="header-servers">-/-</b></p>
             <p class="hide-sm">RELEASES <b data-sum="releases">3</b></p>
             <p class="hdr-wallet" id="header-wallet" hidden><a href="dashboard.html#wallet" title="Баланс NEXUS ID"><span class="hw-label">BALANCE </span><b id="header-balance">0&nbsp;₽</b></a></p>
+            <p class="hdr-vpn" id="header-vpn" hidden><a href="vpn.html" title="NEXUS VPN"><span class="dot dot-vpn" aria-hidden="true"></span>VPN <b>—</b></a></p>
             <p>USER <b id="header-user">GUEST</b></p>
             <p class="hide-xs"><b id="header-clock">--:--:--</b></p>
         </div>
@@ -164,6 +165,7 @@
                                 <li role="presentation"><button type="button" role="tab" id="dtab-wallet" aria-selected="false" aria-controls="dpanel-wallet" tabindex="-1"><img src="assets/icons/portfolio.svg" alt="" width="16" height="16"><span>Кошелёк</span></button></li>
                                 <li role="presentation"><button type="button" role="tab" id="dtab-plus" aria-selected="false" aria-controls="dpanel-plus" tabindex="-1"><img src="assets/icons/star.svg" alt="" width="16" height="16"><span>Подписка и поддержка</span></button></li>
                                 <li role="presentation"><button type="button" role="tab" id="dtab-library" aria-selected="false" aria-controls="dpanel-library" tabindex="-1"><img src="assets/icons/folder.svg" alt="" width="16" height="16"><span>Библиотека</span><b class="nav-badge" id="nav-badge-library" hidden></b></button></li>
+                                <li role="presentation"><button type="button" role="tab" id="dtab-services" aria-selected="false" aria-controls="dpanel-services" tabindex="-1"><img src="assets/icons/lightning.svg" alt="" width="16" height="16"><span>Сервисы</span><b class="nav-badge nav-badge-ok" id="nav-badge-services" hidden>VPN</b></button></li>
                                 <li role="presentation"><button type="button" role="tab" id="dtab-notifications" aria-selected="false" aria-controls="dpanel-notifications" tabindex="-1"><img src="assets/icons/bell.svg" alt="" width="16" height="16"><span>Уведомления</span><b class="nav-badge" id="nav-badge-notifications" hidden></b></button></li>
                                 <li role="presentation"><button type="button" role="tab" id="dtab-security" aria-selected="false" aria-controls="dpanel-security" tabindex="-1"><img src="assets/icons/lock.svg" alt="" width="16" height="16"><span>Безопасность</span><b class="nav-badge nav-badge-warn" id="nav-badge-security" hidden>!</b></button></li>
                                 <li role="presentation"><button type="button" role="tab" id="dtab-profile" aria-selected="false" aria-controls="dpanel-profile" tabindex="-1"><img src="assets/icons/user.svg" alt="" width="16" height="16"><span>Профиль и роль</span></button></li>
@@ -250,6 +252,8 @@
                                             <button class="quick-btn" type="button" data-goto="plus" data-scroll="#fund-list"><img src="assets/icons/heart.svg" alt="" width="20" height="20"><b>Поддержать проект</b><span>с кешбэком по подписке</span></button>
                                             <a class="quick-btn" href="projects.html"><img src="assets/icons/download.svg" alt="" width="20" height="20"><b>Скачать сборки</b><span>центр загрузок</span></a>
                                             <button class="quick-btn" type="button" data-goto="security"><img src="assets/icons/lock.svg" alt="" width="20" height="20"><b>Защитить аккаунт</b><span>2FA и активные сеансы</span></button>
+                                            <a class="quick-btn" href="vpn.html"><img src="assets/icons/shield.svg" alt="" width="20" height="20"><b>NEXUS VPN</b><span id="ov-quick-vpn">тестовый VPN-клиент</span></a>
+                                            <a class="quick-btn" href="ide.html"><img src="assets/icons/code.svg" alt="" width="20" height="20"><b>NEXUS IDE</b><span>код и превью в браузере</span></a>
                                         </div>
                                     </div>
                                 </div>
@@ -483,6 +487,87 @@
                                         Очистить историю
                                     </button>
                                 </div>
+                            </div>
+
+                            <!-- ===== Сервисы ===== -->
+                            <div class="tab-panel" id="dpanel-services" role="tabpanel" aria-labelledby="dtab-services" hidden>
+                                <div class="dash-tab-head">
+                                    <h2>Сервисы</h2>
+                                    <p><span class="test-badge">BETA · ТЕСТ</span> программы NEXUS работают прямо в браузере</p>
+                                </div>
+
+                                <div class="svc-grid">
+                                    <!-- VPN -->
+                                    <article class="svc-card" id="svc-vpn" data-state="off">
+                                        <header class="svc-card-head">
+                                            <span class="svc-icon"><img src="assets/icons/shield.svg" alt="" width="28" height="28"></span>
+                                            <div>
+                                                <h3>NEXUS VPN</h3>
+                                                <p class="svc-kind">Тестовый VPN-клиент · 20 локаций</p>
+                                            </div>
+                                            <span class="svc-status" id="svc-vpn-status"><i aria-hidden="true"></i><b>ОТКЛЮЧЕНО</b></span>
+                                        </header>
+                                        <dl class="svc-facts">
+                                            <div><dt>Сервер</dt><dd id="svc-vpn-server">—</dd></div>
+                                            <div><dt>IP выхода</dt><dd id="svc-vpn-ip">—</dd></div>
+                                            <div><dt>Протокол</dt><dd id="svc-vpn-proto">WireGuard</dd></div>
+                                            <div><dt>Аптайм</dt><dd id="svc-vpn-uptime">—</dd></div>
+                                        </dl>
+                                        <div class="svc-quota">
+                                            <p class="svc-quota-text"><span>Трафик за месяц</span><b id="svc-vpn-quota">0 Б из 10 ГБ</b></p>
+                                            <div class="meter" aria-hidden="true"><i id="svc-vpn-quota-bar"></i></div>
+                                        </div>
+                                        <div class="svc-actions">
+                                            <button class="btn btn-primary" type="button" id="svc-vpn-toggle"><img src="assets/icons/power.svg" alt="" width="16" height="16"><span>Быстрое подключение</span></button>
+                                            <a class="btn" href="vpn.html"><img src="assets/icons/globe.svg" alt="" width="16" height="16">Открыть клиент</a>
+                                        </div>
+                                    </article>
+
+                                    <!-- IDE -->
+                                    <article class="svc-card" id="svc-ide">
+                                        <header class="svc-card-head">
+                                            <span class="svc-icon"><img src="assets/icons/code.svg" alt="" width="28" height="28"></span>
+                                            <div>
+                                                <h3>NEXUS IDE</h3>
+                                                <p class="svc-kind">Редактор кода · HTML, CSS, JavaScript</p>
+                                            </div>
+                                            <span class="svc-status svc-status-ready"><i aria-hidden="true"></i><b>ГОТОВО</b></span>
+                                        </header>
+                                        <dl class="svc-facts">
+                                            <div><dt>Проекты</dt><dd id="svc-ide-count">0 из 3</dd></div>
+                                            <div><dt>Последний</dt><dd id="svc-ide-last">—</dd></div>
+                                        </dl>
+                                        <ul class="svc-recent" id="svc-ide-recent"></ul>
+                                        <div class="svc-actions">
+                                            <a class="btn btn-primary" href="ide.html"><img src="assets/icons/code.svg" alt="" width="16" height="16">Открыть IDE</a>
+                                            <a class="btn" href="ide.html#new"><img src="assets/icons/plus.svg" alt="" width="16" height="16">Новый проект</a>
+                                        </div>
+                                    </article>
+                                </div>
+
+                                <div class="dash-blocks svc-blocks">
+                                    <div class="mod">
+                                        <h4 class="mod-head">ACCESS <i id="svc-tier">тариф FREE</i></h4>
+                                        <div class="table-scroll">
+                                            <table class="edex-table svc-table">
+                                                <thead><tr><th scope="col">Возможность</th><th scope="col">FREE</th><th scope="col">NEXUS+</th></tr></thead>
+                                                <tbody>
+                                                    <tr><td>Локации VPN</td><td>3</td><td>20</td></tr>
+                                                    <tr><td>Трафик VPN</td><td>10 ГБ / месяц</td><td>без лимита</td></tr>
+                                                    <tr><td>Secure Core (двойной хоп)</td><td>—</td><td>да</td></tr>
+                                                    <tr><td>Проекты IDE</td><td>3</td><td>25</td></tr>
+                                                    <tr><td>Размер проекта</td><td>256 КБ</td><td>1 МБ</td></tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <button class="btn btn-sm svc-upgrade" type="button" data-goto="plus" id="svc-upgrade"><img src="assets/icons/star.svg" alt="" width="14" height="14">Оформить NEXUS+</button>
+                                    </div>
+                                    <div class="mod">
+                                        <h4 class="mod-head">VPN HISTORY <i>последние сеансы</i></h4>
+                                        <ul class="feed svc-history" id="svc-vpn-history"></ul>
+                                    </div>
+                                </div>
+                                <p class="svc-note"><img src="assets/icons/info.svg" alt="" width="14" height="14"> Это тестовые версии. VPN показывает, как работает клиент, но не шифрует и не перенаправляет трафик. Код из IDE выполняется в изолированном фрейме на вашем устройстве и никуда не отправляется.</p>
                             </div>
 
                             <!-- ===== Уведомления ===== -->
@@ -828,7 +913,7 @@
         </div>
     </footer>
 
-    <script src="js/ui-effects.js?v=20261110-2" defer></script>
-    <script src="js/pages.js?v=20261110-2" defer></script>
+    <script src="js/ui-effects.js?v=20261111-1" defer></script>
+    <script src="js/pages.js?v=20261111-1" defer></script>
 </body>
 </html>

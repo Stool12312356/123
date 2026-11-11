@@ -1130,6 +1130,7 @@
         wallet: "Кошелёк",
         plus: "Подписка и поддержка",
         library: "Библиотека",
+        services: "Сервисы",
         notifications: "Уведомления",
         security: "Безопасность",
         profile: "Профиль и роль",
@@ -1304,6 +1305,7 @@
             initNotifications();
             initSecurity();
             initProfileForm();
+            initServicesTab();
 
             app.addEventListener("nexus:tab", e => {
                 const key = e.detail.id.replace("dtab-", "");
@@ -1361,6 +1363,106 @@
         renderNotifications(s, a);
         renderSecurity(s, a);
         renderProfileTab(s, a);
+        renderServices();
+    }
+
+    /* ----- Сервисы: NEXUS VPN и NEXUS IDE ----- */
+    function renderServices() {
+        const { VPN, IDEStore, formatBytes: fmtBytes, formatDuration, serviceTier } = NX;
+        if (!VPN || !$("#dpanel-services")) return;
+        const st = VPN.get();
+        if (!st) return;
+        const srv = st.connected ? VPN.find(st.server) : null;
+        const card = $("#svc-vpn");
+        if (card) card.setAttribute("data-state", srv ? "on" : "off");
+        const status = $("#svc-vpn-status b");
+        if (status) status.textContent = srv ? "ЗАЩИЩЕНО" : "ОТКЛЮЧЕНО";
+        const entry = st.entry ? VPN.find(st.entry) : null;
+        setText("svc-vpn-server", srv ? `${srv.city}, ${srv.cc}${entry ? " · через " + entry.cc : ""}` : (st.lastServer && VPN.find(st.lastServer) ? `последний: ${VPN.find(st.lastServer).city}` : "—"));
+        setText("svc-vpn-ip", srv ? VPN.exitIp(srv, st) : "реальный IP");
+        setText("svc-vpn-proto", VPN.PROTOCOLS[st.protocol].label);
+        setText("svc-vpn-uptime", srv ? formatDuration(Date.now() - st.since) : "—");
+        const q = VPN.quota(st);
+        setText("svc-vpn-quota", isFinite(q.limit) ? `${fmtBytes(q.used)} из ${fmtBytes(q.limit)}` : `${fmtBytes(q.used)} · без лимита`);
+        const bar = $("#svc-vpn-quota-bar");
+        if (bar) { bar.style.width = (isFinite(q.limit) ? q.pct : 0) + "%"; bar.classList.toggle("is-warn", q.pct > 85); }
+        const tgl = $("#svc-vpn-toggle");
+        if (tgl) {
+            tgl.querySelector("span").textContent = srv ? "Отключить" : "Быстрое подключение";
+            tgl.classList.toggle("btn-primary", !srv);
+        }
+        const badge = $("#nav-badge-services");
+        if (badge) { badge.hidden = !srv; badge.title = srv ? `VPN: ${srv.city}` : ""; }
+        setText("ov-quick-vpn", srv ? `защищено · ${srv.city}` : "тестовый VPN-клиент");
+
+        const hist = $("#svc-vpn-history");
+        if (hist) {
+            hist.innerHTML = st.history.length ? st.history.slice(0, 6).map(h => {
+                const sv = VPN.find(h.server);
+                const why = { quota: "лимит трафика", plan: "нет доступа", switch: "смена сервера", killswitch: "обрыв связи" }[h.reason] || "";
+                return `<li><img src="assets/icons/shield.svg" alt="" width="16" height="16">
+                    <span class="feed-text"><b>${escapeHtml(sv ? sv.city + ", " + sv.country : h.server)}</b><i>${escapeHtml(VPN.PROTOCOLS[h.protocol] ? VPN.PROTOCOLS[h.protocol].label : "")} · ${escapeHtml(formatDuration(h.end - h.start))}${why ? " · " + escapeHtml(why) : ""} · ${escapeHtml(ago(h.end))}</i></span>
+                    <span class="feed-amount">${escapeHtml(fmtBytes(h.bytes))}</span></li>`;
+            }).join("") : '<li class="feed-empty">Сеансов пока нет — подключитесь, чтобы увидеть историю.</li>';
+        }
+
+        const pro = serviceTier() === "pro";
+        const s = Auth.get();
+        setText("svc-tier", pro ? (s && s.role === "creator" && Account.get().plan.id === "free" ? "CREATOR · все возможности" : "NEXUS+ · все возможности") : "тариф FREE");
+        const up = $("#svc-upgrade");
+        if (up) up.hidden = pro;
+
+        const sum = IDEStore.summary();
+        if (sum) {
+            setText("svc-ide-count", `${sum.count} из ${sum.limit}`);
+            setText("svc-ide-last", sum.last ? `${sum.last.name} · ${ago(sum.last.updated)}` : "проектов пока нет");
+            const rec = $("#svc-ide-recent");
+            if (rec) {
+                rec.innerHTML = sum.recent.map(p => `<li><a href="ide.html#p=${encodeURIComponent(p.id)}"><img src="assets/icons/file.svg" alt="" width="14" height="14"><b>${escapeHtml(p.name)}</b><span>${Object.keys(p.files).length} ${plural(Object.keys(p.files).length, "файл", "файла", "файлов")} · ${escapeHtml(fmtBytes(IDEStore.projectSize(p)))}</span></a></li>`).join("");
+                rec.hidden = !sum.recent.length;
+            }
+        }
+    }
+
+    function initServicesTab() {
+        const { VPN } = NX;
+        const tgl = $("#svc-vpn-toggle");
+        if (!VPN || !tgl) return;
+        tgl.addEventListener("click", async () => {
+            const st = VPN.get();
+            if (!st) return;
+            if (st.connected) {
+                VPN.disconnect("user");
+                Sound.play("panels");
+                toast("NEXUS VPN отключён", "info");
+                return;
+            }
+            const target = (st.lastServer && VPN.canUse(VPN.find(st.lastServer)).ok) ? st.lastServer : null;
+            const srv = target ? VPN.find(target) : VPN.best();
+            tgl.classList.add("is-busy");
+            tgl.disabled = true;
+            tgl.querySelector("span").textContent = "Подключение…";
+            await delay(reducedMotion() ? 100 : 900);
+            tgl.classList.remove("is-busy");
+            tgl.disabled = false;
+            const res = VPN.connect(srv ? srv.id : null);
+            if (!res || !res.ok) {
+                renderServices();
+                Sound.play("denied");
+                toast(res ? res.text : "Не удалось подключиться", "warn", { ttl: 5000 });
+                return;
+            }
+            Sound.play("granted");
+            toast(`NEXUS VPN: защищено · ${res.server.city}, ${res.server.country}`, "ok");
+        });
+        document.addEventListener("nexus:vpn", renderServices);
+        document.addEventListener("nexus:ide", renderServices);
+        setInterval(() => {
+            const panel = $("#dpanel-services");
+            if (document.visibilityState !== "visible" || !Auth.get()) return;
+            if (panel && !panel.hidden) renderServices();
+            else { const st = NX.VPN.get(); if (st && st.connected) setText("ov-quick-vpn", `защищено · ${NX.VPN.find(st.server).city}`); }
+        }, 1000);
     }
 
     /* ----- Левая колонка: карточка аккаунта и бейджи меню ----- */
@@ -3040,6 +3142,8 @@
         nx_tickets: "обращения в поддержку",
         nx_consent: "уведомление о хранилище",
         nx_pending_dl: "отложенная загрузка",
+        nx_vpn: "тестовый VPN: настройки и сеансы",
+        nx_ide: "проекты NEXUS IDE",
         nx_booted: "заставка показана",
         nx_welcome: "приветствие после входа"
     };
