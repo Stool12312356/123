@@ -2252,6 +2252,8 @@
          * ================================================================ */
         function toggleZen(force) {
             const on = force === undefined ? !ideRoot.classList.contains("is-zen") : force;
+            /* Конечное состояние анимации появления — без transform (см. settleIDE в services.js). */
+            if (on) ideRoot.classList.add("is-settled");
             ideRoot.classList.toggle("is-zen", on);
             document.documentElement.classList.toggle("ide-zen-on", on);
             if (on) { if (mobile()) A.setPane("code"); toast("Дзен-режим: Esc или Ctrl+K Z — выход", "info", { ttl: 2200 }); }

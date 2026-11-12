@@ -1898,6 +1898,23 @@
             find: $("#ide-find"), findInput: $("#ide-find-input"), replaceInput: $("#ide-replace-input"),
             runCol: $("#ide-run-col"), previewPane: $("#ide-preview-pane")
         };
+
+        /* После анимации появления (shellExpand, fill-mode forwards) у .ide
+         * остаётся transform: scale(1,1). Любой transform делает элемент
+         * containing block для position:fixed потомков — тогда превью
+         * «во весь экран» растягивается по рамке IDE, а не по окну.
+         * Как только анимация закончилась, фиксируем конечное состояние
+         * классом .is-settled (animation/transform: none). */
+        const ideRootEl = $("#ide");
+        function settleIDE() { if (ideRootEl) ideRootEl.classList.add("is-settled"); }
+        if (ideRootEl) {
+            ideRootEl.addEventListener("animationend", e => { if (e.target === ideRootEl) settleIDE(); });
+            ideRootEl.addEventListener("animationcancel", e => { if (e.target === ideRootEl) settleIDE(); });
+            const running = typeof ideRootEl.getAnimations === "function"
+                ? ideRootEl.getAnimations().some(a => a.playState === "running")
+                : false;
+            if (!running && getComputedStyle(ideRootEl).opacity === "1") settleIDE();
+        }
         const ide = {
             data: null, p: null, active: null, previewFile: null, token: "", lineMap: null,
             dirty: false, saveTimer: 0, runTimer: 0, errors: 0, consoleCount: 0, lastMsg: null,
@@ -2994,6 +3011,7 @@
         /* ----- Превью во весь экран ----- */
         const fsBtn = $("#ide-fullscreen");
         function setMax(on) {
+            if (on) settleIDE();
             el.previewPane.classList.toggle("is-max", on);
             document.documentElement.classList.toggle("ide-max-open", on);
             fsBtn.setAttribute("aria-pressed", String(on));
