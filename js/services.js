@@ -1889,6 +1889,7 @@
      * NEXUS IDE — приложение
      * ================================================================ */
     function initIDE() {
+        const initialHash = window.location.hash;
         const el = {
             body: $("#ide-body"), explorer: $("#ide-explorer"), files: $("#ide-files"), tabs: $("#ide-tabs"),
             ta: $("#ide-input"), hl: $("#ide-hl"), hlCode: $("#ide-hl-code"), gutter: $("#ide-gutter"),
@@ -1905,6 +1906,13 @@
         const curLine = document.createElement("div");
         curLine.className = "ide-curline";
         el.editor.querySelector(".ide-code").prepend(curLine);
+        /* Хуки для расширений редактора (js/ide-pro.js) */
+        const hooks = { render: [], caret: [], open: [], input: [], scroll: [], problems: [], console: [], project: [], save: [], run: [], hl: [] };
+        const fire = (name, arg) => {
+            hooks[name].forEach(fn => {
+                try { fn(arg); } catch (err) { if (window.console) window.console.error(err); }
+            });
+        };
 
         /* ----- Данные ----- */
         function reloadData() {
@@ -1922,6 +1930,7 @@
         function persist(manual) {
             clearTimeout(ide.saveTimer);
             if (!ide.p) return true;
+            if (manual) fire("save", manual);
             const size = IDEStore.projectSize(ide.p);
             const lim = IDEStore.limits().ideProjectSize;
             renderMeta();
@@ -1983,6 +1992,7 @@
             if (window.history.replaceState) window.history.replaceState(null, "", "#p=" + encodeURIComponent(p.id));
             IDEStore.mutate(d => { d.current = p.id; }, { action: "current" });
             clearConsole();
+            fire("project", p);
             if (opts.run !== false && (settings().autoRun || opts.run)) run();
             else { el.idle.hidden = false; el.frame.removeAttribute("srcdoc"); }
         }
@@ -2303,9 +2313,9 @@
         newInput.addEventListener("input", () => { newErr.textContent = ""; });
         const upInput = $("#ide-upload-input");
         $("#ide-upload").addEventListener("click", () => upInput.click());
-        upInput.addEventListener("change", () => {
-            const list = Array.from(upInput.files || []);
-            upInput.value = "";
+        function importFiles(files, dir) {
+            const list = Array.from(files || []);
+            const prefix = dir ? dir.replace(/\/+$/, "") + "/" : "";
             let added = 0;
             const next = () => {
                 const f = list.shift();
@@ -2314,7 +2324,7 @@
                 if (f.size > 200 * 1024) { toast(`${f.name}: файл больше 200 КБ`, "warn"); next(); return; }
                 const reader = new FileReader();
                 reader.onload = () => {
-                    let name = f.name.replace(/[^\w\-. а-яё]/gi, "_");
+                    let name = prefix + f.name.replace(/[^\w\-. а-яё]/gi, "_");
                     if (ide.p.files[name] !== undefined) {
                         const dot = name.lastIndexOf(".");
                         let n = 2;
@@ -2329,6 +2339,11 @@
                 reader.readAsText(f);
             };
             next();
+        }
+        upInput.addEventListener("change", () => {
+            const files = Array.from(upInput.files || []);
+            upInput.value = "";
+            importFiles(files);
         });
 
         /* ----- Вкладки ----- */
@@ -2404,6 +2419,7 @@
                 renderTabs();
                 renderExplorer();
                 $("#ide-st-lang").textContent = "—";
+                fire("open", null);
                 return;
             }
             if (p.open.indexOf(path) < 0) p.open.push(path);
@@ -2426,6 +2442,7 @@
             updateCaret();
             if (!opts.silent) { Sound.play("folder"); if (window.innerWidth >= 768) el.ta.focus({ preventScroll: true }); }
             if (find.open) findUpdate();
+            fire("open", path);
         }
         let hlRaf = 0;
         function renderCode() {
@@ -2433,7 +2450,11 @@
             hlRaf = 0;
             const v = el.ta.value;
             const lang = ide.active ? langOf(ide.active) : "text";
-            el.hlCode.innerHTML = highlight(lang, v) + "\n ";
+            let html = highlight(lang, v);
+            hooks.hl.forEach(fn => {
+                try { html = fn(html, lang, v) || html; } catch (err) { if (window.console) window.console.error(err); }
+            });
+            el.hlCode.innerHTML = html + "\n ";
             const lines = v.split("\n").length;
             if (Number(el.gutter.dataset.lines) !== lines) {
                 el.gutter.dataset.lines = String(lines);
@@ -2442,6 +2463,7 @@
                 el.gutter.innerHTML = s;
             }
             syncScroll();
+            fire("render", { lang, value: v });
         }
         function scheduleRender() {
             if (!hlRaf) hlRaf = requestAnimationFrame(renderCode);
@@ -2451,6 +2473,7 @@
             el.hl.scrollLeft = el.ta.scrollLeft;
             el.gutter.scrollTop = el.ta.scrollTop;
             positionCurLine();
+            fire("scroll");
         }
         function caretLine() {
             return el.ta.value.slice(0, el.ta.selectionStart).split("\n").length;
@@ -2472,6 +2495,7 @@
             const cur = el.gutter.children[line - 1];
             if (cur) cur.classList.add("is-cur");
             positionCurLine();
+            fire("caret", { line, col });
         }
         function onInput() {
             if (!ide.active || !ide.p) return;
@@ -2480,6 +2504,7 @@
             scheduleRender();
             updateCaret();
             scheduleSave();
+            fire("input");
             if (settings().autoRun) {
                 clearTimeout(ide.runTimer);
                 ide.runTimer = setTimeout(() => run(null, { auto: true }), 900);
@@ -2854,6 +2879,7 @@
             addConsole("sys", `▶ ${entry} · ${timeStr(new Date())}${opts.auto ? " · авто" : ""}`);
             el.frame.srcdoc = doc.html;
             el.idle.hidden = true;
+            fire("run", entry);
             $("#ide-preview-file").textContent = entry;
             if (opts.manual) {
                 Sound.play("granted");
@@ -2876,6 +2902,7 @@
             mt.hidden = !ide.errors;
             mt.textContent = String(ide.errors);
             $("#ide-console-count").textContent = String(ide.consoleCount);
+            fire("problems", ide.errors);
         }
         function addConsole(level, text, src) {
             const key = level + "|" + text + "|" + (src ? src.file + src.line : "");
@@ -2897,6 +2924,7 @@
             if (level !== "sys" && level !== "input") ide.consoleCount++;
             if (level === "error") { ide.errors++; Sound.play("denied"); }
             renderProblems();
+            fire("console", { level, text: String(text), src: src || null });
         }
         el.out.addEventListener("click", e => {
             const b = e.target.closest("[data-goto]");
@@ -3115,6 +3143,19 @@
             if (h === "new") newProjectModal();
             else if (/^p=/.test(h)) { const id = decodeURIComponent(h.slice(2)); if (ide.p && id !== ide.p.id && findProject(id)) loadProject(id); }
         });
+
+        /* ----- API для расширений (js/ide-pro.js) ----- */
+        const api = {
+            ide, el, hooks, fire, settings, unit, findProject, reloadData, persist, scheduleSave, saveSettings, setSaveState,
+            renderProjects, loadProject, createProject, newProjectModal, projectModal, exportZip, limitModal, newId,
+            renderExplorer, renderMeta, validName, addFile, renameModal, deleteFile, importFiles, renderTabs, closeTab,
+            measure, openFile, renderCode, syncScroll, caretLine, updateCaret, onInput, replaceRange, shiftLines,
+            toggleComment, moveLines, duplicateLines, openFind, closeFind, revealSelection, resolvePath, buildDoc, mapLine,
+            run, clearConsole, addConsole, gotoLine, setPane, setMax, applyLayout, langOf, highlight, esc,
+            NEW_FILE_CONTENT, TEMPLATES, ALLOWED_EXT, makeZip, downloadBlob, plural, ago, BRIDGE_SRC, initialHash
+        };
+        NX.IDEApp = api;
+        document.dispatchEvent(new CustomEvent("nexus:ide-ready", { detail: api }));
     }
 
     /* ================================================================
