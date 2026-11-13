@@ -2274,6 +2274,34 @@
             ]
         },
         {
+            id: "abrams",
+            code: "NX-21",
+            title: "NEXUS ABRAMS",
+            category: "web",
+            status: "available",
+            access: "public",
+            icon: "play",
+            play: "play/abrams.html",
+            tags: ["WebGL", "3D-модель", "По чертежам", "Без установки"],
+            summary: "Точная 3D-модель танка M1A1 Abrams по чертежам: крутите, поворачивайте башню, стреляйте, сравнивайте с чертежом в видах сбоку / спереди / сверху / сзади.",
+            version: "1.0.0",
+            size: "133 KiB",
+            sizeMB: 0.13,
+            platform: "Браузер · WebGL",
+            updated: "2026-11-14",
+            file: "play/abrams.html",
+            requirements: "Любой современный браузер с WebGL (Chrome, Firefox, Edge, Safari), ПК или телефон. Установка не нужна.",
+            notes: [
+                { version: "1.0.0", date: "2026-11-14", items: [
+                    "Геометрия снята с 4-проекционного чертежа M1A1: длина с пушкой 9,83 м, корпус 7,92 м, ширина 3,66 м",
+                    "Клиновидная башня с кормовой корзиной, 120-мм M256 с эжектором, M2 у командира и M240 у заряжающего",
+                    "7 сдвоенных катков, ленивец, ведущее колесо сзади, гусеница из 87 траков, бортовые экраны",
+                    "Поворот башни и наведение пушки, ход с пылью и следами, выстрел с откатом, звук турбины",
+                    "Режим чертежа, ортогональные виды, размеры и подписи узлов, 3 варианта окраски (nx_abrams)"
+                ] }
+            ]
+        },
+        {
             id: "launcher",
             code: "NX-00",
             title: "NEXUS LAUNCHER",
@@ -3149,7 +3177,7 @@
 
     /* Все ключи, которые сайт пишет в хранилище браузера (для политики и кнопки «удалить всё») */
     const STORAGE_KEYS = {
-        local: ["nx_session", "nx_accounts", "nx_settings", "nx_custom_projects", "nx_hidden_projects", "nx_custom_categories", "nx_tickets", "nx_consent", "nx_pending_dl", "nx_vpn", "nx_ide", "nx_aquarium"],
+        local: ["nx_session", "nx_accounts", "nx_settings", "nx_custom_projects", "nx_hidden_projects", "nx_custom_categories", "nx_tickets", "nx_consent", "nx_pending_dl", "nx_vpn", "nx_ide", "nx_aquarium", "nx_abrams"],
         session: ["nx_booted", "nx_welcome"]
     };
 

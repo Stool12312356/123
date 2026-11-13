@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#090B0A">
+    <meta name="description" content="NEXUS ABRAMS — 3D-модель танка M1A1 Abrams по чертежам на чистом WebGL: вращайте, поворачивайте башню, стреляйте, сравнивайте с чертежом в ортогональных видах.">
+    <title>NEXUS ABRAMS — 3D-модель M1A1</title>
+    <link rel="icon" type="image/svg+xml" href="../assets/img/logo-icon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="../assets/img/favicon-32.png">
+    <link rel="stylesheet" href="../css/aquarium.css?v=20261114-1">
+    <link rel="stylesheet" href="../css/abrams.css?v=20261114-1">
+</head>
+<body class="ab-page">
+    <canvas id="aq-canvas" class="aq-canvas" aria-label="3D-модель танка M1A1 Abrams. Перетаскивайте, чтобы вращать, колесо — приблизить." role="img" tabindex="0"></canvas>
+
+    <div class="ab-labels" id="ab-labels" aria-hidden="true"></div>
+
+    <div class="aq-hud">
+        <header class="aq-top">
+            <div class="aq-brand">
+                <a class="aq-back" href="../projects.html#abrams" title="Назад к проектам" data-standalone>
+                    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M15 5 8 12l7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    <span class="visually-hidden">Назад к проектам</span>
+                </a>
+                <div>
+                    <p class="aq-title">NEXUS<i>//</i>ABRAMS</p>
+                    <p class="aq-sub">NX-21 · M1A1 · WEBGL · <span id="st-mode">ПУСТЫНЯ</span> · <span id="st-view">3D</span></p>
+                </div>
+            </div>
+            <dl class="aq-stats" aria-live="off">
+                <div><dt>ДЛИНА</dt><dd id="st-len">9.83</dd></div>
+                <div><dt>ШИРИНА</dt><dd id="st-wid">3.66</dd></div>
+                <div><dt>ВЫСОТА</dt><dd id="st-hgt">2.44</dd></div>
+                <div class="aq-fps"><dt>FPS</dt><dd id="st-fps">--</dd></div>
+            </dl>
+        </header>
+
+        <p class="aq-hint" id="aq-hint">
+            <span><b>Перетаскивайте</b> — вращать</span>
+            <span><b>Колесо / щипок</b> — зум</span>
+            <span><b>Q / E</b> — башня</span>
+            <span><b>R / F</b> — ствол</span>
+            <span><b>Пробел</b> — выстрел</span>
+            <span><b>V</b> — виды как на чертеже</span>
+        </p>
+
+        <section class="ab-panel" id="ab-panel" aria-label="Управление танком">
+            <p class="ab-panel-title">M1A1 ABRAMS <i id="ab-ready">ЗАРЯЖЕНО</i></p>
+            <label class="ab-row">
+                <span>БАШНЯ</span>
+                <input type="range" id="ab-turret" min="-180" max="180" step="1" value="0" aria-label="Азимут башни, градусы">
+                <output id="ab-turret-v">0°</output>
+            </label>
+            <label class="ab-row">
+                <span>СТВОЛ</span>
+                <input type="range" id="ab-gun" min="-9" max="20" step="0.5" value="0" aria-label="Угол возвышения пушки, градусы">
+                <output id="ab-gun-v">0°</output>
+            </label>
+            <label class="ab-row">
+                <span>ХОД</span>
+                <input type="range" id="ab-speed" min="-30" max="67" step="1" value="0" aria-label="Скорость, км/ч">
+                <output id="ab-speed-v">0 км/ч</output>
+            </label>
+            <p class="ab-keys"><kbd>Q</kbd><kbd>E</kbd> башня · <kbd>R</kbd><kbd>F</kbd> ствол · <kbd>W</kbd><kbd>S</kbd> ход · <kbd>X</kbd> стоп · <kbd>Пробел</kbd> огонь</p>
+        </section>
+
+        <div class="aq-toast" id="aq-toast" role="status" hidden></div>
+
+        <nav class="aq-bar" aria-label="Управление моделью">
+            <button class="aq-btn aq-btn-main" type="button" data-ab="fire" title="Выстрел (Пробел)">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h10M13 9v6l8-3z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/><path d="M5 8l-2-2M5 16l-2 2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                <span>Огонь</span>
+            </button>
+            <button class="aq-btn" type="button" data-ab="drive" aria-pressed="false" title="Ехать / стоять (W/S — скорость, X — стоп)">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="12" width="18" height="6" rx="3" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="7" cy="15" r="1.3"/><circle cx="12" cy="15" r="1.3"/><circle cx="17" cy="15" r="1.3"/><path d="M6 12V9h9l3 3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+                <span>Ход</span>
+            </button>
+            <button class="aq-btn" type="button" data-ab="center" title="Башню и ствол — по-походному (T)">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 15h16M7 15l2-4h7l2 4M14 11h7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/></svg>
+                <span>Башня 0°</span>
+            </button>
+            <span class="aq-sep" aria-hidden="true"></span>
+            <button class="aq-btn" type="button" data-ab="camo" title="Окраска (C): пустыня / лес">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6c3-2 5 2 8 0s5-2 8 0v12c-3 2-5-2-8 0s-5 2-8 0z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M8 10c1 1 3 1 3 3M14 8c1 2 3 2 3 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                <span>Окраска</span>
+            </button>
+            <button class="aq-btn" type="button" data-ab="blue" aria-pressed="false" title="Режим чертежа (B)">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3zM3 10h18M3 15h18M9 5v14M15 5v14" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
+                <span>Чертёж</span>
+            </button>
+            <button class="aq-btn" type="button" data-ab="dims" aria-pressed="false" title="Размеры и подписи узлов (L)">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17h18M3 14v6M21 14v6M7 17l-3 0M17 17h3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M6 10l3-5h6l3 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+                <span>Размеры</span>
+            </button>
+            <button class="aq-btn" type="button" data-ab="view" title="Вид: 3D → сбоку → спереди → сверху → сзади (V)">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z M12 12l8-4.5M12 12v9M12 12L4 7.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+                <span id="ab-view-l">Вид</span>
+            </button>
+            <span class="aq-sep" aria-hidden="true"></span>
+            <button class="aq-btn" type="button" data-ab="auto" aria-pressed="true" title="Авто-обзор (A)">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span>Обзор</span>
+            </button>
+            <button class="aq-btn" type="button" data-ab="sound" aria-pressed="true" title="Звук (M)">
+                <svg class="ico-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+                <svg class="ico-off" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M4 9h4l5-4v14l-5-4H4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M17 9l5 6M22 9l-5 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+                <span>Звук</span>
+            </button>
+            <button class="aq-btn" type="button" data-ab="fullscreen" title="Во весь экран">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span>Экран</span>
+            </button>
+        </nav>
+    </div>
+
+    <div class="aq-fail" id="aq-fail" hidden>
+        <div>
+            <p class="aq-title">NEXUS<i>//</i>ABRAMS</p>
+            <p>Не удалось запустить WebGL. Включите аппаратное ускорение в настройках браузера или откройте страницу в современном браузере (Chrome, Firefox, Edge, Safari).</p>
+            <p class="aq-fail-msg" id="aq-fail-msg"></p>
+            <a class="aq-btn aq-btn-main" href="../projects.html#abrams">← К проектам</a>
+        </div>
+    </div>
+
+    <noscript><p class="aq-noscript">Для 3D-модели нужен JavaScript.</p></noscript>
+
+    <footer class="aq-credit">UI inspired by &amp; adapted from <a href="https://github.com/GitSquared/edex-ui" target="_blank" rel="noopener noreferrer">eDEX-UI</a> (GPL-3.0)</footer>
+
+    <script src="../js/abrams.js?v=20261114-1"></script>
+</body>
+</html>
