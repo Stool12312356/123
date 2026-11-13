@@ -205,6 +205,119 @@ body {
     transform: translateY(-6px);
 }
 
+/* ----- Панель дрона ----- */
+.aq-drone {
+    position: fixed;
+    left: max(16px, env(safe-area-inset-left));
+    bottom: 84px;
+    width: 250px;
+    padding: 10px 12px 12px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: rgba(242, 232, 226, 0.8);
+    background: var(--bg);
+    border: 1px solid var(--c-a);
+    border-left: 3px solid var(--c);
+    box-shadow: 0 0 18px var(--c-b);
+    animation: aq-drone-in 0.35s ease;
+}
+.aq-drone[hidden] {
+    display: none;
+}
+@keyframes aq-drone-in {
+    from { opacity: 0; transform: translateX(-10px); }
+    to { opacity: 1; transform: none; }
+}
+.aq-drone-title {
+    margin: 0 0 8px;
+    color: var(--c);
+    letter-spacing: 0.12em;
+}
+.aq-drone-title i {
+    float: right;
+    font-style: normal;
+    color: #f2e8e2;
+    opacity: 0.8;
+}
+.aq-drone-read {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin: 0 0 8px;
+}
+.aq-drone-read div {
+    padding: 4px 6px;
+    border: 1px solid var(--c-b);
+}
+.aq-drone-read dt {
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    opacity: 0.7;
+}
+.aq-drone-read dd {
+    margin: 2px 0 0;
+    font-size: 13px;
+    color: #f2e8e2;
+    white-space: nowrap;
+}
+.aq-drone-read dd span {
+    color: var(--c);
+}
+.aq-drone-keys {
+    margin: 0 0 8px;
+    line-height: 1.9;
+}
+.aq-drone kbd {
+    display: inline-block;
+    min-width: 18px;
+    padding: 0 4px;
+    margin-right: 2px;
+    font: inherit;
+    font-size: 10px;
+    line-height: 16px;
+    text-align: center;
+    color: var(--c);
+    border: 1px solid var(--c-a);
+}
+.aq-drone-pad {
+    display: none;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin-bottom: 8px;
+}
+.aq-drone-pad button {
+    height: 40px;
+    font: inherit;
+    font-size: 18px;
+    color: var(--c);
+    background: transparent;
+    border: 1px solid var(--c-a);
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: pointer;
+}
+.aq-drone-pad button.is-held {
+    background: var(--c-b);
+    border-color: var(--c);
+    color: #f2e8e2;
+}
+.aq-drone-light {
+    width: 100%;
+    justify-content: center;
+}
+.aq-btn-drone[aria-pressed="true"] {
+    box-shadow: 0 0 14px var(--c-a);
+}
+@media (pointer: coarse) {
+    .aq-drone-pad {
+        display: grid;
+    }
+    .aq-drone-keys {
+        display: none;
+    }
+}
+
 /* ----- Тост и тултип ----- */
 .aq-toast {
     position: fixed;
@@ -532,6 +645,30 @@ body {
     .aq-menu {
         left: 0;
         transform: none;
+    }
+    .aq-drone {
+        left: 10px;
+        right: 10px;
+        width: auto;
+        bottom: 132px;
+        padding: 8px 10px 10px;
+    }
+    .aq-drone-title {
+        margin-bottom: 6px;
+    }
+    .aq-drone-read {
+        display: none;
+    }
+    .aq-drone-pad {
+        grid-template-columns: repeat(6, 1fr);
+        gap: 4px;
+        margin-bottom: 6px;
+    }
+    .aq-drone-light {
+        height: 32px;
+    }
+    .aq-drone-light span {
+        display: inline;
     }
 }
 @media (prefers-reduced-motion: reduce) {

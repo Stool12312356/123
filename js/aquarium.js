@@ -260,6 +260,11 @@ uniform vec3 uBoxMin;
 uniform vec3 uBoxMax;
 uniform vec3 uFog;
 uniform vec3 uAccent;
+uniform vec3 uSpotPos;
+uniform vec3 uSpotDir;
+uniform float uSpotK;
+uniform sampler2D uRip;
+uniform float uRipK;
 
 float caustic(vec2 uv, float t) {
     vec2 p = mod(uv * 6.28318, 6.28318) - 250.0;
@@ -292,16 +297,40 @@ float waterPath(vec3 wp) {
 vec3 lightCol() { return mix(vec3(1.0, 0.96, 0.88), vec3(0.34, 0.48, 0.95), uNight); }
 vec3 ambCol() { return mix(vec3(0.20, 0.28, 0.31), vec3(0.035, 0.06, 0.12), uNight); }
 float depth01(vec3 wp) { return clamp((uBoxMax.y - wp.y) / (uBoxMax.y - uBoxMin.y), 0.0, 1.0); }
+/* Прожектор дрона: конус, затухание с расстоянием, N·L */
+vec3 spotLight(vec3 wp, vec3 n) {
+    if (uSpotK < 0.002) return vec3(0.0);
+    vec3 d = wp - uSpotPos;
+    float dist = max(length(d), 0.001);
+    vec3 L = d / dist;
+    float cone = smoothstep(0.84, 0.95, dot(L, uSpotDir));
+    float att = 1.0 / (1.0 + dist * dist * 7.0);
+    float ndl = max(dot(n, -L), 0.0) * 0.85 + 0.15;
+    return vec3(1.0, 0.95, 0.82) * cone * att * ndl * uSpotK * 2.4;
+}
+/* Фокусировка света рябью (преломление на поверхности): >0 — светлые кольца на дне */
+vec2 ripUV(vec3 wp) { return (wp.xz - uBoxMin.xz) / (uBoxMax.xz - uBoxMin.xz); }
+float ripFocus(vec3 wp) {
+    if (uRipK < 0.002) return 0.0;
+    return (texture2D(uRip, ripUV(wp) + vec2(0.0, (uBoxMax.y - wp.y) * 0.04)).r - 0.5) * 2.0 * uRipK;
+}
 vec3 underwaterLit(vec3 base, vec3 n, vec3 wp, float spec) {
     vec3 L = normalize(vec3(0.15, 1.0, 0.25));
     float diff = max(dot(n, L), 0.0) * 0.8 + 0.2 * max(n.y, 0.0);
     float d = depth01(wp);
     float lamp = (1.0 - d * 0.45) * (1.0 - uNight * 0.72);
-    float c = caustic(wp.xz * 0.85 + vec2(wp.y * 0.12), uTime * 0.45) * smoothstep(-0.25, 0.9, n.y);
+    float up = smoothstep(-0.25, 0.9, n.y);
+    float c = caustic(wp.xz * 0.85 + vec2(wp.y * 0.12), uTime * 0.45) * up;
+    float rf = ripFocus(wp) * up;
+    c += max(rf, 0.0) * 1.6;
     vec3 col = base * (ambCol() + lightCol() * diff * lamp) + lightCol() * c * 0.5 * lamp * (0.35 + base);
+    col *= 1.0 - max(-rf, 0.0) * 0.35 * lamp;
     vec3 V = normalize(uCam - wp);
     vec3 H = normalize(L + V);
     col += lightCol() * pow(max(dot(n, H), 0.0), 48.0) * spec * lamp;
+    vec3 sp = spotLight(wp, n);
+    vec3 Hs = normalize(normalize(uSpotPos - wp) + V);
+    col += base * sp * 1.5 + sp * pow(max(dot(n, Hs), 0.0), 40.0) * spec * 1.5;
     return col;
 }
 vec3 fogWater(vec3 col, vec3 wp) {
@@ -355,7 +384,7 @@ void main() {
     gl_Position = uVP * wp;
 }`;
     const FS_LIT = `
-uniform float uInWater;
+uniform float uInWater; uniform float uFill;
 varying vec3 vWP; varying vec3 vN; varying vec4 vCol;
 void main() {
     vec3 V = normalize(uCam - vWP);
@@ -377,8 +406,12 @@ void main() {
         vec3 H = normalize(L + V);
         col += room * pow(max(dot(n, H), 0.0), 60.0) * 0.25;
     }
+    /* Подсветка «от камеры» — чтобы дрон читался в темноте */
+    col += vCol.rgb * uFill * (0.25 + 0.75 * pow(max(dot(n, V), 0.0), 2.0));
     float acc = step(0.75, vCol.a);
     float wht = step(0.25, vCol.a) * (1.0 - acc);
+    float lmp = step(0.05, vCol.a) * (1.0 - step(0.25, vCol.a));
+    col = mix(col, vec3(1.0, 0.97, 0.86) * 1.8, lmp);
     col = mix(col, uAccent * 1.45, acc);
     col = mix(col, lightCol() * mix(1.3, 0.55, uNight), wht);
     gl_FragColor = vec4(col, 1.0);
@@ -501,7 +534,8 @@ void main() {
         float streak = smoothstep(0.035, 0.0, abs(fract(vUV.x * 1.3 + vUV.y * 0.45 + 0.15) - 0.5)) * 0.06;
         streak += smoothstep(0.012, 0.0, abs(fract(vUV.x * 1.3 + vUV.y * 0.45 + 0.21) - 0.5)) * 0.05;
         a += streak * (1.0 - uNight * 0.6);
-        float wl = 1.0 - smoothstep(0.0, 0.01, abs(vWP.y - uBoxMax.y - 0.004 * sin(vWP.x * 9.0 + vWP.z * 9.0 + uTime * 1.6)));
+        float rh = uRipK > 0.002 ? (texture2D(uRip, clamp(ripUV(vWP), 0.0, 1.0)).a - 0.5) * 0.05 : 0.0;
+        float wl = 1.0 - smoothstep(0.0, 0.01, abs(vWP.y - uBoxMax.y - rh - 0.004 * sin(vWP.x * 9.0 + vWP.z * 9.0 + uTime * 1.6)));
         col += vec3(0.75, 0.95, 1.0) * wl * 0.6 * (1.0 - uNight * 0.5);
         a += wl * 0.35 * abs(n.z + n.x);
     }
@@ -511,9 +545,9 @@ void main() {
 }`;
 
     const VS_WATER = `
-attribute vec3 aPos;
+attribute vec3 aPos; attribute vec3 aRip;
 uniform mat4 uVP; uniform float uTime;
-varying vec3 vWP; varying vec3 vN;
+varying vec3 vWP; varying vec3 vN; varying float vEdge;
 void main() {
     vec3 p = aPos;
     float x = p.x, z = p.z, t = uTime;
@@ -521,13 +555,15 @@ void main() {
     float dx = 0.054 * cos(x * 9.0 + t * 1.6) + 0.012 * cos(z * 13.0 - t * 2.1 + x * 3.0) + 0.0575 * cos((x + z) * 23.0 + t * 3.1);
     float dz = 0.052 * cos(z * 13.0 - t * 2.1 + x * 3.0) + 0.0575 * cos((x + z) * 23.0 + t * 3.1);
     float edge = smoothstep(0.0, 0.05, 1.0 - abs(x)) * smoothstep(0.0, 0.05, 0.45 - abs(z));
-    p.y += h * edge;
-    vWP = p; vN = normalize(vec3(-dx * edge, 1.0, -dz * edge));
+    p.y += h * edge + aRip.x;
+    vEdge = edge;
+    vWP = p; vN = normalize(vec3(-dx * edge - aRip.y, 1.0, -dz * edge - aRip.z));
     gl_Position = uVP * vec4(p, 1.0);
 }`;
     const FS_WATER = `
 uniform vec3 uLamp;
-varying vec3 vWP; varying vec3 vN;
+uniform sampler2D uScene; uniform vec2 uRes; uniform float uRefr;
+varying vec3 vWP; varying vec3 vN; varying float vEdge;
 void main() {
     vec3 V = normalize(uCam - vWP);
     vec3 n = normalize(vN);
@@ -541,12 +577,22 @@ void main() {
         vec3 R = reflect(-V, n);
         float spec = pow(max(dot(R, Ld), 0.0), 90.0) * 1.6;
         vec3 sky = mix(vec3(0.04, 0.05, 0.06), vec3(0.16, 0.19, 0.2), clamp(R.y, 0.0, 1.0)) + uAccent * 0.04;
-        col = mix(uFog * 0.7 * (1.0 - uNight * 0.7), sky, fres) + lightCol() * spec * (1.0 - uNight * 0.5);
-        a = mix(0.32, 0.88, fres) + spec * 0.5;
+        if (uRefr > 0.0) {
+            /* Преломление: подводная часть кадра со сдвигом по нормали поверхности */
+            vec2 suv = gl_FragCoord.xy / uRes;
+            vec2 off = n.xz * uRefr * vEdge;
+            vec3 refr = texture2D(uScene, clamp(suv + off, vec2(0.002), vec2(0.998))).rgb * vec3(0.84, 0.96, 1.0);
+            refr += lightCol() * max(dot(n.xz, n.xz) * 6.0 - 0.02, 0.0) * 0.12 * (1.0 - uNight * 0.6);
+            col = mix(refr, sky, fres * 0.9) + lightCol() * spec * (1.0 - uNight * 0.5) + spotLight(vWP - vec3(0.0, 0.01, 0.0), -n) * 0.25;
+            a = 1.0;
+        } else {
+            col = mix(uFog * 0.7 * (1.0 - uNight * 0.7), sky, fres) + lightCol() * spec * (1.0 - uNight * 0.5);
+            a = mix(0.32, 0.88, fres) + spec * 0.5;
+        }
     } else {
         float tir = smoothstep(0.58, 0.7, 1.0 - ndv);
         vec3 bright = mix(vec3(0.55, 0.85, 0.9), vec3(0.75, 0.95, 1.0), caustic(vWP.xz * 1.3, uTime * 0.6));
-        col = mix(uFog * 1.4, bright, tir) * mix(1.0, 0.35, uNight);
+        col = mix(uFog * 1.4, bright, tir) * mix(1.0, 0.35, uNight) + spotLight(vWP, n) * 0.6;
         a = mix(0.35, 0.92, tir);
         col = fogWater(col, vWP - n * 0.001);
     }
@@ -583,6 +629,9 @@ void main() {
         col = mix(vec3(0.75, 0.88, 0.82), vec3(0.45, 0.6, 0.95), uNight);
         a = (1.0 - d) * 0.28 * alpha;
     }
+    vec3 sc = spotLight(vWP, normalize(uSpotPos - vWP + vec3(0.0001)));
+    if (kind > 1.5) { col += sc * 2.5; a += min(length(sc), 1.2) * 0.55 * (1.0 - d) * alpha; }
+    else col += sc * 0.8;
     float wpath = waterPath(vWP);
     col = mix(col, uFog * (1.0 - uNight * 0.7), clamp(1.0 - exp(-wpath * 0.8), 0.0, 0.8));
     gl_FragColor = vec4(col, a);
@@ -611,6 +660,30 @@ void main() {
     float fl = 0.65 + 0.35 * sin(uTime * 0.7 + vPh) * sin(uTime * 0.43 + vPh * 1.7);
     float a = fall * side * fl * uRay;
     gl_FragColor = vec4(lightCol() * a, a);
+}`;
+
+    /* Объёмный конус прожектора (аддитивно, обрезается стенками аквариума) */
+    const VS_CONE = `
+attribute vec3 aPos; attribute vec3 aNormal;
+uniform mat4 uVP; uniform mat4 uModel;
+varying vec3 vWP; varying vec3 vN; varying float vT;
+void main() {
+    vec4 wp = uModel * vec4(aPos, 1.0);
+    vWP = wp.xyz; vN = (uModel * vec4(aNormal, 0.0)).xyz; vT = aPos.x;
+    gl_Position = uVP * wp;
+}`;
+    const FS_CONE = `
+uniform float uConeI;
+varying vec3 vWP; varying vec3 vN; varying float vT;
+void main() {
+    if (vWP.x < uBoxMin.x || vWP.x > uBoxMax.x || vWP.z < uBoxMin.z || vWP.z > uBoxMax.z || vWP.y > uBoxMax.y || vWP.y < uBoxMin.y) discard;
+    vec3 V = normalize(uCam - vWP);
+    float edge = pow(abs(dot(normalize(vN), V)), 1.8);
+    float fall = pow(1.0 - clamp(vT, 0.0, 1.0), 1.5) * smoothstep(0.0, 0.05, vT);
+    float shimmer = 0.85 + 0.15 * sin(vT * 30.0 - uTime * 3.0 + vWP.y * 20.0);
+    float a = edge * fall * shimmer * uSpotK * uConeI;
+    vec3 col = vec3(1.0, 0.95, 0.8) * a * exp(-waterPath(vWP) * 0.35);
+    gl_FragColor = vec4(col, a);
 }`;
 
     const VS_FULL = `
@@ -665,6 +738,7 @@ void main() {
             water: program(VS_WATER, FS_WATER),
             pts: program(VS_PTS, FS_PTS),
             rays: program(VS_RAYS, FS_RAYS),
+            cone: program(VS_CONE, FS_CONE),
             bg: program(VS_FULL, FS_BG),
             floor: DERIV
                 ? program(VS_FLOOR, FS_FLOOR, "#extension GL_OES_standard_derivatives : enable\n")
@@ -808,22 +882,24 @@ void main() {
         b.smooth(from, idxFrom);
     }
 
+    /* Крупные камни: [x, z, sx, sy, sz, поворот, цвет] — общие для меша и коллизий дрона */
+    const ROCKS = [
+        [-0.62, -0.18, 0.2, 0.15, 0.16, 0.4, [0.42, 0.42, 0.44]],
+        [-0.42, -0.26, 0.14, 0.2, 0.12, 1.3, [0.46, 0.44, 0.42]],
+        [-0.75, 0.02, 0.09, 0.07, 0.08, 2.1, [0.4, 0.4, 0.42]],
+        [0.5, -0.24, 0.17, 0.22, 0.13, 0.9, [0.38, 0.39, 0.42]],
+        [0.66, -0.1, 0.11, 0.09, 0.1, 2.6, [0.44, 0.42, 0.4]],
+        [0.34, 0.12, 0.06, 0.04, 0.05, 0.2, [0.48, 0.46, 0.43]],
+        [-0.15, -0.32, 0.12, 0.1, 0.08, 1.9, [0.41, 0.41, 0.43]],
+        [0.05, 0.24, 0.045, 0.03, 0.04, 0.7, [0.5, 0.48, 0.45]],
+        [-0.3, 0.2, 0.035, 0.025, 0.03, 1.1, [0.47, 0.45, 0.42]]
+    ];
+
     function buildDecor() {
         const b = buildSand();
         const R = rng;
         /* Камни: композиция слева, справа и у задней стенки */
-        const rocks = [
-            [-0.62, -0.18, 0.2, 0.15, 0.16, 0.4, [0.42, 0.42, 0.44]],
-            [-0.42, -0.26, 0.14, 0.2, 0.12, 1.3, [0.46, 0.44, 0.42]],
-            [-0.75, 0.02, 0.09, 0.07, 0.08, 2.1, [0.4, 0.4, 0.42]],
-            [0.5, -0.24, 0.17, 0.22, 0.13, 0.9, [0.38, 0.39, 0.42]],
-            [0.66, -0.1, 0.11, 0.09, 0.1, 2.6, [0.44, 0.42, 0.4]],
-            [0.34, 0.12, 0.06, 0.04, 0.05, 0.2, [0.48, 0.46, 0.43]],
-            [-0.15, -0.32, 0.12, 0.1, 0.08, 1.9, [0.41, 0.41, 0.43]],
-            [0.05, 0.24, 0.045, 0.03, 0.04, 0.7, [0.5, 0.48, 0.45]],
-            [-0.3, 0.2, 0.035, 0.025, 0.03, 1.1, [0.47, 0.45, 0.42]]
-        ];
-        rocks.forEach((r, i) => addRock(b, r[0], r[1], r[2], r[3], r[4], r[5], r[6], i * 7.3 + 1));
+        ROCKS.forEach((r, i) => addRock(b, r[0], r[1], r[2], r[3], r[4], r[5], r[6], i * 7.3 + 1));
         /* Галька */
         for (let i = 0; i < 70; i++) {
             const x = R() * 1.9 - 0.95, z = R() * 0.84 - 0.42;
@@ -955,14 +1031,15 @@ void main() {
         return b;
     }
 
+    /* Сетка поверхности = сетка симуляции ряби (RIP_X × RIP_Z вершин) */
+    const RIP_X = 129, RIP_Z = 59;
     function buildWater() {
         const b = new Builder();
-        const NX = 90, NZ = 40;
-        for (let j = 0; j <= NZ; j++) {
-            for (let i = 0; i <= NX; i++) b.vert([-TANK.x + (i / NX) * TANK.x * 2, WATER_Y, -TANK.z + (j / NZ) * TANK.z * 2], [0, 1, 0], [0, 0, 0, 0]);
+        for (let j = 0; j < RIP_Z; j++) {
+            for (let i = 0; i < RIP_X; i++) b.vert([-TANK.x + (i / (RIP_X - 1)) * TANK.x * 2, WATER_Y, -TANK.z + (j / (RIP_Z - 1)) * TANK.z * 2], [0, 1, 0], [0, 0, 0, 0]);
         }
-        for (let j = 0; j < NZ; j++) {
-            for (let i = 0; i < NX; i++) { const a = j * (NX + 1) + i, c = a + NX + 1; b.tri(a, c, a + 1); b.tri(a + 1, c, c + 1); }
+        for (let j = 0; j < RIP_Z - 1; j++) {
+            for (let i = 0; i < RIP_X - 1; i++) { const a = j * RIP_X + i, c = a + RIP_X; b.tri(a, c, a + 1); b.tri(a + 1, c, c + 1); }
         }
         return b;
     }
@@ -1124,6 +1201,111 @@ void main() {
     }
 
     /* ---------------------------------------------------------------- *
+     * Дрон-субмарина: корпус-тело вращения, рубка, рули, прожектор, винт в насадке
+     * Локальные оси: +x — нос, длина 1 (масштаб в мире — SUB.scale)
+     * ---------------------------------------------------------------- */
+    /* Повернуть вершины [from..] вокруг оси X на угол a */
+    function rotX(b, from, a) {
+        const c = Math.cos(a), sn = Math.sin(a);
+        for (let k = from; k < b.count(); k++) {
+            const P = b.pos, N = b.nrm, o = k * 3;
+            const y = P[o + 1], z = P[o + 2], ny = N[o + 1], nz = N[o + 2];
+            P[o + 1] = y * c - z * sn; P[o + 2] = y * sn + z * c;
+            N[o + 1] = ny * c - nz * sn; N[o + 2] = ny * sn + nz * c;
+        }
+    }
+    function buildSub() {
+        const b = new Builder();
+        const HULL = [1.0, 0.76, 0.1, 0], DARK = [0.12, 0.13, 0.14, 0], GLASS = [0.04, 0.1, 0.16, 0], ACC = [1, 1, 1, 1], LENS = [1, 1, 1, 0.15];
+        /* Корпус: профиль радиуса вдоль x */
+        /* [x, радиус, кольцо-акцент]. Кольцо задаётся парами совпадающих рядов, чтобы цвет
+           (и альфа-флаг подсветки) не интерполировался по треугольникам и не давал полос */
+        const prof = [[-0.44, 0.0], [-0.43, 0.035], [-0.4, 0.06], [-0.3, 0.1], [-0.15, 0.14], [-0.03, 0.158], [-0.03, 0.158, 1], [0.02, 0.16, 1], [0.02, 0.16], [0.15, 0.162], [0.27, 0.15], [0.36, 0.125], [0.43, 0.09], [0.48, 0.05], [0.5, 0.0]];
+        const SEG = 22, from = b.count(), idxFrom = b.idx.length;
+        prof.forEach(([x, r, ring]) => {
+            for (let k = 0; k <= SEG; k++) {
+                const a = (k / SEG) * TAU, cy = Math.cos(a), sz = Math.sin(a);
+                let c = HULL;
+                if (x >= 0.36 && cy > -0.35) c = GLASS;                       /* носовой иллюминатор-купол */
+                else if (ring) c = ACC;                                         /* акцентное кольцо */
+                else if (cy < -0.55) c = [0.85, 0.6, 0.08, 0];                 /* днище темнее */
+                b.vert([x, cy * r * 0.92, sz * r], null, c);
+            }
+        });
+        for (let i = 0; i < prof.length - 1; i++) {
+            for (let k = 0; k < SEG; k++) {
+                const a = from + i * (SEG + 1) + k, c = a + SEG + 1;
+                b.tri(a, c, a + 1); b.tri(a + 1, c, c + 1);
+            }
+        }
+        b.smooth(from, idxFrom);
+        /* Рубка, люк, перископ */
+        b.box([-0.14, 0.1, -0.055], [0.08, 0.235, 0.055], HULL);
+        b.box([-0.1, 0.235, -0.04], [0.04, 0.25, 0.04], DARK);
+        b.box([0.0, 0.25, -0.008], [0.016, 0.33, 0.008], DARK);
+        b.box([0.0, 0.32, -0.008], [0.05, 0.335, 0.008], DARK);
+        b.box([0.07, 0.15, -0.04], [0.082, 0.2, 0.04], GLASS);
+        /* Рули и стабилизаторы */
+        b.box([-0.42, -0.012, -0.2], [-0.3, 0.012, 0.2], DARK);
+        b.box([-0.43, -0.17, -0.01], [-0.31, 0.19, 0.01], DARK);
+        b.box([-0.37, -0.01, 0.2], [-0.33, 0.01, 0.21], ACC);
+        b.box([-0.37, -0.01, -0.21], [-0.33, 0.01, -0.2], ACC);
+        b.box([-0.4, 0.19, -0.012], [-0.35, 0.2, 0.012], ACC);
+        /* Прожектор под носом: корпус + яркая линза */
+        b.box([0.28, -0.17, -0.045], [0.4, -0.1, 0.045], DARK);
+        b.box([0.4, -0.16, -0.035], [0.405, -0.11, 0.035], LENS);
+        /* Лыжи */
+        b.box([-0.25, -0.2, 0.07], [0.25, -0.185, 0.09], DARK);
+        b.box([-0.25, -0.2, -0.09], [0.25, -0.185, -0.07], DARK);
+        b.box([-0.16, -0.185, 0.075], [-0.14, -0.13, 0.085], DARK);
+        b.box([0.14, -0.185, 0.075], [0.16, -0.13, 0.085], DARK);
+        b.box([-0.16, -0.185, -0.085], [-0.14, -0.13, -0.075], DARK);
+        b.box([0.14, -0.185, -0.085], [0.16, -0.13, -0.075], DARK);
+        /* Насадка винта (тор в плоскости YZ) */
+        const R = 0.12, r = 0.016, TS = 28, RS = 8, tf = b.count(), ti = b.idx.length;
+        for (let i = 0; i <= TS; i++) {
+            const a = (i / TS) * TAU;
+            for (let k = 0; k <= RS; k++) {
+                const t = (k / RS) * TAU;
+                const rr = R + Math.cos(t) * r * 0.6;
+                b.vert([-0.47 + Math.sin(t) * r * 1.6, Math.cos(a) * rr, Math.sin(a) * rr], null, DARK);
+            }
+        }
+        for (let i = 0; i < TS; i++) {
+            for (let k = 0; k < RS; k++) { const a = tf + i * (RS + 1) + k, c = a + RS + 1; b.tri(a, c, a + 1); b.tri(a + 1, c, c + 1); }
+        }
+        b.smooth(tf, ti);
+        return b;
+    }
+    function buildProp() {
+        const b = new Builder();
+        const C = [0.75, 0.76, 0.78, 0];
+        b.box([-0.03, -0.022, -0.022], [0.03, 0.022, 0.022], [0.3, 0.3, 0.32, 0]);
+        for (let k = 0; k < 3; k++) {
+            const from = b.count();
+            b.box([-0.012, 0.018, -0.022], [0.012, 0.1, 0.022], C);
+            /* лёгкая закрутка лопасти */
+            for (let v = from; v < b.count(); v++) { const o = v * 3; b.pos[o] += (b.pos[o + 2]) * 0.6; }
+            rotX(b, from, (k / 3) * TAU);
+        }
+        return b;
+    }
+    /* Конус прожектора: вершина в 0, ось +x, длина 1 */
+    function buildCone() {
+        const b = new Builder();
+        const SEG = 32, RAD = 0.42, from = b.count();
+        for (let k = 0; k <= SEG; k++) {
+            const a = (k / SEG) * TAU, cy = Math.cos(a), sz = Math.sin(a);
+            const n = [RAD, -cy, -sz];
+            const l = Math.hypot(n[0], n[1], n[2]);
+            b.vert([0.0, 0, 0], [-n[0] / l * 0.3, cy, sz], [0, 0, 0, 0]);
+            b.vert([1.0, cy * RAD, sz * RAD], [-RAD / l * 0.3, cy, sz], [0, 0, 0, 0]);
+        }
+        for (let k = 0; k < SEG; k++) { const a = from + k * 2; b.tri(a, a + 1, a + 2); b.tri(a + 2, a + 1, a + 3); }
+        return b;
+    }
+
+    /* ---------------------------------------------------------------- *
      * Загрузка мешей
      * ---------------------------------------------------------------- */
     const MESH = {
@@ -1134,9 +1316,131 @@ void main() {
         water: upload(buildWater()),
         rays: upload(buildRays()),
         floor: upload(buildFloor()),
+        sub: upload(buildSub()),
+        prop: upload(buildProp()),
+        cone: upload(buildCone()),
         fish: {}
     };
     Object.keys(SPECIES).forEach(k => { MESH.fish[k] = buildFishMesh(SPECIES[k]); });
+
+    /* ---------------------------------------------------------------- *
+     * Физика водной глади: волновое уравнение на сетке RIP_X × RIP_Z
+     * Фиксированный шаг 60 Гц (не зависит от FPS), отражение от стенок.
+     * → вершинный буфер aRip (высота, наклон x, наклон z) для поверхности
+     * → текстура uRip (L — фокусировка света, A — высота) для каустики и стекла
+     * ---------------------------------------------------------------- */
+    const RIP = {
+        nx: RIP_X, nz: RIP_Z, cell: (TANK.x * 2) / (RIP_X - 1),
+        a: new Float32Array(RIP_X * RIP_Z), b: new Float32Array(RIP_X * RIP_Z),
+        vbo: new Float32Array(RIP_X * RIP_Z * 3), tex: new Uint8Array(RIP_X * RIP_Z * 2),
+        acc: 0, energy: 0, active: 0, k: 0, H: 0.016, SLOPE: 3.2, dirty: true,
+        /* Возмущение: гауссова «ямка» в точке (x, z) */
+        disturb(x, z, radius, strength) {
+            const ci = Math.round((x + TANK.x) / this.cell), cj = Math.round((z + TANK.z) / this.cell);
+            const rc = Math.max(1, Math.ceil(radius / this.cell));
+            for (let j = Math.max(1, cj - rc); j <= Math.min(this.nz - 2, cj + rc); j++) {
+                for (let i = Math.max(1, ci - rc); i <= Math.min(this.nx - 2, ci + rc); i++) {
+                    const dx = (i - ci) / rc, dz = (j - cj) / rc, d2 = dx * dx + dz * dz;
+                    if (d2 > 1) continue;
+                    this.a[j * this.nx + i] -= strength * (0.5 + 0.5 * Math.cos(Math.PI * Math.sqrt(d2)));
+                }
+            }
+            this.active = 1;
+        },
+        step() {
+            const nx = this.nx, nz = this.nz, A = this.a, B = this.b;
+            let e = 0;
+            for (let j = 1; j < nz - 1; j++) {
+                const row = j * nx;
+                for (let i = 1; i < nx - 1; i++) {
+                    const k = row + i;
+                    let v = (A[k - 1] + A[k + 1] + A[k - nx] + A[k + nx]) * 0.5 - B[k];
+                    v *= 0.982;
+                    B[k] = v;
+                    const av = v < 0 ? -v : v;
+                    if (av > e) e = av;
+                }
+            }
+            this.a = B; this.b = A;
+            this.energy = e;
+        },
+        update(dt) {
+            if (!this.active) return;
+            this.acc += dt;
+            let n = 0;
+            while (this.acc >= 1 / 60 && n < 4) { this.step(); this.acc -= 1 / 60; n++; }
+            if (n === 4) this.acc = 0;
+            if (n) this.dirty = true;
+            if (this.energy < 0.0015) {
+                this.a.fill(0); this.b.fill(0); this.active = 0; this.energy = 0; this.dirty = true;
+            }
+        },
+        /* Заполнить буферы для GPU */
+        pack() {
+            const nx = this.nx, nz = this.nz, A = this.a, V = this.vbo, T = this.tex, H = this.H, inv = H * this.SLOPE / (2 * this.cell);
+            for (let j = 0; j < nz; j++) {
+                for (let i = 0; i < nx; i++) {
+                    const k = j * nx + i;
+                    const h = A[k];
+                    const l = i > 0 ? A[k - 1] : h, r = i < nx - 1 ? A[k + 1] : h;
+                    const d = j > 0 ? A[k - nx] : h, u = j < nz - 1 ? A[k + nx] : h;
+                    V[k * 3] = h * H;
+                    V[k * 3 + 1] = (r - l) * inv;
+                    V[k * 3 + 2] = (u - d) * inv;
+                    const lap = l + r + d + u - 4 * h;
+                    const f = 128 + lap * 520, hh = 128 + h * 90;
+                    T[k * 2] = f < 0 ? 0 : f > 255 ? 255 : f;
+                    T[k * 2 + 1] = hh < 0 ? 0 : hh > 255 ? 255 : hh;
+                }
+            }
+            this.dirty = false;
+        }
+    };
+    const ripVbo = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, ripVbo);
+    gl.bufferData(gl.ARRAY_BUFFER, RIP.vbo, gl.DYNAMIC_DRAW);
+    MESH.water.buffers.aRip = { buf: ripVbo, size: 3 };
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    const ripTex = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, ripTex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    RIP.pack();
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE_ALPHA, RIP.nx, RIP.nz, 0, gl.LUMINANCE_ALPHA, gl.UNSIGNED_BYTE, RIP.tex);
+    function uploadRipples() {
+        if (!RIP.dirty) return;
+        RIP.pack();
+        gl.bindBuffer(gl.ARRAY_BUFFER, ripVbo);
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, RIP.vbo);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, ripTex);
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, RIP.nx, RIP.nz, gl.LUMINANCE_ALPHA, gl.UNSIGNED_BYTE, RIP.tex);
+        gl.activeTexture(gl.TEXTURE0);
+    }
+
+    /* Копия кадра для преломления на поверхности воды (unit 2) */
+    const sceneTex = gl.createTexture();
+    let sceneW = 0, sceneH = 0;
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, sceneTex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.activeTexture(gl.TEXTURE0);
+    function grabScene() {
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, sceneTex);
+        if (sceneW !== state.w || sceneH !== state.h) {
+            sceneW = state.w; sceneH = state.h;
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, sceneW, sceneH, 0, gl.RGB, gl.UNSIGNED_BYTE, null);
+        }
+        gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 0, 0, sceneW, sceneH);
+        gl.activeTexture(gl.TEXTURE0);
+    }
 
     const fullTri = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, fullTri);
@@ -1179,6 +1483,13 @@ void main() {
         if (u(pr, "uBoxMax")) gl.uniform3f(u(pr, "uBoxMax"), TANK.x, WATER_Y, TANK.z);
         if (u(pr, "uFog")) gl.uniform3f(u(pr, "uFog"), 0.07, 0.22, 0.25);
         if (u(pr, "uAccent")) gl.uniform3fv(u(pr, "uAccent"), ACCENT);
+        if (u(pr, "uSpotK")) {
+            gl.uniform1f(u(pr, "uSpotK"), sub.spotK);
+            gl.uniform3fv(u(pr, "uSpotPos"), sub.spotPos);
+            gl.uniform3fv(u(pr, "uSpotDir"), sub.spotDir);
+        }
+        if (u(pr, "uRip")) gl.uniform1i(u(pr, "uRip"), 1);
+        if (u(pr, "uRipK")) gl.uniform1f(u(pr, "uRipK"), RIP.k);
     }
 
     /* ---------------------------------------------------------------- *
@@ -1239,6 +1550,7 @@ void main() {
                 float: rand(0.6, 2.2), vy: 0, life: 0, eaten: false, ph: rand(0, TAU), size: rand(0.009, 0.014), alpha: 1
             });
         }
+        RIP.disturb(x, z, 0.03, 0.35);
         updateStats();
     }
 
@@ -1281,6 +1593,19 @@ void main() {
                         f.boost = 1.5;
                         sfxEat();
                     }
+                }
+            }
+            /* Дрон рядом → рыба шарахается в сторону от него */
+            if (sub.on) {
+                const dx = f.p[0] - sub.p[0], dy = f.p[1] - sub.p[1], dz = f.p[2] - sub.p[2];
+                const d2 = dx * dx + dy * dy + dz * dz, R = sub.fearR;
+                if (d2 < R * R) {
+                    const d = Math.sqrt(d2) || 1;
+                    if (f.scare <= 0.05) {
+                        f.flee = [dx / d + rand(-0.35, 0.35) + sub.v[0] * 1.5, dy / d * 0.5 + rand(-0.15, 0.15), dz / d + rand(-0.35, 0.35) + sub.v[2] * 1.5];
+                        f.boost = Math.max(f.boost, 1.4);
+                    }
+                    f.scare = Math.max(f.scare, 0.35 + (1 - d / R) * 0.5);
                 }
             }
             if (f.scare > 0) {
@@ -1430,9 +1755,164 @@ void main() {
     /* ---------------------------------------------------------------- *
      * Камера и ввод
      * ---------------------------------------------------------------- */
+    /* ---------------------------------------------------------------- *
+     * Дрон-субмарина: управление, физика, столкновения, прожектор
+     * ---------------------------------------------------------------- */
+    const SUB_SCALE = 0.26, SUB_R = 0.075, HOME_TARGET = [0, -0.22, 0];
+    const sub = {
+        on: false, light: true,
+        p: [0, -0.05, 0.12], v: [0, 0, 0], yaw: 0, yawV: 0, pitch: 0, roll: 0,
+        prop: 0, rpm: 0, thrust: 0, surfaced: false, wakeT: 0, bumpT: 0, bubT: 0,
+        spotK: 0, spotPos: new Float32Array([0, 0, 0]), spotDir: new Float32Array([1, 0, 0]),
+        model: null, propModel: null, coneModel: null, fearR: 0.3, orbitDist: 3.4
+    };
+    const keys = new Set();
+    const keyAxis = (pos, neg) => (pos.some(k => keys.has(k)) ? 1 : 0) - (neg.some(k => keys.has(k)) ? 1 : 0);
+    function camMin() { return sub.on ? 0.42 : (state.minDist || 1.7); }
+    function camMax() { return sub.on ? 2.4 : 6.5; }
+
+    function setDrone(on, quiet) {
+        on = !!on;
+        if (on === sub.on) return;
+        sub.on = on;
+        keys.clear();
+        if (on) {
+            sub.orbitDist = state.dist;
+            state.dist = state.w / state.h < 0.8 ? 1.25 : 0.9;
+            state.pitch = 0.24;
+            state.yaw = sub.yaw - Math.PI / 2;
+            state.vYaw = state.vPitch = 0;
+            if (!quiet) toast("Дрон: W/S — ход, A/D — поворот, Пробел/Shift — всплыть/нырнуть, L — прожектор, Esc — выход");
+        } else {
+            state.dist = sub.orbitDist || DEFAULT_VIEW.dist;
+            state.pitch = DEFAULT_VIEW.pitch;
+            if (!quiet) toast("Дрон припаркован");
+        }
+        paintToggles(); save();
+    }
+
+    /* Столкновения: стенки, дно, камни (эллипсоиды), поверхность */
+    function collideSub() {
+        const P = sub.p, V = sub.v;
+        let hit = 0;
+        const lim = [TANK.x - SUB_R - 0.02, TANK.z - SUB_R - 0.01];
+        if (P[0] > lim[0]) { P[0] = lim[0]; hit = Math.max(hit, Math.abs(V[0])); V[0] *= -0.3; }
+        if (P[0] < -lim[0]) { P[0] = -lim[0]; hit = Math.max(hit, Math.abs(V[0])); V[0] *= -0.3; }
+        if (P[2] > lim[1]) { P[2] = lim[1]; hit = Math.max(hit, Math.abs(V[2])); V[2] *= -0.3; }
+        if (P[2] < -lim[1]) { P[2] = -lim[1]; hit = Math.max(hit, Math.abs(V[2])); V[2] *= -0.3; }
+        const fl = sandHeight(P[0], P[2]) + 0.06;
+        if (P[1] < fl) { P[1] = fl; if (V[1] < 0) { hit = Math.max(hit, -V[1]); V[1] *= -0.2; } }
+        for (let i = 0; i < ROCKS.length; i++) {
+            const r = ROCKS[i];
+            const cy = sandHeight(r[0], r[1]) - r[3] * 0.35;
+            const rx = Math.max(r[2], r[4]) * 1.12 + SUB_R, ry = r[3] * 1.05 + SUB_R * 0.6;
+            const dx = (P[0] - r[0]) / rx, dy = (P[1] - cy) / ry, dz = (P[2] - r[1]) / rx;
+            const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (d < 1 && d > 1e-5) {
+                const nx = dx / d / rx, ny = dy / d / ry, nz = dz / d / rx, nl = Math.hypot(nx, ny, nz);
+                P[0] = r[0] + dx / d * rx; P[1] = cy + dy / d * ry; P[2] = r[1] + dz / d * rx;
+                const vn = (V[0] * nx + V[1] * ny + V[2] * nz) / nl;
+                if (vn < 0) {
+                    hit = Math.max(hit, -vn);
+                    V[0] -= 1.3 * vn * nx / nl; V[1] -= 1.3 * vn * ny / nl; V[2] -= 1.3 * vn * nz / nl;
+                }
+            }
+        }
+        const top = WATER_Y - 0.012;
+        if (P[1] > top) { P[1] = top; if (V[1] > 0) V[1] = 0; }
+        return hit;
+    }
+
+    function updateSub(dt) {
+        const on = sub.on;
+        const thrust = on ? keyAxis(["KeyW", "ArrowUp"], ["KeyS", "ArrowDown"]) : 0;
+        const turn = on ? keyAxis(["KeyA", "ArrowLeft"], ["KeyD", "ArrowRight"]) : 0;
+        const vert = on ? keyAxis(["Space"], ["ShiftLeft", "ShiftRight"]) : 0;
+        sub.thrust = thrust;
+        sub.yawV += (turn * 1.8 - sub.yawV) * Math.min(1, dt * 4);
+        sub.yaw += sub.yawV * dt;
+        const fx = Math.cos(sub.yaw), fz = -Math.sin(sub.yaw);
+        const acc = 0.95;
+        sub.v[0] += fx * thrust * acc * dt;
+        sub.v[2] += fz * thrust * acc * dt;
+        sub.v[1] += vert * 0.7 * dt;
+        /* Сопротивление воды: вдоль корпуса меньше, поперёк больше (киль) */
+        const along = sub.v[0] * fx + sub.v[2] * fz;
+        const sx = sub.v[0] - fx * along, sz = sub.v[2] - fz * along;
+        const kA = Math.exp(-1.4 * dt), kS = Math.exp(-4.5 * dt), kV = Math.exp(-2.6 * dt);
+        sub.v[0] = fx * along * kA + sx * kS;
+        sub.v[2] = fz * along * kA + sz * kS;
+        sub.v[1] *= kV;
+        if (sub.surfaced && vert <= 0) sub.v[1] -= 0.02 * dt;  /* лёгкая отрицательная плавучесть у поверхности */
+        const prevY = sub.p[1];
+        sub.p[0] += sub.v[0] * dt; sub.p[1] += sub.v[1] * dt; sub.p[2] += sub.v[2] * dt;
+        const hit = collideSub();
+        sub.bumpT -= dt;
+        if (hit > 0.08 && sub.bumpT <= 0 && on) { sub.bumpT = 0.35; sfxBump(Math.min(1, hit * 2.5)); }
+
+        /* Всплытие / погружение → всплеск и круги на воде */
+        const speed = Math.hypot(sub.v[0], sub.v[2]);
+        const surfaceY = WATER_Y - 0.02;
+        if (!sub.surfaced && sub.p[1] >= surfaceY) {
+            sub.surfaced = true;
+            const k = clamp((sub.p[1] - prevY) / Math.max(dt, 1e-3) * 2.5 + 0.35, 0.3, 1.2);
+            splash(sub.p[0], sub.p[2], k);
+        } else if (sub.surfaced && sub.p[1] < WATER_Y - 0.065) {
+            sub.surfaced = false;
+            splash(sub.p[0], sub.p[2], 0.45);
+        }
+        if (sub.surfaced) {
+            sub.wakeT -= dt;
+            if (speed > 0.03 && sub.wakeT <= 0) {
+                sub.wakeT = 0.07;
+                RIP.disturb(sub.p[0] + fx * 0.1, sub.p[2] + fz * 0.1, 0.03, Math.min(0.5, speed * 1.4));
+                RIP.disturb(sub.p[0] - fx * 0.12, sub.p[2] - fz * 0.12, 0.025, Math.min(0.35, speed));
+            }
+        }
+
+        /* Визуальный наклон корпуса и винт */
+        sub.pitch = lerp(sub.pitch, clamp(sub.v[1] * 1.6 + thrust * 0.04, -0.35, 0.35), Math.min(1, dt * 3));
+        sub.roll = lerp(sub.roll, clamp(-sub.yawV * speed * 2.2, -0.3, 0.3) + Math.sin(state.time * 1.3) * 0.02, Math.min(1, dt * 3));
+        const rpmT = on ? 4 + Math.abs(thrust) * 38 + Math.abs(vert) * 18 + Math.abs(turn) * 14 : 0;
+        sub.rpm = lerp(sub.rpm, rpmT, Math.min(1, dt * (rpmT > sub.rpm ? 2.5 : 1.2)));
+        sub.prop += sub.rpm * dt;
+        sub.fearR = 0.24 + speed * 0.5 + (sub.rpm > 10 ? 0.06 : 0);
+
+        /* Пузыри из-под винта */
+        if (on && sub.rpm > 12 && !sub.surfaced && state.bubbles) {
+            sub.bubT += dt * sub.rpm * 0.6;
+            while (sub.bubT > 1) {
+                sub.bubT -= 1;
+                if (bubbles.length < 420) bubbles.push({ p: [sub.p[0] - fx * 0.13 + rand(-0.02, 0.02), sub.p[1] + rand(-0.02, 0.02), sub.p[2] - fz * 0.13 + rand(-0.02, 0.02)], v: rand(0.12, 0.24), s: rand(0.005, 0.012), ph: rand(0, TAU), alpha: 1 });
+            }
+        }
+
+        /* Матрицы и прожектор */
+        sub.model = M4.model(sub.p[0], sub.p[1], sub.p[2], sub.yaw, sub.pitch, sub.roll, SUB_SCALE);
+        sub.propModel = M4.mul(sub.model, M4.model(-0.47, 0, 0, 0, 0, sub.prop, 1));
+        const lp = M4.transform(sub.model, 0.405, -0.135, 0, 1);
+        const tilt = sub.pitch - 0.2;
+        sub.spotPos[0] = lp[0]; sub.spotPos[1] = lp[1]; sub.spotPos[2] = lp[2];
+        sub.spotDir[0] = Math.cos(sub.yaw) * Math.cos(tilt); sub.spotDir[1] = Math.sin(tilt); sub.spotDir[2] = -Math.sin(sub.yaw) * Math.cos(tilt);
+        sub.coneModel = M4.model(lp[0], lp[1], lp[2], sub.yaw, tilt, 0, 0.95);
+        const spotT = on && sub.light ? lerp(0.55, 1.3, state.night) : 0;
+        sub.spotK = lerp(sub.spotK, spotT, Math.min(1, dt * 5));
+        if (sub.spotK < 0.003 && spotT === 0) sub.spotK = 0;
+        updatePropSound(dt, thrust, vert, turn);
+    }
+
+    /* Всплеск: круги на воде + звук */
+    function splash(x, z, k) {
+        RIP.disturb(x, z, 0.04 + 0.04 * k, 0.7 + 1.6 * k);
+        sfxSplash(k);
+        if (k > 0.5) for (let i = 0; i < 6; i++) {
+            if (bubbles.length < 420) bubbles.push({ p: [x + rand(-0.06, 0.06), WATER_Y - rand(0.03, 0.12), z + rand(-0.04, 0.04)], v: rand(0.12, 0.25), s: rand(0.006, 0.016), ph: rand(0, TAU), alpha: 1 });
+        }
+    }
+
     function updateCamera() {
         /* Камера не опускается ниже пола комнаты */
-        state.dist = clamp(state.dist, state.minDist || 1.7, 6.5);
+        state.dist = clamp(state.dist, camMin(), camMax());
         state.pitch = Math.max(state.pitch, Math.asin(clamp((-1.1 - state.target[1]) / state.dist, -1, 1)));
         const cp = Math.cos(state.pitch), sp = Math.sin(state.pitch);
         state.cam = [
@@ -1516,7 +1996,7 @@ void main() {
         if (pinch && pointers.size >= 2) {
             const [a, b] = Array.from(pointers.values());
             const d = Math.hypot(a.x - b.x, a.y - b.y);
-            state.dist = clamp(pinch.dist * pinch.d / Math.max(d, 1), state.minDist, 6.5);
+            state.dist = clamp(pinch.dist * pinch.d / Math.max(d, 1), camMin(), camMax());
             interact();
             return;
         }
@@ -1553,7 +2033,7 @@ void main() {
     canvas.addEventListener("wheel", e => {
         e.preventDefault();
         const k = e.deltaMode === 1 ? 0.05 : 0.0012;
-        state.dist = clamp(state.dist * (1 + e.deltaY * k), state.minDist, 6.5);
+        state.dist = clamp(state.dist * (1 + e.deltaY * k), camMin(), camMax());
         interact();
     }, { passive: false });
     canvas.addEventListener("dblclick", e => { e.preventDefault(); resetView(); });
@@ -1576,8 +2056,14 @@ void main() {
             const hx = ray.o[0] + ray.d[0] * t, hz = ray.o[2] + ray.d[2] * t;
             if (t > 0 && Math.abs(hx) < TANK.x - 0.02 && Math.abs(hz) < TANK.z - 0.02) {
                 const hitBox = rayBox(ray, [-TANK.x, TANK.yMin, -TANK.z], [TANK.x, TANK.yMax, TANK.z]);
-                if (hitBox && hitBox.axis === 1) { dropFood(hx, hz, 6); sfxDrop(); return; }
+                if (hitBox && hitBox.axis === 1) { dropFood(hx, hz, 6); splash(hx, hz, 0.35); sfxDrop(); return; }
             }
+        }
+        if (ray.d[1] > 0.02 && ray.o[1] < WATER_Y) {
+            const t = (WATER_Y - ray.o[1]) / ray.d[1];
+            const hx = ray.o[0] + ray.d[0] * t, hz = ray.o[2] + ray.d[2] * t;
+            const inside = Math.abs(ray.o[0]) < TANK.x && Math.abs(ray.o[2]) < TANK.z && ray.o[1] > TANK.yMin;
+            if (inside && Math.abs(hx) < TANK.x - 0.02 && Math.abs(hz) < TANK.z - 0.02) { splash(hx, hz, 0.35); return; }
         }
         /* Стекло → рыбы пугаются */
         const hit = rayBox(ray, [-TANK.x, TANK.yMin, -TANK.z], [TANK.x, TANK.yMax, TANK.z]);
@@ -1664,6 +2150,75 @@ void main() {
     function sfxEat() { blip(320, 180, 0.06, 0.06); }
     function sfxDrop() { for (let i = 0; i < 4; i++) setTimeout(() => blip(rand(900, 1300), rand(400, 600), 0.05, 0.04), i * 60); }
     function sfxTap() { blip(180, 90, 0.12, 0.18); setTimeout(() => blip(170, 85, 0.1, 0.12), 110); }
+    /* Белый шум для всплесков и винта (создаётся один раз) */
+    let noiseBuf = null;
+    function getNoise() {
+        if (noiseBuf || !AC) return noiseBuf;
+        const len = AC.sampleRate * 1.5;
+        noiseBuf = AC.createBuffer(1, len, AC.sampleRate);
+        const d = noiseBuf.getChannelData(0);
+        for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+        return noiseBuf;
+    }
+    /* Всплеск: шумовой удар с полосовым фильтром, частота уходит вниз + «бульки» */
+    function sfxSplash(k) {
+        if (!AC || !state.sound || AC.state !== "running") return;
+        k = clamp(k, 0.1, 1.2);
+        const t = AC.currentTime, dur = 0.35 + k * 0.45;
+        const src = AC.createBufferSource(); src.buffer = getNoise();
+        const bp = AC.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 0.9;
+        bp.frequency.setValueAtTime(2600 + k * 900, t);
+        bp.frequency.exponentialRampToValueAtTime(320, t + dur);
+        const lp = AC.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 5200;
+        const g = AC.createGain();
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.16 + k * 0.22, t + 0.012);
+        g.gain.exponentialRampToValueAtTime(0.05 * k + 0.01, t + 0.12);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+        src.connect(bp); bp.connect(lp); lp.connect(g); g.connect(master);
+        src.start(t, Math.random() * 0.8); src.stop(t + dur + 0.05);
+        const n = 2 + Math.round(k * 4);
+        for (let i = 0; i < n; i++) setTimeout(() => blip(rand(380, 700), rand(900, 1700), rand(0.05, 0.1), 0.03 + 0.03 * k), 60 + i * rand(40, 90));
+    }
+    function sfxBump(k) { blip(140, 60, 0.16, 0.08 + 0.12 * k); }
+    /* Винт: шум через полосовой фильтр (кавитация) + пила частоты лопастей через НЧ-фильтр */
+    let prop = null, propT = 0;
+    function updatePropSound(dt, thrust, vert, turn) {
+        propT -= dt;
+        if (propT > 0) return;
+        propT = 0.05;
+        const want = sub.on && state.sound && AC && AC.state === "running";
+        if (!prop) {
+            if (!want) return;
+            try {
+                const src = AC.createBufferSource(); src.buffer = getNoise(); src.loop = true;
+                const bp = AC.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 1.4; bp.frequency.value = 400;
+                const ng = AC.createGain(); ng.gain.value = 0;
+                const osc = AC.createOscillator(); osc.type = "sawtooth"; osc.frequency.value = 30;
+                const lp = AC.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 260; lp.Q.value = 3;
+                const og = AC.createGain(); og.gain.value = 0;
+                const lfo = AC.createOscillator(); lfo.frequency.value = 6;
+                const lg = AC.createGain(); lg.gain.value = 0;
+                lfo.connect(lg); lg.connect(og.gain);
+                src.connect(bp); bp.connect(ng); ng.connect(master);
+                osc.connect(lp); lp.connect(og); og.connect(master);
+                src.start(); osc.start(); lfo.start();
+                prop = { src, bp, ng, osc, lp, og, lfo, lg };
+            } catch (e) { prop = null; return; }
+        }
+        const t = AC.currentTime;
+        const r = want ? sub.rpm : 0;
+        const load = clamp(r / 40, 0, 1.3);
+        const blade = 12 + r * 3 / TAU * 2.2;  /* частота лопастей, Гц */
+        prop.osc.frequency.setTargetAtTime(blade, t, 0.08);
+        prop.lfo.frequency.setTargetAtTime(blade * 0.25, t, 0.08);
+        prop.lp.frequency.setTargetAtTime(180 + load * 520, t, 0.1);
+        prop.bp.frequency.setTargetAtTime(260 + load * 1300, t, 0.1);
+        const under = sub.surfaced ? 0.55 : 1;
+        prop.og.gain.setTargetAtTime(want ? (0.02 + load * 0.09) * under : 0, t, 0.12);
+        prop.lg.gain.setTargetAtTime(want ? load * 0.03 : 0, t, 0.12);
+        prop.ng.gain.setTargetAtTime(want ? (0.004 + load * load * 0.07) * (sub.surfaced ? 1.4 : 1) : 0, t, 0.12);
+    }
     function setSound(on) {
         state.sound = on;
         if (on) ensureAudio();
@@ -1680,7 +2235,7 @@ void main() {
         saveTimer = setTimeout(() => {
             const counts = {};
             fishes.forEach(f => { counts[f.kind] = (counts[f.kind] || 0) + 1; });
-            try { localStorage.setItem(STORE_KEY, JSON.stringify({ v: 1, fish: counts, night: state.nightTarget > 0.5, sound: state.sound, auto: state.autoRotate, bubbles: state.bubbles, rays: state.rays })); } catch (e) { /* хранилище недоступно */ }
+            try { localStorage.setItem(STORE_KEY, JSON.stringify({ v: 1, fish: counts, night: state.nightTarget > 0.5, sound: state.sound, auto: state.autoRotate, bubbles: state.bubbles, rays: state.rays, drone: { on: sub.on, light: sub.light, p: sub.p.map(v => Math.round(v * 1000) / 1000), yaw: Math.round(sub.yaw * 1000) / 1000 } })); } catch (e) { /* хранилище недоступно */ }
         }, 300);
     }
     function load() {
@@ -1693,6 +2248,17 @@ void main() {
             if (typeof s.auto === "boolean") state.autoRotate = s.auto;
             if (typeof s.bubbles === "boolean") state.bubbles = s.bubbles;
             if (typeof s.rays === "boolean") state.rays = s.rays;
+            const dr = s.drone;
+            if (dr && typeof dr === "object") {
+                if (Array.isArray(dr.p) && dr.p.length === 3 && dr.p.every(v => typeof v === "number" && isFinite(v))) {
+                    sub.p = [clamp(dr.p[0], -TANK.x, TANK.x), clamp(dr.p[1], TANK.yMin, WATER_Y), clamp(dr.p[2], -TANK.z, TANK.z)];
+                    collideSub();
+                    sub.surfaced = sub.p[1] >= WATER_Y - 0.02;
+                }
+                if (typeof dr.yaw === "number" && isFinite(dr.yaw)) sub.yaw = dr.yaw;
+                if (typeof dr.light === "boolean") sub.light = dr.light;
+                if (dr.on === true) sub.pendingOn = true;
+            }
         }
         if (!fishes.length) SPECIES_ORDER.forEach(k => { for (let i = 0; i < SPECIES[k].start; i++) addFish(k, true); });
     }
@@ -1724,11 +2290,40 @@ void main() {
             else if (a === "sound") on = state.sound;
             else if (a === "bubbles") on = state.bubbles;
             else if (a === "rays") on = state.rays;
+            else if (a === "drone") on = sub.on;
+            else if (a === "light") on = sub.light;
             if (on !== null) b.setAttribute("aria-pressed", String(on));
         });
-        if (stMode) stMode.textContent = state.nightTarget > 0.5 ? "НОЧЬ" : "ДЕНЬ";
+        if (stMode) stMode.textContent = (state.nightTarget > 0.5 ? "НОЧЬ" : "ДЕНЬ") + (sub.on ? " · ДРОН" : "");
+        document.documentElement.classList.toggle("aq-drone-on", sub.on);
+        if (dronePanel) dronePanel.hidden = !sub.on;
         const sndIco = $("[data-aq='sound'] .ico-on"), sndOff = $("[data-aq='sound'] .ico-off");
         if (sndIco && sndOff) { sndIco.hidden = !state.sound; sndOff.hidden = state.sound; }
+    }
+
+    /* Панель дрона: показания и сенсорный пульт */
+    const dronePanel = $("#aq-drone");
+    const drDepth = $("#dr-depth"), drSpeed = $("#dr-speed"), drRpm = $("#dr-rpm"), drState = $("#dr-state");
+    function updateDroneHud() {
+        if (!sub.on || !dronePanel) return;
+        /* 1 ед. сцены ≈ 50 см (аквариум 100 × 45 × 55 см) */
+        if (drDepth) drDepth.textContent = String(Math.max(0, Math.round((WATER_Y - 0.012 - sub.p[1]) * 50)));
+        if (drSpeed) drSpeed.textContent = (Math.hypot(sub.v[0], sub.v[1], sub.v[2]) * 50).toFixed(1);
+        if (drRpm) drRpm.textContent = String(Math.round(sub.rpm / TAU * 60));
+        if (drState) drState.textContent = (sub.surfaced ? "НА ПОВЕРХНОСТИ" : "ПОГРУЖЁН") + (window.innerWidth <= 560 && drDepth ? " · " + drDepth.textContent + " см" : "");
+    }
+    if (dronePanel) {
+        const release = b => { if (!b) return; keys.delete(b.getAttribute("data-key")); b.classList.remove("is-held"); };
+        dronePanel.addEventListener("pointerdown", e => {
+            const b = e.target.closest("[data-key]");
+            if (!b) return;
+            e.preventDefault();
+            try { b.setPointerCapture(e.pointerId); } catch (err) { /* без захвата */ }
+            keys.add(b.getAttribute("data-key")); b.classList.add("is-held");
+            interact();
+        });
+        ["pointerup", "pointercancel", "lostpointercapture"].forEach(t => dronePanel.addEventListener(t, e => release(e.target.closest && e.target.closest("[data-key]"))));
+        dronePanel.addEventListener("contextmenu", e => e.preventDefault());
     }
 
     const menu = $("#aq-species");
@@ -1773,6 +2368,12 @@ void main() {
             case "bubbles": state.bubbles = !state.bubbles; paintToggles(); save(); break;
             case "rays": state.rays = !state.rays; paintToggles(); save(); break;
             case "reset": resetView(); toast("Вид сброшен"); break;
+            case "drone": setDrone(!sub.on); break;
+            case "light":
+                if (!sub.on) break;
+                sub.light = !sub.light; paintToggles(); save();
+                toast(sub.light ? "Прожектор включён" : "Прожектор выключен");
+                break;
             case "fullscreen": {
                 const d = document;
                 if (d.fullscreenElement) d.exitFullscreen && d.exitFullscreen();
@@ -1801,9 +2402,23 @@ void main() {
         if (menu && !menu.hidden && !e.target.closest("#aq-species")) toggleMenu(false);
     });
 
+    const DRONE_KEYS = ["KeyW", "KeyA", "KeyS", "KeyD", "Space", "ShiftLeft", "ShiftRight", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
+    document.addEventListener("keyup", e => { keys.delete(e.code); });
+    window.addEventListener("blur", () => keys.clear());
     document.addEventListener("keydown", e => {
         if (e.ctrlKey || e.metaKey || e.altKey) return;
         const k = e.key.toLowerCase();
+        /* Режим дрона: WASD / стрелки / Пробел / Shift — управление (по e.code, работает в любой раскладке) */
+        if (sub.on) {
+            if (DRONE_KEYS.includes(e.code)) {
+                e.preventDefault();
+                if (!keys.has(e.code)) interact();
+                keys.add(e.code);
+                return;
+            }
+            if (e.code === "KeyL") { e.preventDefault(); action("light"); return; }
+            if (k === "escape" && !(menu && !menu.hidden)) { setDrone(false); return; }
+        } else if (e.code === "KeyD" && !e.repeat) { e.preventDefault(); action("drone"); return; }
         const map = { f: "feed", "а": "feed", n: "night", "т": "night", r: "reset", "к": "reset", a: "auto", "ф": "auto", m: "sound", "ь": "sound", b: "bubbles", "и": "bubbles", "+": "add", "=": "add", "-": "remove" };
         if (k === "escape") {
             if (menu && !menu.hidden) { toggleMenu(false); return; }
@@ -1872,6 +2487,7 @@ void main() {
         gl.uniformMatrix4fv(u(P.lit, "uModel"), false, IDENT);
         gl.uniform1f(u(P.lit, "uSwayOn"), 0);
         gl.uniform1f(u(P.lit, "uInWater"), 0);
+        gl.uniform1f(u(P.lit, "uFill"), 0);
         gl.disable(gl.CULL_FACE);
         drawMesh(P.lit, MESH.outside);
         gl.uniform1f(u(P.lit, "uInWater"), 1);
@@ -1893,6 +2509,19 @@ void main() {
             gl.uniform1f(u(P.fish, "uGlow"), f.sp.glow);
             drawMesh(P.fish, MESH.fish[f.kind]);
         });
+
+        /* Дрон */
+        if (sub.on) {
+            setCommon(P.lit);
+            gl.uniform1f(u(P.lit, "uSwayOn"), 0);
+            gl.uniform1f(u(P.lit, "uInWater"), 1);
+            gl.uniform1f(u(P.lit, "uFill"), lerp(0.1, 0.32, state.night));
+            gl.uniformMatrix4fv(u(P.lit, "uModel"), false, sub.model);
+            drawMesh(P.lit, MESH.sub);
+            gl.uniformMatrix4fv(u(P.lit, "uModel"), false, sub.propModel);
+            drawMesh(P.lit, MESH.prop);
+            gl.uniform1f(u(P.lit, "uFill"), 0);
+        }
 
         /* Прозрачное: задние стёкла → лучи → частицы → вода → передние стёкла */
         gl.enable(gl.BLEND);
@@ -1927,9 +2556,24 @@ void main() {
             gl.drawArrays(gl.POINTS, 0, n);
         }
 
+        /* Объёмный конус прожектора (аддитивно) */
+        if (sub.spotK > 0.003) {
+            gl.blendFunc(gl.ONE, gl.ONE);
+            setCommon(P.cone);
+            gl.uniformMatrix4fv(u(P.cone, "uModel"), false, sub.coneModel);
+            gl.uniform1f(u(P.cone, "uConeI"), sub.light ? lerp(0.1, 0.32, state.night) : 0);
+            drawMesh(P.cone, MESH.cone);
+        }
+
+        /* Преломление: камера над водой → копия кадра под поверхностью */
+        const refr = state.cam[1] > WATER_Y + 0.01;
+        if (refr) grabScene();
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
         setCommon(P.water);
         gl.uniform3fv(u(P.water, "uLamp"), LAMP);
+        gl.uniform1i(u(P.water, "uScene"), 2);
+        gl.uniform2f(u(P.water, "uRes"), state.w, state.h);
+        gl.uniform1f(u(P.water, "uRefr"), refr ? 0.045 : 0);
         drawMesh(P.water, MESH.water);
 
         setCommon(P.glass);
@@ -1943,7 +2587,7 @@ void main() {
         gl.disable(gl.BLEND);
     }
 
-    let last = performance.now(), fpsAcc = 0, fpsN = 0, tempT = 0;
+    let last = performance.now(), fpsAcc = 0, fpsN = 0, tempT = 0, lastDroneSave = 0, droneHudT = 0;
     function frame(now) {
         const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
         last = now;
@@ -1955,21 +2599,39 @@ void main() {
             state.pitch = clamp(state.pitch + state.vPitch * dt, -0.32, 1.25);
             state.vYaw *= Math.pow(0.04, dt);
             state.vPitch *= Math.pow(0.02, dt);
-            if (state.autoRotate && state.time - state.lastInteract > 6) state.yaw += dt * 0.09;
+            if (state.autoRotate && !sub.on && state.time - state.lastInteract > 6) state.yaw += dt * 0.09;
         }
         state.night = lerp(state.night, state.nightTarget, Math.min(1, dt * 1.8));
 
         resize();
+        updateSub(dt);
+        /* Камера: в режиме дрона — следует за ним и сама заходит за корму, если её не крутят */
+        /* На узком экране дрон выше центра, чтобы не прятался за пультом */
+        const tgt = sub.on ? [sub.p[0], sub.p[1] + (state.w / state.h < 0.8 ? -0.12 : 0.04), sub.p[2]] : HOME_TARGET;
+        const tk = Math.min(1, dt * (sub.on ? 6 : 2.5));
+        for (let i = 0; i < 3; i++) state.target[i] = lerp(state.target[i], tgt[i], tk);
+        if (sub.on && !drag && state.time - state.lastInteract > 1.2 - (sub.thrust ? 1.2 : 0)) {
+            state.yaw += angleDiff(state.yaw, sub.yaw - Math.PI / 2) * Math.min(1, dt * 2.2);
+            state.pitch = lerp(state.pitch, 0.24, Math.min(1, dt * 1.5));
+        }
         updateCamera();
         updateFish(dt);
         updateParticles(dt);
+        RIP.update(dt);
+        RIP.k = lerp(RIP.k, RIP.active ? 1 : 0, Math.min(1, dt * 4));
+        if (RIP.k < 0.003 && !RIP.active) RIP.k = 0;
+        uploadRipples();
         render();
+        if (sub.on && (Math.abs(sub.v[0]) + Math.abs(sub.v[1]) + Math.abs(sub.v[2]) > 0.01) && state.time - lastDroneSave > 1.5) { lastDroneSave = state.time; save(); }
 
         fpsAcc += dt; fpsN++;
         if (fpsAcc > 0.5) {
             if (stFps) stFps.textContent = String(Math.round(fpsN / fpsAcc));
             fpsAcc = 0; fpsN = 0;
             updateStats();
+        }
+        droneHudT += dt;
+        if (droneHudT > 0.1) { droneHudT = 0; updateDroneHud();
         }
         tempT += dt;
         if (tempT > 3 && stTemp) { tempT = 0; stTemp.textContent = (24.5 + Math.sin(state.time * 0.05) * 0.2 + rand(-0.05, 0.05)).toFixed(1); }
@@ -1988,6 +2650,7 @@ void main() {
     load();
     resize();
     state.dist = DEFAULT_VIEW.dist;
+    if (sub.pendingOn) { delete sub.pendingOn; setDrone(true, true); for (let i = 0; i < 3; i++) state.target[i] = sub.p[i]; }
     paintToggles();
     updateStats();
     const hint = $("#aq-hint");
@@ -2000,6 +2663,8 @@ void main() {
     window.NexusAquarium = {
         state, fishes, food, bubbles, SPECIES,
         addFish: k => addFish(k || "neon"), removeFish, feed, setNight, resetView,
-        click, drop: (x, z, n) => dropFood(x, z, n || 6)
+        click, drop: (x, z, n) => dropFood(x, z, n || 6),
+        sub, setDrone, splash, ripple: RIP, keys,
+        audio: () => ({ ctx: AC ? AC.state : null, prop: !!prop, master: master ? master.gain.value : null, sound: state.sound })
     };
 })();

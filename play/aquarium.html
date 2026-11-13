@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="color-scheme" content="dark">
     <meta name="theme-color" content="#090B0A">
-    <meta name="description" content="NEXUS AQUARIUM — 3D-аквариум в браузере на WebGL: вращайте мышью, кормите рыб, включайте ночной режим.">
+    <meta name="description" content="NEXUS AQUARIUM — 3D-аквариум в браузере на WebGL: вращайте мышью, кормите рыб, управляйте дроном-субмариной с прожектором, включайте ночной режим.">
     <title>NEXUS AQUARIUM — 3D-аквариум</title>
     <link rel="icon" type="image/svg+xml" href="../assets/img/logo-icon.svg">
     <link rel="icon" type="image/png" sizes="32x32" href="../assets/img/favicon-32.png">
-    <link rel="stylesheet" href="../css/aquarium.css?v=20261112-3">
+    <link rel="stylesheet" href="../css/aquarium.css?v=20261113-1">
 </head>
 <body>
     <canvas id="aq-canvas" class="aq-canvas" aria-label="3D-аквариум. Перетаскивайте, чтобы вращать, колесо — приблизить, клик по воде — покормить рыб." role="img" tabindex="0"></canvas>
@@ -39,7 +39,30 @@
             <span><b>Колесо / щипок</b> — зум</span>
             <span><b>Клик по воде</b> — корм</span>
             <span><b>Клик по рыбе</b> — кто это</span>
+            <span><b>D</b> — дрон</span>
         </p>
+
+        <section class="aq-drone" id="aq-drone" aria-label="Панель дрона" hidden>
+            <p class="aq-drone-title">ДРОН NX-SUB <i id="dr-state">ПОГРУЖЁН</i></p>
+            <dl class="aq-drone-read">
+                <div><dt>ГЛУБИНА</dt><dd><span id="dr-depth">0</span> см</dd></div>
+                <div><dt>СКОРОСТЬ</dt><dd><span id="dr-speed">0.0</span> см/с</dd></div>
+                <div><dt>ВИНТ</dt><dd><span id="dr-rpm">0</span> об/м</dd></div>
+            </dl>
+            <p class="aq-drone-keys"><kbd>W</kbd><kbd>S</kbd> ход · <kbd>A</kbd><kbd>D</kbd> поворот · <kbd>Пробел</kbd> вверх · <kbd>Shift</kbd> вниз · <kbd>L</kbd> свет · <kbd>Esc</kbd> выход</p>
+            <div class="aq-drone-pad" aria-label="Сенсорное управление дроном">
+                <button type="button" data-key="KeyA" aria-label="Повернуть влево">&#8634;</button>
+                <button type="button" data-key="KeyW" aria-label="Вперёд">&#9650;</button>
+                <button type="button" data-key="KeyD" aria-label="Повернуть вправо">&#8635;</button>
+                <button type="button" data-key="Space" aria-label="Всплыть">&#10514;</button>
+                <button type="button" data-key="KeyS" aria-label="Назад">&#9660;</button>
+                <button type="button" data-key="ShiftLeft" aria-label="Нырнуть">&#10515;</button>
+            </div>
+            <button class="aq-btn aq-drone-light" type="button" data-aq="light" aria-pressed="true" title="Прожектор (L)">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h4l6-3v18l-6-3H9z M9 6v12 M5 9l-2-1M5 15l-2 1M5 12H2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/></svg>
+                <span>Прожектор</span>
+            </button>
+        </section>
 
         <div class="aq-toast" id="aq-toast" role="status" hidden></div>
         <div class="aq-tip" id="aq-tip" hidden></div>
@@ -83,6 +106,10 @@
                 <span>Звук</span>
             </button>
             <span class="aq-sep" aria-hidden="true"></span>
+            <button class="aq-btn aq-btn-drone" type="button" data-aq="drone" aria-pressed="false" title="Дрон-субмарина (D): WASD + Пробел/Shift">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13.5c0-2.5 3.6-4.5 8-4.5s8 2 8 4.5-3.6 4.5-8 4.5-8-2-8-4.5z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M9 9V6.5h4V9M19 13.5h2.5M21.5 11v5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="13.5" r="1.2"/><circle cx="12" cy="13.5" r="1.2"/></svg>
+                <span>Дрон</span>
+            </button>
             <button class="aq-btn" type="button" data-aq="reset" title="Сбросить вид (R, двойной клик)">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
                 <span>Вид</span>
@@ -107,6 +134,6 @@
 
     <footer class="aq-credit">UI inspired by &amp; adapted from <a href="https://github.com/GitSquared/edex-ui" target="_blank" rel="noopener noreferrer">eDEX-UI</a> (GPL-3.0)</footer>
 
-    <script src="../js/aquarium.js?v=20261112-3"></script>
+    <script src="../js/aquarium.js?v=20261113-1"></script>
 </body>
 </html>
