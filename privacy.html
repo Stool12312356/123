@@ -13,11 +13,11 @@
     <!-- Зависимость оригинального eDEX-UI: augmented-ui 1.1.2 (BSD-2-Clause) — скошенные рамки -->
     <link rel="stylesheet" href="assets/vendor/augmented-ui/augmented.css">
     <!-- Тема blade, перенесённая из eDEX-UI -->
-    <link rel="stylesheet" href="css/blade-theme.css?v=20261112-2">
+    <link rel="stylesheet" href="css/blade-theme.css?v=20261112-3">
     <!-- Адаптивная сетка: шапка, подвал, модули, терминал -->
-    <link rel="stylesheet" href="css/layout.css?v=20261112-2">
+    <link rel="stylesheet" href="css/layout.css?v=20261112-3">
     <!-- Компоненты страниц: главная, каталог, формы, кабинет, тосты -->
-    <link rel="stylesheet" href="css/pages.css?v=20261112-2">
+    <link rel="stylesheet" href="css/pages.css?v=20261112-3">
 
     <script>
         /* Ранняя инициализация: класс js и сохранённые настройки HUD (без мигания) */
@@ -172,6 +172,7 @@
                                             <tr><td data-label="Ключ"><code>nx_pending_dl</code></td><td data-label="Что внутри">ID сборки, которую вы хотели скачать до входа</td><td data-label="Когда">Попытка скачать без входа</td><td data-label="Срок">Удаляется сразу после входа</td></tr>
                                             <tr><td data-label="Ключ"><code>nx_vpn</code></td><td data-label="Что внутри">Тестовый VPN: выбранный сервер и протокол, настройки, избранное, объём трафика за месяц, история сеансов (сервер, время, объём) и тестовые ключи WireGuard. Посещённые сайты не записываются</td><td data-label="Когда">Первое открытие VPN-клиента или подключение из кабинета</td><td data-label="Срок">До удаления аккаунта или данных сайта</td></tr>
                                             <tr><td data-label="Ключ"><code>nx_ide</code></td><td data-label="Что внутри">Проекты NEXUS IDE: имена и тексты файлов, открытые вкладки, настройки редактора</td><td data-label="Когда">Создание проекта в IDE</td><td data-label="Срок">До удаления проекта, аккаунта или данных сайта</td></tr>
+                                            <tr><td data-label="Ключ"><code>nx_aquarium</code></td><td data-label="Что внутри">NEXUS AQUARIUM: сколько рыб каждого вида, день / ночь, звук и другие переключатели</td><td data-label="Когда">Запуск аквариума в «Проектах»</td><td data-label="Срок">До удаления данных сайта</td></tr>
                                             <tr><td data-label="Ключ"><code>nx_booted</code>, <code>nx_welcome</code> <i>(sessionStorage)</i></td><td data-label="Что внутри">Служебные отметки: заставка уже показана, приветствие после входа</td><td data-label="Когда">Первое открытие сайта</td><td data-label="Срок">До закрытия вкладки</td></tr>
                                         </tbody>
                                     </table>
@@ -313,7 +314,7 @@
         </div>
     </footer>
 
-    <script src="js/ui-effects.js?v=20261112-2" defer></script>
-    <script src="js/pages.js?v=20261112-2" defer></script>
+    <script src="js/ui-effects.js?v=20261112-3" defer></script>
+    <script src="js/pages.js?v=20261112-3" defer></script>
 </body>
 </html>

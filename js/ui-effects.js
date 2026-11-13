@@ -2235,7 +2235,7 @@
      * access: кто может скачивать — "public" (без входа) | "user" | "admin" | "creator"
      * ================================================================ */
     /* Базовые разделы каталога. Свои разделы CREATOR добавляет в nx_custom_categories. */
-    const BASE_CATEGORIES = { ue5: "UNREAL ENGINE 5", minecraft: "MINECRAFT", tools: "TOOLS / SOFT", other: "OTHER" };
+    const BASE_CATEGORIES = { ue5: "UNREAL ENGINE 5", minecraft: "MINECRAFT", web: "BROWSER / WEBGL", tools: "TOOLS / SOFT", other: "OTHER" };
     const CATEGORIES = Object.assign({}, BASE_CATEGORIES);
     const STATUSES = {
         available: { label: "ДОСТУПНО ДЛЯ СКАЧИВАНИЯ", short: "ДОСТУПНО" },
@@ -2244,6 +2244,35 @@
     };
 
     const BUILTIN_PROJECTS = [
+        /* play — проект запускается прямо на сайте (плеер-оверлей с iframe), без скачивания */
+        {
+            id: "aquarium",
+            code: "NX-20",
+            title: "NEXUS AQUARIUM",
+            category: "web",
+            status: "available",
+            access: "public",
+            icon: "play",
+            play: "play/aquarium.html",
+            tags: ["WebGL", "3D", "Без установки", "Мышь / тач"],
+            summary: "3D-аквариум прямо в браузере: крутите мышкой, кормите рыб, включайте ночь. Запуск в один клик — ничего не скачивается.",
+            version: "1.0.0",
+            size: "117 KiB",
+            sizeMB: 0.12,
+            platform: "Браузер · WebGL",
+            updated: "2026-11-12",
+            file: "play/aquarium.html",
+            requirements: "Любой современный браузер с WebGL (Chrome, Firefox, Edge, Safari), ПК или телефон. Установка не нужна.",
+            notes: [
+                { version: "1.0.0", date: "2026-11-12", items: [
+                    "Вращение мышью и пальцем, зум колесом и щипком, инерция и авто-обзор",
+                    "6 видов рыб: неоны, гуппи, клоуны, хирурги, золотые, скалярии — стаи, обход стен, питание",
+                    "Корм по клику на воду, «тук-тук» по стеклу, подсказка с названием рыбы",
+                    "Каустика на песке, лучи света, пузыри от распылителя, день / ночь, звук воды",
+                    "Состав аквариума сохраняется в браузере (nx_aquarium)"
+                ] }
+            ]
+        },
         {
             id: "launcher",
             code: "NX-00",
@@ -2429,6 +2458,8 @@
             p.tags = Array.isArray(p.tags) ? p.tags.map(t => String(t).trim()).filter(Boolean).slice(0, 12) : [];
             p.notes = Array.isArray(p.notes) ? p.notes.filter(n => n && Array.isArray(n.items)) : [];
             p.cover = typeof p.cover === "string" && p.cover.indexOf("data:image/") === 0 ? p.cover : "";
+            /* Запуск в браузере — только у официальных проектов (путь задан в коде, не из localStorage) */
+            p.play = base && base.play ? base.play : "";
             p.custom = !base;
             p.edited = !!base;
             return p;
@@ -3118,7 +3149,7 @@
 
     /* Все ключи, которые сайт пишет в хранилище браузера (для политики и кнопки «удалить всё») */
     const STORAGE_KEYS = {
-        local: ["nx_session", "nx_accounts", "nx_settings", "nx_custom_projects", "nx_hidden_projects", "nx_custom_categories", "nx_tickets", "nx_consent", "nx_pending_dl", "nx_vpn", "nx_ide"],
+        local: ["nx_session", "nx_accounts", "nx_settings", "nx_custom_projects", "nx_hidden_projects", "nx_custom_categories", "nx_tickets", "nx_consent", "nx_pending_dl", "nx_vpn", "nx_ide", "nx_aquarium"],
         session: ["nx_booted", "nx_welcome"]
     };
 

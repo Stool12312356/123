@@ -104,6 +104,7 @@
      * ================================================================ */
     const ICON_DOWNLOAD = '<img src="assets/icons/download.svg" alt="" width="18" height="18">';
     const ICON_LOCK = '<img src="assets/icons/lock.svg" alt="" width="18" height="18">';
+    const ICON_PLAY = '<img src="assets/icons/play.svg" alt="" width="18" height="18">';
 
     function canDownload(p) {
         return Auth.canDownload(p);
@@ -165,6 +166,24 @@
                 }
             }
             g += `<path d="M${W - 92} 20 l24 -12 l24 12 l-24 12 z M${W - 92} 20 v28 l24 12 v-28 M${W - 44} 20 v28 l-24 12" class="a-line a-strong"/>`;
+        } else if (p.category === "web") {
+            // Аквариум / WebGL: волны, пузыри и силуэты рыб
+            for (let k = 0; k < 4; k++) {
+                const y = 34 + k * 24, amp = 4 + r() * 4, ph = r() * 6;
+                let d = `M0 ${y}`;
+                for (let x = 0; x <= W; x += 16) d += ` L${x} ${(y + Math.sin(x / 26 + ph) * amp).toFixed(1)}`;
+                g += `<path d="${d}" class="${k === 0 ? "a-line a-strong" : "a-dash"}"/>`;
+            }
+            for (let i = 0; i < 14; i++) {
+                const bx = 24 + r() * (W - 48), by = 20 + r() * (H - 40);
+                g += `<circle cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}" r="${(1.5 + r() * 4).toFixed(1)}" class="a-ring"/>`;
+            }
+            const fish = (x, y, s, flip) => {
+                const f = flip ? -1 : 1;
+                return `<path d="M${x} ${y} q${10 * s * f} ${-9 * s} ${24 * s * f} 0 l${8 * s * f} ${-6 * s} v${12 * s} l${-8 * s * f} ${-6 * s} q${-14 * s * f} ${9 * s} ${-24 * s * f} 0 z" class="a-fill a-strong"/>`;
+            };
+            g += fish(70 + r() * 40, 60 + r() * 20, 1.4, false) + fish(200 + r() * 40, 90 + r() * 16, 1, true) + fish(150 + r() * 30, 44 + r() * 10, 0.7, false);
+            g += `<text x="14" y="22" class="a-txt">WEBGL · 3D</text>`;
         } else {
             const nodes = [];
             for (let i = 0; i < 13; i++) nodes.push([20 + r() * (W - 40), 16 + r() * (H - 32)]);
@@ -183,10 +202,12 @@
     }
 
     function badgeHtml(p) {
+        if (p.play && p.status === "available") return `<span class="pbadge pbadge-available"><i aria-hidden="true"></i>ЗАПУСК В БРАУЗЕРЕ · БЕЗ СКАЧИВАНИЯ</span>`;
         return `<span class="pbadge pbadge-${p.status}"><i aria-hidden="true"></i>${escapeHtml(STATUSES[p.status].label)}</span>`;
     }
 
     function dlButtonInner(p) {
+        if (p.play) return `${ICON_PLAY}<span>ЗАПУСТИТЬ</span>`;
         return `${canDownload(p) ? ICON_DOWNLOAD : ICON_LOCK}<span>${p.url ? "СКАЧАТЬ" : "СКАЧАТЬ СБОРКУ"}</span>`;
     }
 
@@ -321,6 +342,103 @@
             if (typeof opts.onDone === "function") opts.onDone(sha);
         }
     };
+
+    /* ================================================================
+     * Плеер: проекты с полем play запускаются прямо на сайте (iframe)
+     * Без скачивания. Esc / ✕ / сообщение из iframe — закрыть.
+     * ================================================================ */
+    const Player = {
+        el: null,
+        project: null,
+        lastFocus: null,
+        /* Цвет темы (rrggbb) — передаём в проект, чтобы HUD совпадал с сайтом */
+        accent() {
+            const cs = getComputedStyle(document.documentElement);
+            const ch = k => clamp(parseInt(cs.getPropertyValue(k), 10) || 0, 0, 255).toString(16).padStart(2, "0");
+            return ch("--color_r") + ch("--color_g") + ch("--color_b");
+        },
+        open(p, fromHash) {
+            if (!p || !p.play) return;
+            if (!Downloads.guard(p)) return;
+            if (this.el) this.close(true);
+            /* Запуск из досье: модалку закрываем, чтобы она не оставалась под плеером */
+            if (Modal.current) Modal.close(true);
+            this.project = p;
+            this.lastFocus = document.activeElement;
+            const src = `${p.play}?embed=1&accent=${this.accent()}`;
+            const el = document.createElement("div");
+            el.className = "player-overlay";
+            el.setAttribute("role", "dialog");
+            el.setAttribute("aria-modal", "true");
+            el.setAttribute("aria-label", p.title);
+            el.innerHTML = `
+                <div class="player-frame aug-frame" augmented-ui="tl-clip br-clip exe">
+                    <header class="player-bar">
+                        <p class="player-title"><img src="assets/icons/play.svg" alt="" width="14" height="14"><b>${escapeHtml(p.title)}</b><span>${escapeHtml(p.code)} · v${escapeHtml(p.version)} · ${escapeHtml(p.platform)}</span></p>
+                        <div class="player-tools">
+                            <button class="btn btn-sm btn-ghost" type="button" data-player="reload" title="Перезапустить"><img src="assets/icons/reload.svg" alt="" width="15" height="15"><span>Заново</span></button>
+                            <a class="btn btn-sm btn-ghost" href="${escapeHtml(p.play)}" target="_blank" rel="noopener" data-player="tab" title="Открыть в отдельной вкладке"><img src="assets/icons/external.svg" alt="" width="15" height="15"><span>Вкладка</span></a>
+                            <button class="btn btn-sm btn-ghost" type="button" data-player="fs" title="Во весь экран"><img src="assets/icons/zen.svg" alt="" width="15" height="15"><span>Экран</span></button>
+                            <button class="btn btn-sm btn-primary" type="button" data-player="close" title="Закрыть (Esc)"><img src="assets/icons/close.svg" alt="" width="15" height="15"><span>Закрыть</span></button>
+                        </div>
+                    </header>
+                    <div class="player-stage">
+                        <div class="player-loading" aria-hidden="true"><i></i><span>ЗАГРУЗКА · ${escapeHtml(p.title)}</span></div>
+                        <iframe class="player-iframe" src="${escapeHtml(src)}" title="${escapeHtml(p.title)}" allow="fullscreen; autoplay"></iframe>
+                    </div>
+                </div>`;
+            document.body.appendChild(el);
+            document.documentElement.classList.add("player-open");
+            this.el = el;
+            const frame = $(".player-iframe", el);
+            frame.addEventListener("load", () => {
+                el.classList.add("is-loaded");
+                try { frame.contentWindow.focus(); } catch (e) { frame.focus(); }
+            });
+            requestAnimationFrame(() => el.classList.add("is-open"));
+            el.addEventListener("click", e => {
+                const b = e.target.closest("[data-player]");
+                if (!b) return;
+                const a = b.getAttribute("data-player");
+                if (a === "close") this.close();
+                else if (a === "reload") { el.classList.remove("is-loaded"); frame.src = src + "&r=" + Date.now(); }
+                else if (a === "fs") {
+                    const st = $(".player-stage", el);
+                    if (document.fullscreenElement) document.exitFullscreen();
+                    else if (st.requestFullscreen) st.requestFullscreen().catch(() => toast("Полноэкранный режим недоступен", "warn"));
+                } else if (a === "tab") this.close();
+            });
+            Sound.play("expand");
+            const s = Auth.get();
+            if (s) NX.Syslog.add(`play: ${s.callsign} launched ${p.title} ${p.version} (in-browser)`);
+            if (!fromHash && window.history.replaceState) window.history.replaceState(null, "", "#play-" + p.id);
+        },
+        close(silent) {
+            if (!this.el) return;
+            const el = this.el, p = this.project;
+            this.el = null; this.project = null;
+            if (document.fullscreenElement && el.contains(document.fullscreenElement)) document.exitFullscreen();
+            el.classList.remove("is-open");
+            el.classList.add("is-closing");
+            const frame = $(".player-iframe", el);
+            if (frame) frame.src = "about:blank";
+            setTimeout(() => el.remove(), silent ? 0 : 220);
+            document.documentElement.classList.remove("player-open");
+            if (!silent) Sound.play("panels");
+            const h = window.location.hash;
+            if (p && h === "#play-" + p.id && window.history.replaceState) window.history.replaceState(null, "", window.location.pathname + window.location.search);
+            if (this.lastFocus && this.lastFocus.focus) { try { this.lastFocus.focus({ preventScroll: true }); } catch (e) { /* noop */ } }
+        }
+    };
+    document.addEventListener("keydown", e => {
+        if (e.key === "Escape" && Player.el && !document.fullscreenElement) { e.preventDefault(); e.stopPropagation(); Player.close(); }
+    }, true);
+    window.addEventListener("message", e => {
+        if (!Player.el) return;
+        const frame = $(".player-iframe", Player.el);
+        if (!frame || e.source !== frame.contentWindow) return;
+        if (e.data && e.data.type === "nexus:player-close") Player.close();
+    });
 
     /* ================================================================
      * Проекты — витрина загрузок + конструктор (ADMIN / CREATOR)
@@ -1013,7 +1131,8 @@
             const dl = e.target.closest("[data-dl]");
             if (dl) {
                 const p = PROJECTS.find(x => x.id === dl.getAttribute("data-dl"));
-                if (p) Downloads.run(p);
+                if (p && p.play) Player.open(p);
+                else if (p) Downloads.run(p);
                 return;
             }
             const det = e.target.closest("[data-details]");
@@ -1082,6 +1201,11 @@
                 openEditor();
                 return;
             }
+            if (h.indexOf("play-") === 0) {
+                const pp = PROJECTS.find(x => x.id === h.slice(5) && x.play);
+                if (pp) { Player.open(pp, true); return; }
+                h = h.slice(5);
+            }
             if (h.indexOf("dossier-") === 0) h = h.slice(8);
             if (h === "nexuscraft") h = "modpack";
             if (h.indexOf("filter-") === 0) {
@@ -1111,6 +1235,7 @@
                 setTimeout(() => {
                     const card = document.getElementById("project-" + p.id);
                     if (card) { if (card.hidden) { currentCat = "all"; apply("all", true); } card.scrollIntoView({ block: "center" }); }
+                    if (p.play) { Player.open(p); return; }
                     toast(`Доступ подтверждён — запускаю загрузку ${p.title}`, "ok");
                     Downloads.run(p);
                 }, 700);
@@ -3144,6 +3269,7 @@
         nx_pending_dl: "отложенная загрузка",
         nx_vpn: "тестовый VPN: настройки и сеансы",
         nx_ide: "проекты NEXUS IDE",
+        nx_aquarium: "NEXUS AQUARIUM: рыбы и настройки",
         nx_booted: "заставка показана",
         nx_welcome: "приветствие после входа"
     };
