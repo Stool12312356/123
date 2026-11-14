@@ -344,7 +344,7 @@
         idler: [3.50, 0.78], sprocket: [-3.47, 0.80], sprocketR: 0.30,
         rollers: [[1.81, 1.05], [-0.59, 1.05], [-2.19, 1.05]], rollerR: 0.10,
         pivot: 0.15,                        /* ось погона башни */
-        trunnion: [1.95, 1.90],             /* цапфы пушки: ось ствола на высоте 1,90 м */
+        trunnion: [1.95, 2.10],             /* цапфы пушки: ось 2,10 м — верх маски вровень с крышей 2,40 */
         elevMin: -9, elevMax: 20
     };
 
@@ -378,34 +378,32 @@
        Профиль лба — шеврон «<»: вершина на 2,03 м, верхняя и нижняя грани по 30° от вертикали.
        План — тупой клин: скулы 30° к поперечной оси, ширина по низу 3,25 м у перехода скул
        в борта, к корме ниши 2,80. Вид спереди — трапеция: борта завалены внутрь (крыша 2,50). */
-    const T_TIP = 2.21, T_END = -2.49, T_Y0 = 1.70, T_Y1 = 2.40, T_YBU = 1.84;
+    const T_TIP = 2.21, T_END = -2.49, T_Y0 = 1.665, T_YW = 1.70, T_Y1 = 2.40, T_YBU = 1.84;
     const T_HW0 = 1.625, T_TAPER = 0.225, T_LEAN = (1.625 - 1.25) / 0.70, T_SLOT = 0.31, T_NOTCH = 0.26;
-    const T_FACE = Math.tan(30 * DEG), T_QZ = 0.45;
-    const T_STEP0 = -1.02, T_STEP1 = -1.22, T_BASKET = -2.89;
+    const T_FACE = Math.tan(30 * DEG), T_QZ = 0.58;
+    const T_STEP0 = -1.02, T_STEP1 = -1.22, T_BASKET = -2.89, T_YRM = 2.12, T_RB = 0.12;
     /* полуширина борта на высоте y в сечении x (борт — наклонная плоскость) */
-    const tz = (x, y) => T_HW0 - T_LEAN * (y - T_Y0) - T_TAPER * clamp((1.40 - x) / (1.40 - T_END), 0, 1);
+    const tz = (x, y) => T_HW0 - T_LEAN * (y - T_YW) - T_TAPER * clamp((1.40 - x) / (1.40 - T_END), 0, 1);
     const roofY = () => T_Y1;
-    /* Лоб башни (скулы) — основная плита + единый клиновидный подрез под ней.
-       Основная плита [A B C D E]: нижняя кромка C→D СТРОГО ГОРИЗОНТАЛЬНА (Y 2,05) от наружного
-       угла до Z ±0,45 (≈80 % ширины скулы), у маски — короткий срез D→E вверх (Y 2,11 у стенки
-       паза Z ±0,31). Плита завалена назад на 12° (как на виде сбоку 03.png). В плане кромка —
-       одна прямая, наружный угол на ~0,6 м за вершиной.
-       Подрез [E D C F G H] — ОДНА плоская наклонная грань без уступов: от кромки C→D→E назад и
-       вниз прямо к низу башни (1,70). Отступ назад у погона: F — 0,08 за C, G и H — 0,09 за D и E
-       (по заданным 0,10 / 0,12 / 0,12 м, пересчитанным на высоту борта 0,70 м).
-       Точки B, C, F лежат на наклонных бортах башни (борта и обвес не меняются). */
-    const T_LIP = 2.05, T_LIPE = 2.11;
+    /* Лоб башни (скулы). Основная плита [A B C D E] занимает ~83 % высоты борта: нижняя
+       кромка C→D СТРОГО ГОРИЗОНТАЛЬНА (Y 1,79) от наружного угла на ~78 % ширины (до Z ±0,58);
+       у маски нижний внутренний угол срезан по диагонали вверх D→E (до Y 2,03 у стенки паза
+       Z ±0,31) — треугольный скос. Плита завалена назад на 12°, в плане кромка — одна прямая.
+       Под ломаной кромкой C→D→E — узкий клиновидный подрез назад к погону (низ башни 1,665):
+       под C→D отступ 0,10, под срезом у маски 0,20; никаких ступенек.
+       Точки B, C, F лежат на наклонных бортах башни. */
+    const T_LIP = 1.79, T_LIPE = 2.03;
     const T_KPL = 0.55, T_TU = Math.tan(12 * DEG);
     const T_XD = T_TIP + T_TU * (T_LIPE - T_LIP) - T_KPL * (T_QZ - T_SLOT);
     const tLf = z => T_XD - T_KPL * (z - T_QZ);                    /* линия кромки в плане */
     const tPl = (z, y) => tLf(z) - T_TU * (y - T_LIP);              /* плоскость основной плиты */
-    const tUnd = z => 0.093 - 0.015 * clamp((z - T_QZ) / 1.15, 0, 1); /* отступ подреза у погона */
+    const tUnd = e => (e ? 0.20 : 0.10);                            /* отступ подреза у погона */
     /* Передняя точка уровня r (0 низ, 1 кромка плиты, 2 фаска, 3 крыша) при ширине z;
        e = 1 — у стенки паза (E/H) */
     function tFront(r, z, e) {
         const yL = e ? T_LIPE : T_LIP;
         switch (r) {
-            case 0: return [tPl(z, yL) - tUnd(z), T_Y0];
+            case 0: return [tPl(z, yL) - tUnd(e), T_Y0];
             case 1: return [tPl(z, yL), yL];
             case 2: return [tPl(z, T_Y1 - 0.035), T_Y1 - 0.035];
             default: return [tPl(z, T_Y1), T_Y1];
@@ -421,11 +419,13 @@
        Порядок: дно паза, кромка паза, излом у маски (Z 0,45), угол скулы, ступенька, корма */
     function tHalf(r) {
         const t = tFront(r, T_SLOT, 1), q = tFront(r, T_QZ, 0), c = tCorner(r);
-        const yS = r === 0 ? T_Y0 : c[1], yR = r === 0 ? T_YBU : c[1];
+        const yS = r === 0 ? T_Y0 : c[1], yR = r === 0 ? T_YBU : r === 1 ? T_YRM : c[1];
+        /* корма ниши: верх скошен вниз-назад, низ подрезан вверх-назад, клин на Y 2,12 */
+        const xR = T_END + T_RB * Math.abs(yR - T_YRM) / (T_Y1 - T_YRM);
         const P = [[t[0] - T_NOTCH, t[1], T_SLOT], [t[0], t[1], T_SLOT], [q[0], q[1], T_QZ], c,
                    [T_STEP0, yS, tz(T_STEP0, yS)]];
-        [T_STEP1, T_END + 0.14].forEach(x => P.push([x, yR, tz(x, yR)]));
-        P.push([T_END, yR, tz(T_END, yR) - 0.14]);
+        [T_STEP1, xR + 0.14].forEach(x => P.push([x, yR, tz(x, yR)]));
+        P.push([xR, yR, tz(xR, yR) - 0.14]);
         return P.map(([x, y, z]) => [x, z, y]);
     }
     /* Полное кольцо [x, y, z]: правая половина от лба к корме, левая — обратно */
@@ -474,35 +474,26 @@
         b.prismZ([NA, [2.05, H_ROOF], [-1.75, H_ROOF], [-1.75, 1.30], [N - 0.25, 1.30]], -1.08, 1.08, P1);
         /* Крыша МТО — поднята к корме (1,78), подъём начинается вне круга ометания башни */
         b.prismZ([[-1.75, 1.30], [-1.75, H_ROOF], [-2.25, H_DECK], [R + 0.08, H_DECK], [R, H_DECK - 0.06], [R, 1.30]], -1.08, 1.08, P1);
-        /* Надгусеничные полки 1,45 м; в корме поднимаются до уровня крыши МТО */
+        /* Надгусеничная палуба — сплошная: спереди продолжает уклон ВЛД на всю ширину (без ступеньки),
+           вдоль башни горизонтальна вровень с подбашенным листом (1,62), к МТО поднимается до 1,78.
+           Под ней — карниз над экранами (1,45) и борт; по наружной кромке — невысокий бортик. */
         [1, -1].forEach(s => {
             const z0 = 1.08 * s, z1 = 1.74 * s;
-            b.prismZ([[N, 1.24], [N, 1.33], [3.30, H_SHELF], [-1.06, H_SHELF], [-1.06, 1.24]], Math.min(z0, z1), Math.max(z0, z1), P1);
-            b.prismZ([[-1.06, 1.24], [-1.06, H_SHELF], [-1.80, H_SHELF], [-2.25, H_DECK], [R + 0.08, H_DECK], [R, H_DECK - 0.06], [R, 1.24]], Math.min(z0, z1), Math.max(z0, z1), P1);
+            b.prismZ([[N, 1.24], [N, glacisY(N)], [2.05, H_ROOF], [-1.06, H_ROOF], [-1.06, 1.24]], Math.min(z0, z1), Math.max(z0, z1), P1);
+            b.prismZ([[-1.06, 1.24], [-1.06, H_ROOF], [-1.75, H_ROOF], [-2.25, H_DECK], [R + 0.08, H_DECK], [R, H_DECK - 0.06], [R, 1.24]], Math.min(z0, z1), Math.max(z0, z1), P1);
+            /* бортик по наружной кромке палубы и ступенька у МТО */
+            const zb = [Math.min(1.705 * s, 1.74 * s), Math.max(1.705 * s, 1.74 * s)];
+            b.loft([[[N - 0.02, glacisY(N) - 0.01, zb[0]], [N - 0.02, glacisY(N) + 0.022, zb[0]], [N - 0.02, glacisY(N) + 0.022, zb[1]], [N - 0.02, glacisY(N) - 0.01, zb[1]]],
+                    [[2.05, H_ROOF - 0.01, zb[0]], [2.05, H_ROOF + 0.022, zb[0]], [2.05, H_ROOF + 0.022, zb[1]], [2.05, H_ROOF - 0.01, zb[1]]]], P9);
+            b.box([-1.75, H_ROOF - 0.01, zb[0]], [2.05, H_ROOF + 0.022, zb[1]], P9);
+            b.box([-1.79, H_ROOF - 0.01, Math.min(1.08 * s, 1.74 * s)], [-1.75, H_ROOF + 0.05, Math.max(1.08 * s, 1.74 * s)], P9);
             /* Кромка крыла над экраном */
-            b.box([-2.88, H_SHELF - 0.03, Math.min(1.74 * s, 1.85 * s)], [3.30, H_SHELF + 0.005, Math.max(1.74 * s, 1.85 * s)], P9);
+            b.box([R + 0.08, H_SHELF - 0.03, Math.min(1.74 * s, 1.85 * s)], [3.30, H_SHELF + 0.005, Math.max(1.74 * s, 1.85 * s)], P9);
             b.loft([[[3.30, H_SHELF - 0.03, Math.min(1.74 * s, 1.85 * s)], [3.30, H_SHELF + 0.005, Math.min(1.74 * s, 1.85 * s)], [3.30, H_SHELF + 0.005, Math.max(1.74 * s, 1.85 * s)], [3.30, H_SHELF - 0.03, Math.max(1.74 * s, 1.85 * s)]],
                     [[N - 0.02, 1.30, Math.min(1.74 * s, 1.85 * s)], [N - 0.02, 1.335, Math.min(1.74 * s, 1.85 * s)], [N - 0.02, 1.335, Math.max(1.74 * s, 1.85 * s)], [N - 0.02, 1.30, Math.max(1.74 * s, 1.85 * s)]]], P9);
             /* Лобовые торцы крыльев */
             b.box([N - 0.02, 1.24, Math.min(1.08 * s, 1.74 * s)], [N + 0.01, 1.33, Math.max(1.08 * s, 1.74 * s)], P9);
         });
-
-        /* Наклонные бронефаски между ВЛД / подбашенным листом и надгусеничными полками:
-           закрывают вертикальную ступеньку Z ±1,08 (чёрные «колодцы» на виде 3/4). Уклон ~40°. */
-        {
-            const topY = x => x > -1.75 ? glacisY(x) : lerp(H_ROOF, H_DECK, (-1.75 - x) / 0.50);
-            const shY = x => x > 3.30 ? lerp(1.33, H_SHELF, (N - x) / (N - 3.30)) : x > -1.80 ? H_SHELF : lerp(H_SHELF, H_DECK, (-1.80 - x) / 0.45);
-            const XS = [N, 3.55, 3.30, 2.70, 2.05, -1.75, -1.80, -2.02, -2.25];
-            [1, -1].forEach(s => {
-                const E = XS.map(x => { const t = topY(x), h = shY(x), w = Math.max(0, t - h) * 1.2; return [[x, t, 1.08 * s], [x, h, (1.08 + w) * s], h]; });
-                for (let i = 0; i < E.length - 1; i++) {
-                    const a = E[i], c2 = E[i + 1], cx = (a[0][0] + c2[0][0]) / 2, cy = (a[2] + c2[2]) / 2;
-                    b.face([a[0], c2[0], c2[1], a[1]], P1, [cx, cy - 0.5, 0.6 * s]);
-                }
-                /* лобовой треугольник у носа */
-                b.face([E[0][0], E[0][1], [N, E[0][2], 1.08 * s]], P1, [N - 0.5, 1.3, 1.08 * s]);
-            });
-        }
 
         /* Погон башни */
         b.cyl([DIM.pivot, H_ROOF - 0.01, 0], [DIM.pivot, H_ROOF + 0.05, 0], 1.12, 1.12, 48, P8, false, true);
@@ -698,8 +689,8 @@
             grille(-2.32, -4.05, Math.min(1.16 * s, 1.66 * s), Math.max(1.16 * s, 1.66 * s), H_DECK - 0.005);
             /* Горловины топливных баков */
             /* плоская крышка заподлицо с полкой (высота 12 мм) с откидной скобой */
-            b.cyl([-1.50, H_SHELF - 0.01, 1.40 * s], [-1.50, H_SHELF + 0.012, 1.40 * s], 0.08, 0.08, 18, P8, false, true);
-            b.box([-1.53, H_SHELF + 0.012, 1.40 * s - 0.035], [-1.47, H_SHELF + 0.02, 1.40 * s + 0.035], P9);
+            b.cyl([-1.50, H_ROOF - 0.01, 1.40 * s], [-1.50, H_ROOF + 0.012, 1.40 * s], 0.08, 0.08, 18, P8, false, true);
+            b.box([-1.53, H_ROOF + 0.012, 1.40 * s - 0.035], [-1.47, H_ROOF + 0.02, 1.40 * s + 0.035], P9);
             /* Рым-болты */
             [[3.62, glacisY(3.62)], [-3.95, H_DECK]].forEach(([x, y]) => {
                 const L = [];
@@ -725,7 +716,7 @@
                 { P: [[0.68, T], [0.68, B], [0.13, B], [0.13, T]], t: 0.085, k: 0.97, heavy: 1 },
                 { P: [[0.12, T], [0.12, B], [-0.65, B], [-0.65, T]], t: 0.085, k: 0.87, hue: 0.90, heavy: 1 },
                 { P: [[-0.66, T], [-0.66, B + 0.01], [-1.37, B + 0.01], [-1.37, T]], t: 0.045, k: 0.96, heavy: 0 },
-                { P: [[-1.38, T], [-1.38, B + 0.01], [-2.60, B + 0.01], [-2.74, B + 0.05], [-2.84, B + 0.17], [-2.88, B + 0.30], [-2.88, T]], t: 0.045, k: 1.03, heavy: 0 }
+                { P: [[-1.38, T], [-1.38, B + 0.01], [-2.88, B + 0.01], [-2.88, T]], t: 0.045, k: 1.03, heavy: 0 }
             ];
             PANELS.forEach((pn, pi) => {
                 const col = [pn.k, pn.k * 0.995, pn.k * 0.985 * (pn.hue || 1), 0], zo = (1.75 + pn.t) * s, bev = pn.heavy ? 0.022 : 0.012;
@@ -742,7 +733,7 @@
                     for (let x = xl; x > xa + 0.05; x -= 0.19) bolt(b, [x, y, zf], [0, 0, s], 0.018);
                 });
                 /* нижний ребристый отворот у тонких панелей */
-                if (!pn.heavy) b.box([xa + 0.01 + (pi === 5 ? 0.30 : 0), B + 0.01, Math.min(zo, zo + 0.02 * s)], [xb - 0.01, B + 0.08, Math.max(zo, zo + 0.02 * s)], col);
+                if (!pn.heavy) b.box([xa + 0.01, B + 0.01, Math.min(zo, zo + 0.02 * s)], [xb - 0.01, B + 0.08, Math.max(zo, zo + 0.02 * s)], col);
                 /* петли подвески по верхней кромке */
                 [xa + 0.16, xb - (pi === 0 ? 0.62 : 0.16)].forEach(x => {
                     if (xb - xa < 0.5 && x !== xa + 0.16) return;
@@ -753,10 +744,32 @@
                 const xm = (xa + xb) / 2 + (pi === 0 ? 0.15 : 0);
                 if (pi !== 0) b.tube([[xm - 0.11, T - 0.18, zf], [xm - 0.11, T - 0.18, zf + 0.05 * s], [xm + 0.11, T - 0.18, zf + 0.05 * s], [xm + 0.11, T - 0.18, zf]], 0.012, 5, P8);
             });
-            /* Кожух над ведущим колесом до кормы (по чертежу закрывает верх звёздочки) */
-            b.prismZ([[-2.88, H_SHELF], [-2.88, 1.20], [R + 0.08, 1.22], [R + 0.08, H_SHELF]], Math.min(1.75 * s, 1.80 * s), Math.max(1.75 * s, 1.80 * s), P9);
+            /* Задняя секция экрана до самой кормы: полная высота, полукруглый вырез под ведущее
+               колесо (R 0,47 вокруг оси звёздочки), за звёздочкой — ступенька до кормы */
+            {
+                const xa = -2.89, xe = R + 0.08, sx = DIM.sprocket[0], sy = DIM.sprocket[1], RA = 0.47, ye = sy + RA * Math.sin(15 * DEG);
+                const zi = 1.75 * s, zt = 1.795 * s, col = [1.01, 1.005, 0.995, 0];
+                const X = [xa, sx + RA];
+                for (let k = 1; k <= 18; k++) X.push(sx + RA * Math.cos(k / 18 * 165 * DEG));
+                X.push(xe);
+                const by = x => x >= sx + RA ? B + 0.01 : x <= sx - RA * Math.cos(15 * DEG) ? ye : Math.max(B + 0.01, sy + Math.sqrt(Math.max(0, RA * RA - (x - sx) * (x - sx))));
+                /* одна оболочка без внутренних стенок: лицо и изнанка полосами, кромки по контуру */
+                const C0 = [-3.4, 1.2, 1.7725 * s];
+                for (let k = 0; k < X.length - 1; k++) {
+                    const xa_ = X[k], xb_ = X[k + 1], q = z => [[xa_, T, z], [xa_, by(xa_), z], [xb_, by(xb_), z], [xb_, T, z]];
+                    b.face(q(zt), col, [xa_, 1.2, 0]);
+                    b.face(q(zi), col, [xa_, 1.2, 4 * s]);
+                    b.face([[xa_, T, zi], [xb_, T, zi], [xb_, T, zt], [xa_, T, zt]], col, [xa_, 0, zi]);
+                    b.face([[xa_, by(xa_), zi], [xb_, by(xb_), zi], [xb_, by(xb_), zt], [xa_, by(xa_), zt]], col, [sx, sy, zi]);
+                }
+                [[xa, 1], [xe, -1]].forEach(([x, d]) => b.face([[x, T, zi], [x, by(x), zi], [x, by(x), zt], [x, T, zt]], col, [x - d, 1.2, zi]));
+                /* отбортовка по кромке выреза */
+                b.tube(X.map(x => [x, by(x) + 0.012, zt + 0.004 * s]), 0.011, 5, P8);
+                for (let x = -2.97; x > xe + 0.05; x -= 0.19) bolt(b, [x, T - 0.07, zt], [0, 0, s], 0.016);
+                hinge(b, [-3.25, T - 0.025, zt + 0.012 * s], [-3.11, T - 0.025, zt + 0.012 * s], 0.019);
+                hinge(b, [-3.95, T - 0.025, zt + 0.012 * s], [-3.81, T - 0.025, zt + 0.012 * s], 0.019);
+            }
             const zo = 1.80 * s;
-            for (let x = -2.97; x > R + 0.1; x -= 0.19) bolt(b, [x, H_SHELF - 0.07, zo], [0, 0, s], 0.016);
             const zs = 1.837 * s;
             /* окно-ступенька переднего экрана */
             b.box([2.95, 0.98, Math.min(zs + 0.005 * s, zs + 0.04 * s)], [3.14, 1.09, Math.max(zs + 0.005 * s, zs + 0.04 * s)], P8);
@@ -767,7 +780,7 @@
                 b.tube([[x + 0.34, 0.66, 1.08 * s], [x + 0.34, 0.66, 1.17 * s], [x, DIM.wheelY, 1.17 * s]], 0.055, 8, P8);
             });
             DIM.rollers.forEach(([x, y]) => b.cyl([x, y, 1.08 * s], [x, y, 1.26 * s], 0.04, 0.04, 8, P8, false, false));
-            b.cyl([DIM.sprocket[0], DIM.sprocket[1], 1.08 * s], [DIM.sprocket[0], DIM.sprocket[1], 1.24 * s], 0.24, 0.20, 18, P8, false, false);
+            b.cyl([DIM.sprocket[0], DIM.sprocket[1], 1.08 * s], [DIM.sprocket[0], DIM.sprocket[1], 1.31 * s], 0.24, 0.20, 18, P8, false, false);
             b.tube([[3.05, 0.98, 1.10 * s], [3.30, 0.90, 1.18 * s], [DIM.idler[0], DIM.idler[1], 1.18 * s]], 0.06, 8, P8);
         });
         return b;
@@ -828,6 +841,12 @@
                 b.face([r[0], r[1], r[2], r[3]], P1, [0, 2.0, 0]);
                 b.face([r[iL], r[iL - 1], r[iL - 2], r[iL - 3]], P1, [0, 2.0, 0]);
             });
+        }
+        /* Подбородок под маской: низ паза между стенками закрыт сплошным блоком по линии подреза */
+        {
+            const h = tFront(0, T_SLOT, 1), e = tFront(1, T_SLOT, 1), yc = DIM.trunnion[1] - 0.31;
+            const xAt = y => lerp(h[0], e[0], (y - h[1]) / (e[1] - h[1]));
+            b.prismZ([[h[0] - T_NOTCH, T_Y0], [h[0], T_Y0], [xAt(yc), yc], [h[0] - T_NOTCH, yc]], -T_SLOT, T_SLOT, P1);
         }
         /* (швы-валики и тёмные щели убраны: лоб и скулы — монолитные плоские грани) */
         /* Трос по нижнему краю борта: с провисами, петли на концах */
@@ -1117,36 +1136,49 @@
      * ---------------------------------------------------------------- */
     const GY = DIM.trunnion[1];
     function buildMantlet() {
-        /* Маска пушки — массивный сплошной бронеблок 0,60 (Z) × 0,60 (Y) × 0,55 (X) по оси
-           орудия, плотно входит в паз между скулами (стенки паза Z ±0,31). Передняя грань
-           (X 2,39) выступает на 0,18 м перед внутренними вершинами скул (X 2,21). Справа от
-           ствола — амбразура спаренного M240 и окно вспомогательного прицела. Ствол входит
-           прямо в плиту через гладкое кольцо-воротник; резинового чехла нет. */
+        /* Маска пушки — сплошной бронеблок 0,60 (Z) × 0,60 (Y) по оси 2,10: верх вровень с крышей
+           башни (2,40). В паз между скулами входит корпус шириной 0,60; к лицевой плите (±0,25)
+           он сведён скошенными боковыми фланцами с рядами болтов. Лицевая плита гладкая; по центру —
+           шаровой бронекожух вокруг основания ствола, снизу под стволом — полукруглый вырез.
+           Справа — амбразура спаренного M240 и окно вспомогательного прицела. */
         const b = new Builder();
-        const XF = 2.39, XB = XF - 0.55, Y0 = GY - 0.30, Y1 = GY + 0.30, ZW = 0.30, c = 0.03;
-        /* блок с фасками по переднему контуру */
-        const sec = (x, zw, y0, y1, k) => [[x, y0, -zw + k], [x, y0, zw - k], [x, y0 + k, zw], [x, y1 - k, zw], [x, y1, zw - k], [x, y1, -zw + k], [x, y1 - k, -zw], [x, y0 + k, -zw]];
-        b.loft([sec(XB, ZW, Y0, Y1, 0.012), sec(XF - c, ZW, Y0, Y1, 0.012), sec(XF, ZW - c, Y0 + c, Y1 - c, 0.012)], P1);
-        b.face(sec(XB, ZW, Y0, Y1, 0.012).slice().reverse(), P1, [XB - 1, GY, 0]);
-        b.face(sec(XF, ZW - c, Y0 + c, Y1 - c, 0.012), P1, [XF + 1, GY, 0]);
-        /* болты по периметру передней плиты */
-        for (let y = Y0 + 0.07; y < Y1 - 0.04; y += 0.093) [-ZW + 0.06, ZW - 0.06].forEach(z => bolt(b, [XF, y, z], [1, 0, 0], 0.013));
-        for (let z = -0.15; z < 0.16; z += 0.10) { bolt(b, [XF, Y1 - 0.06, z], [1, 0, 0], 0.013); bolt(b, [XF, Y0 + 0.06, z], [1, 0, 0], 0.013); }
+        const XF = 2.30, XB = XF - 0.55, XC = XF - 0.11, XL = XF - 0.06;
+        const Y0 = GY - 0.30, Y1 = GY + 0.30, ZW = 0.30, ZF = 0.25, RN = 0.10;
+        const sec = (x, zw) => [[x, Y0, -zw], [x, Y0, zw], [x, Y1, zw], [x, Y1, -zw]];
+        /* корпус + скошенные фланцы */
+        b.loft([sec(XB, ZW), sec(XC, ZW), sec(XL, ZF)], P1);
+        /* лицевая плита с полукруглым вырезом снизу (полосы по Z — каждая выпуклая) */
+        const zs = [-ZF];
+        for (let i = 0; i <= 12; i++) zs.push(-RN + 2 * RN * i / 12);
+        zs.push(ZF);
+        const yb = z => Y0 + Math.sqrt(Math.max(0, RN * RN - z * z));
+        for (let i = 0; i < zs.length - 1; i++) {
+            const za = zs[i], zb = zs[i + 1], q = x => [[x, yb(za), za], [x, yb(zb), zb], [x, Y1, zb], [x, Y1, za]];
+            b.loft([q(XL), q(XF)], P1);
+        }
+        /* ряды болтов на скошенных фланцах */
+        [1, -1].forEach(s => {
+            const n = V.norm([1, 0, s]);
+            for (let y = Y0 + 0.06; y < Y1 - 0.03; y += 0.08) bolt(b, [(XC + XL) / 2 + 0.004, y, s * ((ZW + ZF) / 2 + 0.004)], n, 0.014);
+        });
+        /* шаровой бронекожух вокруг ствола (сфера R 0,22 с центром в 0,06 за плитой) */
+        const SC = XF - 0.06, RS = 0.22, xs = [XF, XF + 0.025, XF + 0.05, XF + 0.075, XF + 0.095, XF + 0.11];
+        const rs = x => Math.sqrt(RS * RS - (x - SC) * (x - SC));
+        for (let i = 0; i < xs.length - 1; i++) b.cyl([xs[i], GY, 0], [xs[i + 1], GY, 0], rs(xs[i]), rs(xs[i + 1]), 32, P1, false, false);
+        b.cyl([XF - 0.002, GY, 0], [XF + 0.008, GY, 0], rs(XF) + 0.008, rs(XF) + 0.004, 32, P8, false, false);
         /* амбразура спаренного M240: справа ниже оси */
-        const cz = 0.20, cy = GY - 0.13;
-        b.cyl([XF, cy, cz], [XF + 0.025, cy, cz], 0.048, 0.044, 14, P8, false, true);
-        b.annulus([XF + 0.026, cy, cz], [1, 0, 0], 0, 0.026, 12, BLACK);
+        const cz = 0.20, cy = GY - 0.17;
+        b.cyl([XF, cy, cz], [XF + 0.025, cy, cz], 0.046, 0.042, 14, P8, false, true);
+        b.annulus([XF + 0.026, cy, cz], [1, 0, 0], 0, 0.025, 12, BLACK);
         b.cyl([XF + 0.015, cy, cz], [XF + 0.10, cy, cz], 0.012, 0.012, 8, GUNMETAL, false, true);
         /* окно вспомогательного прицела: справа выше оси, в бронерамке */
-        b.box([XF, GY + 0.14, 0.13], [XF + 0.04, GY + 0.24, 0.27], P9);
-        b.box([XF + 0.02, GY + 0.155, 0.145], [XF + 0.041, GY + 0.225, 0.255], BLACK);
-        b.face([[XF + 0.042, GY + 0.16, 0.15], [XF + 0.042, GY + 0.16, 0.25], [XF + 0.042, GY + 0.22, 0.25], [XF + 0.042, GY + 0.22, 0.15]], GLASS, [XF, GY + 0.19, 0.20]);
-        /* гладкое кольцо-воротник ствола в цвет башни */
-        b.cyl([XF, GY, 0], [XF + 0.035, GY, 0], 0.175, 0.165, 28, P1, false, true);
+        b.box([XF, GY + 0.20, 0.10], [XF + 0.04, GY + 0.28, 0.22], P9);
+        b.box([XF + 0.02, GY + 0.212, 0.112], [XF + 0.041, GY + 0.268, 0.208], BLACK);
+        b.face([[XF + 0.042, GY + 0.216, 0.116], [XF + 0.042, GY + 0.216, 0.204], [XF + 0.042, GY + 0.264, 0.204], [XF + 0.042, GY + 0.264, 0.116]], GLASS, [XF, GY + 0.24, 0.16]);
         /* рым-болты сверху */
         [-0.17, 0.17].forEach(z => {
             const L = [];
-            for (let i = 0; i <= 8; i++) { const a = i / 8 * Math.PI; L.push([XF - 0.14 + Math.cos(a) * 0.04, Y1 + Math.sin(a) * 0.045, z]); }
+            for (let i = 0; i <= 8; i++) { const a = i / 8 * Math.PI; L.push([XF - 0.16 + Math.cos(a) * 0.04, Y1 + Math.sin(a) * 0.045, z]); }
             b.tube(L, 0.011, 5, P8);
         });
         return b;
@@ -1154,7 +1186,7 @@
     function buildBarrel() {
         const b = new Builder();
         const M = DIM.muzzle, EJ = M - 1.80;     /* центр эжектора — 1,80 м от дульного среза */
-        /* Видимая часть ствола от маски (X 2,39 + воротник) до среза — 3,05 м: термокожух с бандажами,
+        /* Видимая часть ствола от маски (X 2,30 + шаровой кожух) до среза — 3,05 м: термокожух с бандажами,
            эжектор вдвое толще ствола (длина 0,40 м), гладкая дульная часть без тормоза */
         b.lathe([
             [2.05, 0], [2.05, 0.14], [2.40, 0.14], [2.40, 0.128], [2.46, 0.128], [2.46, 0.116],
@@ -1176,6 +1208,19 @@
     /* ---------------------------------------------------------------- *
      * Колёса (ось Z, внешняя сторона +Z)
      * ---------------------------------------------------------------- */
+    /* Коническая чаша (кольцо от (ra, za) до (rb, zb)) с нормалями, смотрящими наружу по sg */
+    function dish(b, za, ra, zb, rb, sg, c, seg) {
+        let nr = zb - za, nz = -(rb - ra);
+        if (nz * sg < 0) { nr = -nr; nz = -nz; }
+        const l = Math.hypot(nr, nz) || 1, base = b.count();
+        nr /= l; nz /= l;
+        for (let i = 0; i <= seg; i++) {
+            const t = i / seg * TAU, ct = Math.cos(t), st = Math.sin(t), n = b.tn([ct * nr, st * nr, nz]);
+            b.v(b.tp([ct * ra, st * ra, za]), n, c);
+            b.v(b.tp([ct * rb, st * rb, zb]), n, c);
+        }
+        for (let i = 0; i < seg; i++) { const k = base + i * 2; b.idx.push(k, k + 2, k + 1, k + 1, k + 2, k + 3); }
+    }
     function buildWheel(R, hubR, bolts, holes) {
         const b = new Builder();
         const big = R > 0.2;
@@ -1189,44 +1234,46 @@
                 else b.cyl([0, 0, za], [0, 0, zb], ra, rb, 36, RUBBER, false, false);
             }
             if (big) for (let k = 1; k < 3; k++) b.cyl([0, 0, z0 + w * k / 3 - 0.003], [0, 0, z0 + w * k / 3 + 0.003], R - 0.006, R - 0.006, 36, BLACK, false, false);
-            /* обод и вогнутый диск */
-            const zo = z1 > 0 ? z1 : z0, sg = z1 > 0 ? 1 : -1;
+            /* обод и ВОГНУТЫЙ диск: глубокая чаша утоплена внутрь относительно бандажа */
+            const zo = z1 > 0 ? z1 : z0, sg = z1 > 0 ? 1 : -1, DD = big ? 0.085 : 0.03, zd = zo - DD * sg;
+            const ra = R - 0.07, rb = hubR + 0.03, dz = r => lerp(zo + 0.006 * sg, zd, (ra - r) / (ra - rb));
             b.cyl([0, 0, zo - 0.012 * sg], [0, 0, zo + 0.006 * sg], R - 0.05, R - 0.05, 36, P8, false, false);
             b.annulus([0, 0, zo + 0.006 * sg], [0, 0, sg], R - 0.07, R - 0.05, 36, P8);
-            b.cyl([0, 0, zo + 0.006 * sg], [0, 0, zo - 0.02 * sg], R - 0.07, hubR + 0.03, 36, P9, false, false);
-            b.annulus([0, 0, zo - 0.02 * sg], [0, 0, sg], hubR, hubR + 0.03, 24, P9);
+            dish(b, zo + 0.006 * sg, ra, zd, rb, sg, P9, 36);
+            b.annulus([0, 0, zd], [0, 0, sg], hubR, rb, 24, P9);
             b.cyl([0, 0, zo - 0.012 * sg], [0, 0, (z1 > 0 ? z0 : z1) + 0.012 * sg], R - 0.05, R - 0.05, 36, P7, false, false);
             /* кольцевое ребро жёсткости штампованного диска */
             if (big) {
-                const rr = (R - 0.07 + hubR + 0.03) / 2, zr = zo - 0.007 * sg;
+                const rr = (R - 0.07 + hubR + 0.03) / 2, zr = dz(rr) - 0.004 * sg;
                 b.cyl([0, 0, zr], [0, 0, zr + 0.012 * sg], rr + 0.016, rr + 0.012, 36, P8, false, false);
                 b.cyl([0, 0, zr], [0, 0, zr + 0.012 * sg], rr - 0.016, rr - 0.012, 36, P8, false, false);
                 b.annulus([0, 0, zr + 0.012 * sg], [0, 0, sg], rr - 0.012, rr + 0.012, 36, P9);
             }
             if (z1 > 0) for (let i = 0; i < holes; i++) {
                 const a = (i + 0.5) / holes * TAU, r = (R - 0.07 + hubR + 0.03) / 2;
-                const zz = zo - 0.007 - 0.012 * (r - hubR) / (R - hubR);
+                const zz = dz(r) - 0.008;
                 b.cyl([Math.cos(a) * r, Math.sin(a) * r, zz - 0.006], [Math.cos(a) * r, Math.sin(a) * r, zz + 0.009], 0.03, 0.03, 12, [0.04, 0.04, 0.04, 1], false, true);
                 b.cyl([Math.cos(a) * r, Math.sin(a) * r, zz - 0.002], [Math.cos(a) * r, Math.sin(a) * r, zz + 0.012], 0.037, 0.037, 12, P8, false, false);
                 b.annulus([Math.cos(a) * r, Math.sin(a) * r, zz + 0.012], [0, 0, 1], 0.03, 0.037, 12, P8);
             }
         });
-        /* ступица: фланец, гайки, колпак с маслёнкой */
-        b.cyl([0, 0, 0.165], [0, 0, 0.205], hubR, hubR * 0.96, 24, P1, false, true);
-        b.cyl([0, 0, 0.205], [0, 0, 0.215], hubR * 0.96, hubR * 0.9, 24, P8, false, true);
-        b.cyl([0, 0, 0.215], [0, 0, 0.245], hubR * 0.52, hubR * 0.46, 16, P9, false, true);
-        b.cyl([0, 0, 0.245], [0, 0, 0.26], hubR * 0.16, hubR * 0.14, 8, DSTEEL, false, true);
+        /* ступица выступает из глубины чаши: фланец, гайки, колпак с маслёнкой (до плоскости бандажа) */
+        const zh = R > 0.2 ? 0.19 - 0.085 : 0.16;
+        b.cyl([0, 0, zh], [0, 0, zh + 0.045], hubR, hubR * 0.96, 24, P1, false, true);
+        b.cyl([0, 0, zh + 0.045], [0, 0, zh + 0.055], hubR * 0.96, hubR * 0.9, 24, P8, false, true);
+        b.cyl([0, 0, zh + 0.055], [0, 0, zh + 0.085], hubR * 0.52, hubR * 0.46, 16, P9, false, true);
+        b.cyl([0, 0, zh + 0.085], [0, 0, zh + 0.10], hubR * 0.16, hubR * 0.14, 8, DSTEEL, false, true);
         for (let i = 0; i < bolts; i++) {
             const a = i / bolts * TAU, r = hubR * 0.74;
-            b.cyl([Math.cos(a) * r, Math.sin(a) * r, 0.212], [Math.cos(a) * r, Math.sin(a) * r, 0.232], 0.016, 0.015, 6, DSTEEL, false, true);
-            b.cyl([Math.cos(a) * r, Math.sin(a) * r, 0.232], [Math.cos(a) * r, Math.sin(a) * r, 0.24], 0.007, 0.007, 6, STEEL, false, true);
+            b.cyl([Math.cos(a) * r, Math.sin(a) * r, zh + 0.052], [Math.cos(a) * r, Math.sin(a) * r, zh + 0.072], 0.016, 0.015, 6, DSTEEL, false, true);
+            b.cyl([Math.cos(a) * r, Math.sin(a) * r, zh + 0.072], [Math.cos(a) * r, Math.sin(a) * r, zh + 0.08], 0.007, 0.007, 6, STEEL, false, true);
         }
         b.cyl([0, 0, -0.22], [0, 0, 0.22], 0.075, 0.075, 12, P7, false, false);
         return b;
     }
     function buildSprocket() {
         const b = new Builder();
-        b.cyl([0, 0, -0.17], [0, 0, 0.20], 0.19, 0.19, 24, P8, false, false);
+        b.cyl([0, 0, -0.17], [0, 0, 0.08], 0.19, 0.19, 24, P8, false, false);
         [-0.11, 0.11].forEach(zc => {
             /* зубчатый венец: диск + 11 зубьев с фасками, болты крепления венца */
             b.cyl([0, 0, zc - 0.03], [0, 0, zc + 0.03], 0.25, 0.25, 33, P9, true, true);
@@ -1242,18 +1289,30 @@
             }
             b.cyl([0, 0, zc - 0.034], [0, 0, zc + 0.034], 0.17, 0.17, 24, P7, false, false);
         });
+        /* 7 овальных отверстий облегчения в наружном диске (между ступицей и венцом) */
+        for (let i = 0; i < 7; i++) {
+            const a = (i + 0.5) / 7 * TAU, ca = Math.cos(a), sa = Math.sin(a), H = [], E = [];
+            for (let k = 0; k < 16; k++) {
+                const t = k / 16 * TAU, rr = 0.182 + Math.cos(t) * 0.034, tt = Math.sin(t) * 0.05;
+                H.push([ca * rr - sa * tt, sa * rr + ca * tt, 0.1405]);
+                const r2 = 0.182 + Math.cos(t) * 0.042, t2 = Math.sin(t) * 0.058;
+                E.push([ca * r2 - sa * t2, sa * r2 + ca * t2, 0.1402]);
+            }
+            b.face(E, P7, [0, 0, 0]);
+            b.face(H, [0.05, 0.048, 0.045, 1], [0, 0, 0]);
+        }
         /* ступица бортовой передачи с двумя рядами болтов */
-        b.cyl([0, 0, 0.20], [0, 0, 0.24], 0.15, 0.145, 24, P1, false, true);
-        b.cyl([0, 0, 0.24], [0, 0, 0.27], 0.10, 0.095, 20, P9, false, true);
-        for (let i = 0; i < 12; i++) {
-            const a = i / 12 * TAU;
-            b.cyl([Math.cos(a) * 0.125, Math.sin(a) * 0.125, 0.238], [Math.cos(a) * 0.125, Math.sin(a) * 0.125, 0.254], 0.013, 0.012, 6, DSTEEL, false, true);
+        b.cyl([0, 0, 0.14], [0, 0, 0.20], 0.115, 0.11, 24, P1, false, true);
+        b.cyl([0, 0, 0.20], [0, 0, 0.23], 0.075, 0.07, 20, P9, false, true);
+        for (let i = 0; i < 10; i++) {
+            const a = i / 10 * TAU;
+            b.cyl([Math.cos(a) * 0.093, Math.sin(a) * 0.093, 0.198], [Math.cos(a) * 0.093, Math.sin(a) * 0.093, 0.214], 0.012, 0.011, 6, DSTEEL, false, true);
         }
-        for (let i = 0; i < 8; i++) {
-            const a = (i + 0.5) / 8 * TAU;
-            b.cyl([Math.cos(a) * 0.07, Math.sin(a) * 0.07, 0.268], [Math.cos(a) * 0.07, Math.sin(a) * 0.07, 0.282], 0.011, 0.011, 6, DSTEEL, false, true);
+        for (let i = 0; i < 6; i++) {
+            const a = (i + 0.5) / 6 * TAU;
+            b.cyl([Math.cos(a) * 0.05, Math.sin(a) * 0.05, 0.228], [Math.cos(a) * 0.05, Math.sin(a) * 0.05, 0.242], 0.01, 0.01, 6, DSTEEL, false, true);
         }
-        b.cyl([0, 0, 0.27], [0, 0, 0.30], 0.04, 0.032, 12, P8, false, true);
+        b.cyl([0, 0, 0.23], [0, 0, 0.26], 0.03, 0.025, 12, P8, false, true);
         return b;
     }
 
@@ -2077,7 +2136,8 @@ void main() {
             DIM.wheels.forEach(x => L.push({ m: MESH.wheel, M: wheelM(x, DIM.wheelY, z, -o / DIM.wheelR) }));
             L.push({ m: MESH.idler, M: wheelM(DIM.idler[0], DIM.idler[1], z, -o / DIM.wheelR) });
             DIM.rollers.forEach(([x, y]) => L.push({ m: MESH.roller, M: wheelM(x, y, z, -o / DIM.rollerR) }));
-            L.push({ m: MESH.sprocket, M: wheelM(DIM.sprocket[0], DIM.sprocket[1], z, -o / (DIM.sprocketR + 0.02)) });
+            /* звёздочка выдвинута наружу на 0,05 — наружный диск в плоскости бандажей катков */
+            L.push({ m: MESH.sprocket, M: wheelM(DIM.sprocket[0], DIM.sprocket[1], z + 0.05 * Math.sign(z), -o / (DIM.sprocketR + 0.02)) });
         });
         return L;
     }
