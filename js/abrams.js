@@ -378,46 +378,55 @@
        Профиль лба — шеврон «<»: вершина на 2,03 м, верхняя и нижняя грани по 30° от вертикали.
        План — тупой клин: скулы 30° к поперечной оси, ширина по низу 3,25 м у перехода скул
        в борта, к корме ниши 2,80. Вид спереди — трапеция: борта завалены внутрь (крыша 2,50). */
-    const T_TIP = 2.21, T_END = -2.49, T_Y0 = 1.70, T_YC = 2.03, T_Y1 = 2.40, T_YBU = 1.84;
+    const T_TIP = 2.21, T_END = -2.49, T_Y0 = 1.70, T_YC = 1.98, T_Y1 = 2.40, T_YBU = 1.84;
     const T_HW0 = 1.625, T_TAPER = 0.225, T_LEAN = (1.625 - 1.25) / 0.70, T_SLOT = 0.31, T_NOTCH = 0.26;
-    const T_FACE = Math.tan(30 * DEG), T_CX = T_TIP - 0.70;   /* наружный угол скулы: Z ±1,625, на 0,70 м за вершиной */
+    const T_FACE = Math.tan(30 * DEG), T_QZ = 0.45;
     const T_STEP0 = -1.02, T_STEP1 = -1.22, T_BASKET = -2.89;
     /* полуширина борта на высоте y в сечении x (борт — наклонная плоскость) */
     const tz = (x, y) => T_HW0 - T_LEAN * (y - T_Y0) - T_TAPER * clamp((1.40 - x) / (1.40 - T_END), 0, 1);
     const tRec = y => Math.abs(y - T_YC) * T_FACE;          /* отступ лба от вершины шеврона */
     const roofY = () => T_Y1;
-    /* Лоб башни.
-       В плане переднее ребро скулы — ОДНА прямая от края амбразуры (Z ±0,31, X = вершина)
-       до наружного угла (Z ±1,625, на 0,70 м назад). Это ребро — линия перелома шеврона:
-       у амбразуры оно на середине высоты (2,03), к наружному углу опускается к низу борта.
-       Верхняя грань — плоскость через это ребро, завалена назад-вверх на 30°; нижняя —
-       треугольник, подрезанный назад-вниз на 30°. Амбразура — паз со стенками, параллельными
-       оси пушки, глубиной T_NOTCH. */
-    const T_A = [T_TIP, T_YC, T_SLOT], T_P1 = [T_CX, T_Y0, T_HW0];
-    function tUpperCorner(y) {
-        let a = 0.7, x = T_CX;
-        for (let i = 0; i < 12; i++) {
-            const bb = y - T_YC - a * (T_Y0 - T_YC);
-            x = T_TIP + a * (T_CX - T_TIP) - T_FACE * bb;
-            a = (tz(x, y) - T_SLOT) / (T_HW0 - T_SLOT);
+    /* Лоб башни (скулы) — основная плита + «корыто» под ней.
+       Основная плита [A B C D E]: нижняя кромка C→D СТРОГО ГОРИЗОНТАЛЬНА (Y 2,05) от наружного
+       угла до Z ±0,45 (≈80 % ширины скулы), у маски — короткий излом D→E вверх (Y 2,21 у стенки
+       паза Z ±0,31). Плита завалена назад на 12° (как на виде сбоку 03.png). В плане кромка —
+       одна прямая, наружный угол на ~0,6 м за вершиной.
+       Корыто [C F G H E D]: под козырьком плиты заглублённая на 0,08 м стенка; снизу —
+       горизонтальная полка F→G (Y 1,80), у маски поднимается к H (Y 1,93). Под полкой —
+       короткий подрез назад-вниз на 30° до низа башни (1,70).
+       Точки B, C, F лежат на наклонных бортах башни (борта и обвес не меняются). */
+    const T_LIP = 2.05, T_LIPE = 2.21, T_SH = 1.80, T_SHH = 1.93, T_SHT = 0.04, T_SHO = 0.03;
+    const T_KPL = 0.55, T_TU = Math.tan(12 * DEG), T_DCH = 0.08;
+    const T_XD = T_TIP + T_TU * (T_LIPE - T_LIP) - T_KPL * (T_QZ - T_SLOT);
+    const tLf = z => T_XD - T_KPL * (z - T_QZ);                    /* линия кромки в плане */
+    const tPl = (z, y) => tLf(z) - T_TU * (y - T_LIP);              /* плоскость основной плиты */
+    /* Передняя точка уровня r (0 низ … 7 крыша) при ширине z; e = 1 — у стенки паза (E/H) */
+    function tFront(r, z, e) {
+        const yL = e ? T_LIPE : T_LIP, yS = e ? T_SHH : T_SH;
+        switch (r) {
+            case 0: return [tLf(z) - T_SHO - T_FACE * (yS - T_SHT - T_Y0), T_Y0];
+            case 1: return [tLf(z) - T_SHO, yS - T_SHT];
+            case 2: return [tLf(z) - T_SHO, yS];
+            case 3: return [tLf(z) - T_SHO - T_DCH, yS];
+            case 4: return [tPl(z, yL) - T_DCH, yL];
+            case 5: return [tPl(z, yL), yL];
+            case 6: return [tPl(z, T_Y1 - 0.035), T_Y1 - 0.035];
+            default: return [tPl(z, T_Y1), T_Y1];
         }
-        return [x, y, T_SLOT + a * (T_HW0 - T_SLOT)];
     }
-    /* Половина контура (правая, z > 0) для уровня: 'B' низ, 'C' перелом шеврона, число — высота.
-       Внутри точки [x, y, z], на выходе — [x, z, y] (формат tRing) */
-    function tHalf(lv) {
-        const P = [];
-        if (lv === "C") {
-            P.push([T_TIP - T_NOTCH, T_YC, T_SLOT], T_A.slice(), T_P1.slice());
-            [T_STEP0, T_STEP1, T_END + 0.14].forEach(x => P.push([x, T_YC, tz(x, T_YC)]));
-            P.push([T_END, T_YC, tz(T_END, T_YC) - 0.14]);
-            return P.map(([x, y, z]) => [x, z, y]);
-        }
-        const yF = lv === "B" ? T_Y0 : lv, yR = lv === "B" ? T_YBU : lv;
-        const xt = T_TIP - tRec(yF);
-        P.push([xt - T_NOTCH, yF, T_SLOT], [xt, yF, T_SLOT]);
-        P.push(lv === "B" ? T_P1.slice() : tUpperCorner(yF));
-        P.push([T_STEP0, yF, tz(T_STEP0, yF)]);
+    /* Угол скулы уровня r — пересечение передней грани с наклонным бортом */
+    function tCorner(r) {
+        let z = 1.4, f = tFront(r, z, 0);
+        for (let i = 0; i < 16; i++) { f = tFront(r, z, 0); z = tz(f[0], f[1]); }
+        return [f[0], f[1], z];
+    }
+    /* Половина контура (правая, z > 0) уровня r. Внутри [x, y, z], на выходе — [x, z, y].
+       Порядок: дно паза, кромка паза, излом у маски (Z 0,45), угол скулы, ступенька, корма */
+    function tHalf(r) {
+        const t = tFront(r, T_SLOT, 1), q = tFront(r, T_QZ, 0), c = tCorner(r);
+        const yS = r === 0 ? T_Y0 : c[1], yR = r === 0 ? T_YBU : c[1];
+        const P = [[t[0] - T_NOTCH, t[1], T_SLOT], [t[0], t[1], T_SLOT], [q[0], q[1], T_QZ], c,
+                   [T_STEP0, yS, tz(T_STEP0, yS)]];
         [T_STEP1, T_END + 0.14].forEach(x => P.push([x, yR, tz(x, yR)]));
         P.push([T_END, yR, tz(T_END, yR) - 0.14]);
         return P.map(([x, y, z]) => [x, z, y]);
@@ -778,28 +787,36 @@
     function buildTurret() {
         const b = new Builder();
         /* Корпус башни: низ → вершина шеврона → верх борта → фаска крыши */
-        const RB = tRing("B");
-        const RC = tRing("C");
-        const RT = tRing(T_Y1 - 0.035);
-        const RT2 = tRing(T_Y1, 0.04);
-        /* Оболочка вручную: паз амбразуры вогнутый, поэтому стенки паза ориентируем внутрь паза,
-           а донце и крышу собираем из выпуклых кусков (паз сверху и снизу открыт) */
+        const RINGS = [0, 1, 2, 3, 4, 5, 6].map(r => tRing(r)).concat([tRing(7, 0.04)]);
+        const RT2 = RINGS[7];
+        /* Оболочка вручную: паз амбразуры вогнутый, стенки паза смотрят внутрь паза; у корыта
+           потолок смотрит вниз, полка — вверх, задняя стенка — вперёд; донце и крыша — из выпуклых
+           кусков (паз сверху и снизу открыт) */
         {
-            const rings = [RB, RC, RT, RT2], n = RB.length, iL = n - 1;
-            for (let k = 0; k < rings.length - 1; k++) {
-                const A = rings[k], B2 = rings[k + 1];
+            const n = RINGS[0].length, iL = n - 1;
+            const FRONT = new Set([1, 2, iL - 3, iL - 2]);
+            for (let k = 0; k < RINGS.length - 1; k++) {
+                const A = RINGS[k], B2 = RINGS[k + 1];
                 for (let i = 0; i < n; i++) {
-                    const j = (i + 1) % n;
+                    const j = (i + 1) % n, f = [A[i], A[j], B2[j], B2[i]];
+                    const m = V.mul(f.reduce((a, p) => V.add(a, p), [0, 0, 0]), 0.25);
                     let C = [0, 2.0, 0];
-                    if (i === 0) C = [A[0][0], A[0][1], 1.0];            /* правая стенка паза → смотрит в паз */
-                    else if (i === iL - 1) C = [A[iL][0], A[iL][1], -1.0]; /* левая стенка паза */
-                    b.face([A[i], A[j], B2[j], B2[i]], P1, C);
+                    if (i === 0) C = [m[0], m[1], 1.0];                 /* правая стенка паза */
+                    else if (i === iL - 1) C = [m[0], m[1], -1.0];      /* левая стенка паза */
+                    else if (FRONT.has(i)) {
+                        if (k === 2) C = [m[0], m[1] - 1, m[2]];        /* полка корыта → вверх */
+                        else if (k === 3) C = [m[0] - 1, m[1], m[2]];   /* задняя стенка → вперёд */
+                        else if (k === 4) C = [m[0], m[1] + 1, m[2]];   /* потолок под козырьком → вниз */
+                        else C = [m[0] - 1, 2.0, m[2] * 0.5];
+                    }
+                    b.face(f, P1, C);
                 }
             }
-            [RB, RT2].forEach(r => {
-                b.face(r.filter((_, i) => i !== 1 && i !== iL - 1), P1, [0, 2.0, 0]);
-                b.face([r[0], r[1], r[2]], P1, [0, 2.0, 0]);
-                b.face([r[iL], r[iL - 1], r[iL - 2]], P1, [0, 2.0, 0]);
+            [RINGS[0], RT2].forEach(r => {
+                b.face(r.slice(3, n - 3), P1, [0, 2.0, 0]);
+                b.face([r[n - 4], r[3], r[0], r[iL]], P1, [0, 2.0, 0]);
+                b.face([r[0], r[1], r[2], r[3]], P1, [0, 2.0, 0]);
+                b.face([r[iL], r[iL - 1], r[iL - 2], r[iL - 3]], P1, [0, 2.0, 0]);
             });
         }
         /* (швы-валики и тёмные щели убраны: лоб и скулы — монолитные плоские грани) */
@@ -826,7 +843,7 @@
 
         /* Накладные броне-плиты крыши над скулами (клин с фаской и болтами) */
         [1, -1].forEach(s => {
-            const p0 = [RT2[1][0] - 0.12, 0.40], p1 = [RT2[2][0] - 0.02, RT2[2][2] - 0.04], xe = 1.18;
+            const p0 = [RT2[1][0] - 0.12, 0.40], p1 = [RT2[3][0] - 0.02, RT2[3][2] - 0.04], xe = 1.18;
             const poly = [[p0[0], 0.40 * s], [p1[0], p1[1] * s], [xe, (tz(xe, T_Y1) - 0.09) * s], [xe, 0.40 * s]];
             const lo = poly.map(([x, z]) => [x, T_Y1 - 0.005, z]);
             const hi = insetPoly(poly, 0.03).map(([x, z]) => [x, T_Y1 + 0.03, z]);
