@@ -178,7 +178,7 @@
             g += `<circle cx="${sx(-3.1).toFixed(1)}" cy="${sy(0.88).toFixed(1)}" r="9" class="a-ring a-strong"/>`;
             g += `<path d="M${sx(2.7)} ${sy(0.02)} H${sx(-2.6)} M${sx(-1.78)} ${sy(2.4)} L${sx(-1.9)} ${sy(3.4)} M${sx(0.0)} ${sy(2.78)} H${sx(1.1)}" class="a-line a-strong"/>`;
             g += `<path d="M${sx(5.87)} ${sy(-0.35)} H${sx(-3.96)} M${sx(5.87)} ${sy(-0.2)} v-8 M${sx(-3.96)} ${sy(-0.2)} v-8" class="a-line"/>`;
-            g += `<text x="14" y="22" class="a-txt">M1A1 · 9.83 × 3.66 × 2.38 m</text>`;
+            g += `<text x="14" y="22" class="a-txt">M1A2 · 9.65 × 3.48 × 2.45 m</text>`;
         } else if (p.category === "web") {
             // Аквариум / WebGL: волны, пузыри и силуэты рыб
             for (let k = 0; k < 4; k++) {
