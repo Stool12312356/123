@@ -5658,3 +5658,182 @@ html[data-hud-scale="large"] body {
         text-overflow: ellipsis;
     }
 }
+
+/* ================================================================
+ * Плеер проектов: запуск в браузере без скачивания (NEXUS AQUARIUM)
+ * ================================================================ */
+html.player-open,
+html.player-open body {
+    overflow: hidden;
+}
+.player-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2300; /* над шапкой (1000), под модалками (2400+), терминалом и тостами */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: clamp(8px, 2.2vw, 28px);
+    background: rgba(0, 0, 0, 0.72);
+    backdrop-filter: blur(3px);
+    opacity: 0;
+    transition: opacity 0.22s ease;
+}
+.player-overlay.is-open {
+    opacity: 1;
+}
+.player-overlay.is-closing {
+    opacity: 0;
+    pointer-events: none;
+}
+.player-frame {
+    --aug-tl: 16px;
+    --aug-br: 16px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: min(1480px, 100%);
+    height: min(920px, 100%);
+    padding: 0;
+    transform: scale(0.97);
+    transition: transform 0.25s var(--ease-edex, ease);
+}
+.player-overlay.is-open .player-frame {
+    transform: none;
+}
+.player-bar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 12px 8px 22px;
+    border-bottom: 1px solid var(--c-30);
+}
+.player-title {
+    margin: 0;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 15px;
+    letter-spacing: 0.08em;
+}
+.player-title img {
+    filter: var(--icon_filter);
+    flex: none;
+}
+.player-title b {
+    font-weight: normal;
+    white-space: nowrap;
+    text-shadow: var(--glow-text);
+}
+.player-title span {
+    font-family: var(--font_mono);
+    font-size: 11px;
+    opacity: 0.6;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.player-tools {
+    display: flex;
+    gap: 6px;
+    flex: none;
+}
+.player-tools .btn img {
+    filter: var(--icon_filter);
+}
+.player-tools .btn-primary img {
+    filter: var(--icon_filter_bg);
+}
+.player-stage {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    margin: 0 2px 2px;
+    background: #050606;
+}
+.player-iframe {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    display: block;
+    opacity: 0;
+    transition: opacity 0.35s ease;
+}
+.player-overlay.is-loaded .player-iframe {
+    opacity: 1;
+}
+.player-loading {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 12px;
+    font-family: var(--font_mono);
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    color: var(--c);
+}
+.player-overlay.is-loaded .player-loading {
+    display: none;
+}
+.player-loading i {
+    width: 160px;
+    height: 2px;
+    background: var(--c-20);
+    overflow: hidden;
+    position: relative;
+}
+.player-loading i::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    width: 40%;
+    background: var(--c);
+    animation: playerLoad 1s linear infinite;
+}
+@keyframes playerLoad {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(250%); }
+}
+@media (max-width: 767px) {
+    .player-overlay {
+        padding: 0;
+    }
+    .player-frame {
+        width: 100%;
+        height: 100%;
+        --aug-tl: 0px;
+        --aug-br: 0px;
+    }
+    .player-bar {
+        padding: 6px 8px 6px 12px;
+    }
+    .player-title span,
+    .player-tools .btn span {
+        display: none;
+    }
+    .player-tools .btn {
+        padding-inline: 9px;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .player-overlay,
+    .player-frame,
+    .player-iframe {
+        transition: none;
+    }
+    .player-loading i::after {
+        animation: none;
+    }
+}
+
+/* Баннер хранилища не перекрывает открытый плеер (вернётся после закрытия) */
+html.player-open .consent-banner {
+    z-index: 2200;
+}

@@ -1,0 +1,257 @@
+/* ==========================================================================
+ * NEXUS ABRAMS — дополнения к общему HUD (css/aquarium.css)
+ * Панель управления башней / стволом / ходом, подписи узлов и размеры.
+ * ========================================================================== */
+
+/* ----- Панель управления ----- */
+.ab-panel {
+    position: fixed;
+    left: max(16px, env(safe-area-inset-left));
+    bottom: 84px;
+    width: 268px;
+    padding: 10px 12px 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: rgba(242, 232, 226, 0.8);
+    background: var(--bg);
+    border: 1px solid var(--c-a);
+    border-left: 3px solid var(--c);
+    box-shadow: 0 0 18px var(--c-b);
+}
+.ab-panel-title {
+    margin: 0 0 8px;
+    color: var(--c);
+    letter-spacing: 0.12em;
+}
+.ab-panel-title i {
+    float: right;
+    font-style: normal;
+    color: #f2e8e2;
+    opacity: 0.85;
+}
+.ab-panel-title i.is-reload {
+    color: var(--c);
+    opacity: 1;
+}
+.ab-row {
+    display: grid;
+    grid-template-columns: 52px 1fr 62px;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 6px;
+    cursor: pointer;
+}
+.ab-row span {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    opacity: 0.75;
+}
+.ab-row output {
+    text-align: right;
+    color: #f2e8e2;
+    font-size: 12px;
+    white-space: nowrap;
+}
+.ab-row input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 18px;
+    margin: 0;
+    background: transparent;
+    cursor: pointer;
+    touch-action: none;
+}
+.ab-row input[type="range"]:focus {
+    outline: none;
+}
+.ab-row input[type="range"]::-webkit-slider-runnable-track {
+    height: 2px;
+    background: var(--c-a);
+}
+.ab-row input[type="range"]::-moz-range-track {
+    height: 2px;
+    background: var(--c-a);
+}
+.ab-row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    margin-top: -5px;
+    background: var(--c);
+    border: 0;
+    transform: rotate(45deg);
+    box-shadow: 0 0 8px var(--c-a);
+}
+.ab-row input[type="range"]::-moz-range-thumb {
+    width: 11px;
+    height: 11px;
+    background: var(--c);
+    border: 0;
+    border-radius: 0;
+    transform: rotate(45deg);
+}
+.ab-row input[type="range"]:focus-visible::-webkit-slider-thumb {
+    background: #f2e8e2;
+}
+.ab-keys {
+    margin: 6px 0 0;
+    line-height: 1.9;
+}
+.ab-keys kbd {
+    display: inline-block;
+    min-width: 18px;
+    padding: 0 4px;
+    margin-right: 2px;
+    font: inherit;
+    font-size: 10px;
+    line-height: 16px;
+    text-align: center;
+    color: var(--c);
+    border: 1px solid var(--c-a);
+}
+
+/* ----- Подписи узлов и размеры (позиции считает JS по 3D-точкам) ----- */
+.ab-labels {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+    font-family: var(--mono);
+}
+.ab-label {
+    position: absolute;
+    left: 0;
+    top: 0;
+    will-change: transform;
+}
+.ab-label[hidden] {
+    display: none;
+}
+.ab-label::before {
+    content: "";
+    position: absolute;
+    left: -3px;
+    top: -3px;
+    width: 6px;
+    height: 6px;
+    background: var(--c);
+    box-shadow: 0 0 6px var(--c);
+}
+.ab-label::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 26px;
+    height: 1px;
+    background: var(--c);
+    opacity: 0.7;
+    transform-origin: 0 0;
+    transform: rotate(-42deg);
+}
+.ab-label b {
+    position: absolute;
+    left: 20px;
+    bottom: 18px;
+    padding: 2px 6px;
+    font-weight: normal;
+    font-size: 10.5px;
+    letter-spacing: 0.04em;
+    color: #f2e8e2;
+    white-space: nowrap;
+    background: rgba(9, 11, 10, 0.72);
+    border: 1px solid var(--c-a);
+}
+.ab-label.is-left::after {
+    transform: rotate(-138deg);
+}
+.ab-label.is-left b {
+    left: auto;
+    right: 20px;
+}
+.ab-dim {
+    position: absolute;
+    left: 0;
+    top: 0;
+    padding: 1px 6px;
+    font-size: 11px;
+    color: #090b0a;
+    background: var(--c);
+    white-space: nowrap;
+    transform-origin: 0 0;
+    will-change: transform;
+}
+.ab-dim[hidden] {
+    display: none;
+}
+.ab-blue .ab-label::before,
+.ab-blue .ab-dim {
+    background: #e8f1ff;
+    box-shadow: none;
+}
+.ab-blue .ab-label b {
+    background: rgba(16, 52, 112, 0.85);
+    border-color: rgba(232, 241, 255, 0.5);
+}
+.ab-blue .ab-label::after {
+    background: #e8f1ff;
+}
+.ab-blue .ab-dim {
+    color: #133a7c;
+}
+
+/* ----- Адаптив ----- */
+@media (max-width: 860px) {
+    .ab-panel {
+        width: 236px;
+    }
+    .ab-keys {
+        display: none;
+    }
+}
+@media (max-width: 560px) {
+    .ab-panel {
+        left: 10px;
+        right: 10px;
+        width: auto;
+        bottom: 132px;
+        padding: 8px 10px 4px;
+    }
+    .ab-panel-title {
+        margin-bottom: 4px;
+    }
+    .ab-row {
+        margin-bottom: 2px;
+    }
+    .ab-label b {
+        font-size: 9.5px;
+    }
+}
+@media (pointer: coarse) {
+    .ab-keys {
+        display: none;
+    }
+    .ab-row input[type="range"] {
+        height: 28px;
+    }
+}
+
+/* Подсказка — под верхней панелью, а не по центру поверх танка */
+.ab-page .aq-hint {
+    position: absolute;
+    top: 70px;
+    left: 50%;
+    width: max-content;
+    max-width: min(720px, calc(100vw - 32px));
+    transform: translateX(-50%);
+}
+.ab-page .aq-hint.is-hidden {
+    transform: translate(-50%, -6px);
+}
+@media (max-width: 720px) {
+    .ab-page .aq-hint {
+        top: auto;
+        bottom: 132px;
+    }
+}
