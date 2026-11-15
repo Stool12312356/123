@@ -1362,6 +1362,18 @@
 }
 
 /* ----- Дзен-режим ----- */
+/* filter свечения на .ide-wrap и transform анимации появления делают предка
+ * containing block для position:fixed — IDE схлопывалась в полоску внутри
+ * пустой обёртки вместо того, чтобы занять окно. Снимаем их на время дзена. */
+html.ide-zen-on .ide-wrap.glow {
+    filter: none;
+}
+.ide.is-zen,
+.ide.shell-anim.is-zen {
+    animation: none;
+    opacity: 1;
+    transform: none;
+}
 .ide.is-zen {
     position: fixed;
     inset: 0;

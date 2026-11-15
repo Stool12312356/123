@@ -1607,13 +1607,28 @@ body[data-vpn="on"] .vpn-shell .shell {
 }
 .ide-preview-pane.is-max {
     position: fixed;
-    z-index: 950;
+    z-index: 1100; /* выше шапки сайта (1000), ниже модалок/палитры/тостов */
     inset: 0;
     background: rgb(var(--bg_rgb));
     border: 1px solid var(--c);
 }
 html.ide-max-open {
     overflow: hidden;
+}
+/* position:fixed считается от окна только если ни у одного предка нет
+ * transform / filter / clip-path. Иначе превью «во весь экран» растягивается
+ * по рамке IDE. На время разворота снимаем их с обёртки и рамки. */
+.ide.shell-anim.is-settled {
+    animation: none;
+    opacity: 1;
+    transform: none;
+}
+html.ide-max-open .ide-wrap.glow {
+    filter: none;
+}
+html.ide-max-open .ide.aug-frame {
+    clip-path: none;
+    transform: none;
 }
 .ide-console {
     flex: none;
